@@ -16,12 +16,12 @@
 {% endblock title %}
 
 {% block content %}
-  <h1>{% trans "Oops!" %}</h1>
-  <h3>{% trans "Looks like something went wrong!" %}</h3>
+  <h1>{% trans "Something went wrong on our end" %}</h1>
   <p>
-    {% blocktrans %}
-      These errors are tracked automatically, but if the problem persists feel free to
-      <a href="{% url 'contact' %}">contact us</a>.
+    {% url 'landing_page' as contact_url %}
+    {% blocktrans trimmed %}
+      We're sorry for the inconvenience. This error has been logged and we'll look into it.
+      If the problem persists, please <a href="{{ contact_url }}">get in touch</a>.
     {% endblocktrans %}
   </p>
 {% endblock content %}

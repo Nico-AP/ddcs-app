@@ -168,7 +168,7 @@ python manage.py makemessages -l de --no-obsolete
 python manage.py compilemessages
 ```
 
-The pre-commit hook will block commits that introduce untranslated strings — it runs `makemessages` and fails if the `.po` file changes. 
+The pre-commit hook will block commits that introduce untranslated strings — it runs `makemessages` and fails if the `.po` file changes.
 Stage the updated `.po` file together with your code changes.
 
 Translation files are located at `locale/de/LC_MESSAGES/django.po`.

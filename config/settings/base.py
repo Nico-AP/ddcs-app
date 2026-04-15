@@ -14,10 +14,10 @@ import json
 from pathlib import Path
 
 import structlog
+from django.utils.translation import gettext_lazy as _
 from environs import Env
 
 from config.logging_utils import anonymize_ip_processor
-from django.utils.translation import gettext_lazy as _
 
 env = Env()
 env.read_env()

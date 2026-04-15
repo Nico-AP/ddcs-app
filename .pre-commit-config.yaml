@@ -56,7 +56,7 @@ repos:
       - id: check-translations
         name: Check for missing translations
         language: system
-        entry: bash -c 'python manage.py makemessages -l de --no-obsolete && git diff --exit-code locale/'
+        entry: bash scripts/check_translations.sh
         pass_filenames: false
         types_or: [python, html]
 

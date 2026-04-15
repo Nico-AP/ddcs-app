@@ -21,10 +21,11 @@
     {% if exception %}
       {{ exception }}
     {% else %}
-      {% blocktrans %}
+      {% url "landing_page" as landing_page_url %}
+      {% blocktrans trimmed %}
         You are not authorised to view this page.
         Please make sure you are logged in, or return to the
-        <a href="/">home page</a>.
+        <a href="{{ landing_page_url }}">home page</a>.
       {% endblocktrans %}
     {% endif %}
   </p>

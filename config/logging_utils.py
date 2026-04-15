@@ -5,9 +5,14 @@ import ipaddress
 import logging
 import time
 from collections import defaultdict
+from typing import Any
 
 
-def anonymize_ip_processor(logger, method_name, event_dict):
+def anonymize_ip_processor(
+    logger: Any,  # noqa: ANN401
+    method_name: str,
+    event_dict: dict[str, Any],
+) -> dict[str, Any]:
     """Anonymize IP addresses for GDPR compliance.
 
     IPv4: Masks last octet (192.168.1.100 -> 192.168.1.0).
@@ -46,19 +51,19 @@ class ThrottledAdminEmailFilter(logging.Filter):
     how many similar errors were suppressed.
     """
 
-    def __init__(self, throttle_seconds=600):
+    def __init__(self, throttle_seconds: int = 600) -> None:
         super().__init__()
         self.throttle_seconds = throttle_seconds
         self._timestamps: dict[str, float] = {}
         self._suppressed_counts: dict[str, int] = defaultdict(int)
 
-    def _get_signature(self, record):
+    def _get_signature(self, record: logging.LogRecord) -> str:
         exc_type = "NoException"
         if record.exc_info and record.exc_info[0]:
             exc_type = record.exc_info[0].__name__
         return f"{exc_type}:{record.module}:{record.funcName}"
 
-    def filter(self, record):
+    def filter(self, record: logging.LogRecord) -> bool:
         signature = self._get_signature(record)
         now = time.monotonic()
         last_sent = self._timestamps.get(signature, 0)
