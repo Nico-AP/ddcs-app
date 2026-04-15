@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "sass:watch": "sass --watch ../ddcs/core/assets/scss/main.scss:../ddcs/core/static/core/css/ddcs.css",
+    "sass:build": "sass ../ddcs/core/assets/scss/main.scss:../ddcs/core/static/core/css/ddcs.css --style=compressed --no-source-map"
+  },
+  "devDependencies": {
+    "sass": "^1.89.0"
+  }
+}

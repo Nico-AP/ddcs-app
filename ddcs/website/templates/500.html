@@ -1,0 +1,27 @@
+{% extends "website/base.html" %}
+
+{% load i18n %}
+
+{% block head_seo_tags %}
+  {# No SEO tags needed #}
+{% endblock head_seo_tags %}
+
+{% block extra_head %}
+  {# Prevent indexing of private pages #}
+  <meta name="robots" content="noindex, nofollow" />
+{% endblock extra_head %}
+
+{% block title %}
+  {% trans "Something went wrong" %}
+{% endblock title %}
+
+{% block content %}
+  <h1>{% trans "Oops!" %}</h1>
+  <h3>{% trans "Looks like something went wrong!" %}</h3>
+  <p>
+    {% blocktrans %}
+      These errors are tracked automatically, but if the problem persists feel free to
+      <a href="{% url 'contact' %}">contact us</a>.
+    {% endblocktrans %}
+  </p>
+{% endblock content %}

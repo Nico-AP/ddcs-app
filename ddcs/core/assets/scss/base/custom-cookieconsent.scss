@@ -1,0 +1,27 @@
+#cc-main {
+    --cc-bg: #efefef;
+
+    --cc-btn-primary-bg: #89f8c3;
+    --cc-btn-primary-border-color: #89f8c3;
+    --cc-btn-primary-hover-bg: #559f7c;
+    --cc-btn-primary-hover-border-color: #559f7c;
+    --cc-btn-primary-color: #000000;
+
+    --cc-btn-secondary-bg: rgba(239, 239, 239, 0);
+    --cc-btn-secondary-border-color: rgba(239, 239, 239, 0);
+    --cc-btn-secondary-hover-bg: rgba(239, 239, 239, 0);
+    --cc-btn-secondary-hover-border-color: rgba(239, 239, 239, 0);
+
+    --cc-toggle-on-bg: var(--cc-btn-primary-bg);
+}
+
+#cc-main button.pm__btn:hover {
+    background: var(--cc-btn-primary-hover-bg) !important;
+}
+
+.cm__footer {
+    background: black !important;
+}
+.cm__footer a {
+    color: #eaeff2 !important;
+}

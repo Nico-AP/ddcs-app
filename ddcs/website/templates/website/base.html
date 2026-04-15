@@ -1,0 +1,71 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  {# Required meta tags #}
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  {# Basic SEO Tags #}
+  <title>{% block page_title %}{% trans "Your Feed, Your Choice" %}{% endblock page_title %}</title>
+  <meta name="author" content="Weizenbaum Institut" />
+
+  {# SEO Meta Tags #}
+  {% block head_seo_tags %}
+    <meta name="description" content="{% block description %}{% trans "Your Feed, Your Choice" %}{% endblock description %}" />
+    <meta name="keywords" content="{% block keywords %}Social Science Research, Data Donation, Digital Democracy, TikTok{% endblock keywords %}" />
+
+    {# Open Graph / Facebook Meta Tags #}
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{% block og_url %}{{ request.build_absolute_uri }}{% endblock og_url %}" />
+    <meta property="og:title" content="{% block og_title %}{% trans "Your Feed, Your Choice" %}{% endblock og_title %}" />
+    <meta property="og:description" content="{% block og_description %}{% trans "Your Feed, Your Choice" %}{% endblock og_description %}" />
+    {# TODO: Add image #}
+    <meta property="og:image" content="{% block og_image %}{% static 'core/img/og-image.jpg' %}{% endblock og_image %}" />
+
+    {# Twitter Meta Tags #}
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="{% block twitter_url %}{{ request.build_absolute_uri }}{% endblock twitter_url %}" />
+    <meta name="twitter:title" content="{% block twitter_title %}{% trans "Your Feed, Your Choice" %}{% endblock twitter_title %}" />
+    <meta name="twitter:description" content="{% block twitter_description %}{% trans "Your Feed, Your Choice" %}{% endblock twitter_description %}" />
+    {# TODO: Add image #}
+    <meta name="twitter:image" content="{% block twitter_image %}{% static 'core/img/twitter-image.jpg' %}{% endblock twitter_image %}" />
+  {% endblock head_seo_tags %}
+
+  {% block extra_head %}{% endblock extra_head %}
+
+  {# Favicon #}
+  <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon.svg' %}" type="image/svg+xml" />
+  <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon_512x512.png' %}" type="image/png" sizes="512x512" />
+  <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon_192x192.png' %}" type="image/png" sizes="192x192" />
+  <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon_32x32.png' %}" type="image/png" sizes="32x32" />
+
+  {# CSS #}
+  {% block css %}
+    <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
+  {% endblock css %}
+
+  {% block extra_css %}{% endblock extra_css %}
+
+</head>
+<body class="{% block bodyclass %}{% endblock bodyclass %}">
+
+<div class="main-container">
+  {% block main %}{% endblock main %}
+</div>
+
+{# JavaScript #}
+{% block js %}
+<script src="{% static 'core/js/bootstrap_5-3-8/bootstrap.bundle.min.js' %}"></script>
+{% endblock js %}
+
+{% block extra_js %}{% endblock extra_js %}
+
+{% block cookieconsent_script %}
+  <script src="{% static 'core/js/vanilla_cookieconsent/cookieconsent.umd.js' %}"></script>
+  <script src="{% static 'core/js/vanilla_cookieconsent/cookieconsent-config.js' %}"></script>
+{% endblock cookieconsent_script %}
+</body>
+</html>
