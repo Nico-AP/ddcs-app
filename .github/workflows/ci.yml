@@ -20,17 +20,11 @@ jobs:
           cache: pip
           cache-dependency-path: requirements/dev.txt
 
-      - name: Install linting tools
-        run: pip install ruff==0.15.10 djlint==1.36.4
+      - name: Install pre-commit
+        run: pip install pre-commit==4.5.1
 
-      - name: Ruff — check
-        run: ruff check .
-
-      - name: Ruff — format
-        run: ruff format --check .
-
-      - name: djLint — check templates
-        run: djlint ddcs/ --check
+      - name: Run pre-commit hooks
+        run: SKIP=check-translations pre-commit run --all-files
 
   test:
     name: Test
