@@ -131,6 +131,22 @@ cd .sass && npm run sass:build
 
 Outputs a compressed stylesheet without source maps to `ddcs/core/static/core/css/ddcs.css`.
 
+### Skipping pre-commit hooks
+
+To skip a specific hook (e.g. when a vulnerability has no fix yet):
+
+```bash
+SKIP=pip-audit git push
+```
+
+To skip all hooks — use sparingly:
+
+```bash
+git push --no-verify
+```
+
+`SKIP` accepts a comma-separated list of hook IDs: `SKIP=pip-audit,check-translations git push`.
+
 ---
 
 ## Translations / Internationalization
