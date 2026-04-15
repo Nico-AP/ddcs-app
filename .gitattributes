@@ -1,0 +1,14 @@
+# Normalize line endings to LF in the repository on all platforms.
+* text=auto eol=lf
+
+# Explicitly binary — never touch line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
