@@ -1,0 +1,28 @@
+@font-face {
+  font-family: Rubik;
+  src: url("../fonts/rubik/Rubik-VariableFont_wght.ttf");
+}
+@font-face {
+  font-family: Rubik;
+  src: url("../fonts/rubik/Rubik-Italic-VariableFont_wght.ttf");
+  font-style: italic;
+}
+
+.ff-rubik {
+  font-family: Rubik, sans-serif !important;
+}
+
+
+@font-face {
+  font-family: DM Sans;
+  src: url("../fonts/dm-sans/DMSans-VariableFont_opsz,wght.ttf");
+}
+@font-face {
+  font-family: DM Sans;
+  src: url("../fonts/dm-sans/DMSans-Italic-VariableFont_opsz,wght.ttf");
+  font-style: italic;
+}
+
+.ff-dm-sans {
+  font-family: DM Sans, sans-serif !important;
+}

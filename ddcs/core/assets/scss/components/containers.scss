@@ -1,1 +1,18 @@
 @use '../abstracts/index' as *;
+
+.wzb-banner {
+  background: #e5e9ec;
+  color: #63686c;
+}
+
+.participation-step-indicator {
+  background-image: url("../img/highlight_magenta.svg");
+  padding: 4px 15px;
+  color: white;
+  font-weight: bold;
+  background-repeat: no-repeat;
+}
+
+.cta-bg {
+  background-image: url("../img/favicons/ddcs_favicon.svg");
+}

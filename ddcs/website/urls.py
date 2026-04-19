@@ -9,4 +9,9 @@ urlpatterns = [
         views.LandingPageView.as_view(),
         name="landing_page",
     ),
+    path(
+        "2025/",
+        views.DFDW2025PageView.as_view(),
+        name="dfdw_2025",
+    ),
 ]

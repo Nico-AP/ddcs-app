@@ -1,1 +1,90 @@
 @use '../abstracts/index' as *;
+
+// =============================================================================
+// components/_buttons.scss
+// Custom button variants. Bootstrap's .btn base class is still available
+// and can be combined: class="btn btn-primary-dfdw"
+// =============================================================================
+
+
+// Primary CTA — "Jetzt mitmachen"
+.btn-primary-dfdw {
+  background-color:   var(--color-cta-bg);
+  color:              var(--color-cta-text);
+  border:             none;
+  border-radius:      var(--radius-md);
+  padding:            0.75rem 1.5rem;
+  font-size:          var(--font-size-body);
+  font-weight:        var(--font-weight-bold);
+  line-height:        1;
+  text-decoration:    none;
+  display:            inline-block;
+  cursor:             pointer;
+  transition:         background-color var(--transition-fast);
+
+  &:hover,
+  &:focus-visible {
+    background-color: var(--color-cta-hover);
+    color:            var(--color-cta-text);
+    text-decoration:  none;
+  }
+
+  &:active {
+    transform:        scale(0.98);
+  }
+}
+
+// Ghost / secondary — "mehr erfahren"
+.btn-ghost-dfdw {
+  background-color:   transparent;
+  color:              var(--text-primary);
+  border:             1.5px solid var(--border-mid);
+  border-radius:      var(--radius-md);
+  padding:            0.75rem 1.25rem;
+  font-size:          var(--font-size-body);
+  font-weight:        var(--font-weight-medium);
+  line-height:        1;
+  text-decoration:    none;
+  display:            inline-block;
+  cursor:             pointer;
+  transition:         border-color var(--transition-fast),
+                      color var(--transition-fast);
+
+  &:hover,
+  &:focus-visible {
+    border-color:     var(--text-primary);
+    color:            var(--text-primary);
+    text-decoration:  none;
+  }
+
+  &:active {
+    transform:        scale(0.98);
+  }
+}
+
+// Accent pill — tag links, filter chips
+.btn-accent-dfdw {
+  background-color:   transparent;
+  color:              var(--text-accent);
+  border:             1.5px solid rgba(0, 112, 106, 0.35);
+  border-radius:      var(--radius-pill);
+  padding:            0.3rem 0.875rem;
+  font-size:          var(--font-size-eyebrow);
+  font-weight:        var(--font-weight-medium);
+  letter-spacing:     0.04em;
+  text-transform:     uppercase;
+  text-decoration:    none;
+  display:            inline-block;
+  cursor:             pointer;
+  transition:         background-color var(--transition-fast);
+
+  &:hover {
+    background-color: var(--bg-accent-subtle);
+    color:            var(--text-accent);
+    text-decoration:  none;
+  }
+}
+
+.cta-btn {
+  font-size: var(--font-size-text-hero);
+}

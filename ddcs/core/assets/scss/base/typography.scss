@@ -1,1 +1,96 @@
 @use '../abstracts/index' as *;
+
+// ---------------------------------------------------------------------------
+// BASE
+// ---------------------------------------------------------------------------
+
+body {
+  font-family:        var(--font-sans);
+  font-size:          var(--font-size-body);
+  font-weight:        var(--font-weight-regular);
+  line-height:        var(--line-height-base);
+  color:              var(--text-primary);
+  background-color:   var(--color-bg-white);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+// Override Bootstrap's link defaults
+a {
+  color:              var(--color-link);
+  text-decoration:    underline;
+  transition:         color var(--transition-fast);
+
+  &:hover {
+    color:            var(--color-link-hover);
+  }
+}
+
+
+// ---------------------------------------------------------------------------
+// HEADINGS
+// Bootstrap h1–h6 override
+// ---------------------------------------------------------------------------
+
+h1, h2, h3, h4, h5, h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+  font-family:        var(--font-sans-heading);
+  font-weight:        var(--font-weight-medium);
+  line-height:        1.15;
+  color:              var(--text-primary);
+}
+
+h1, .h1 { font-size: var(--font-size-h1); letter-spacing: -0.01em; }
+h2, .h2 { font-size: var(--font-size-h2); }
+h3, .h3 { font-size: var(--font-size-h3); }
+
+@media (max-width: 768px) {
+  h1, .h1 { font-size: clamp(28px, 10vw, 40px); }
+  h2, .h2 { font-size: 22px; }
+}
+
+
+// ---------------------------------------------------------------------------
+// UTILITY CLASSES
+// Use in markup instead of inline styles
+// ---------------------------------------------------------------------------
+
+.text-hero-lead {
+  font-size: var(--font-size-text-hero);
+  line-height: 2.1rem;
+  font-family: DM Sans, sans-serif !important;
+}
+
+.text-hero-subtitle {
+  font-weight:        var(--font-weight-600);
+  letter-spacing:     var(--letter-spacing-subtitle);
+  text-transform:     uppercase;
+  color:              var(--text-accent);
+  line-height:        1.4;
+  font-size:          var(--font-size-text-hero);
+}
+
+// Hero headline
+.text-hero {
+  font-size:          clamp(36px, 6vw, var(--font-size-h1));
+  font-weight:        var(--font-weight-bold);
+  line-height:        1.1;
+  letter-spacing:     -0.01em;
+  color:              var(--text-primary);
+}
+
+// Body — large variant
+.text-body-lg {
+  font-size:          var(--font-size-body-lg);
+  line-height:        var(--line-height-base);
+  color:              var(--text-primary);
+}
+
+// Muted / supporting
+.text-secondary-custom {
+  color:              var(--text-secondary);
+}
+
+.text-muted-custom {
+  color:              var(--text-muted);
+}

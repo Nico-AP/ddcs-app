@@ -1,27 +1,27 @@
 #cc-main {
-    --cc-bg: #efefef;
+  --cc-bg: var(--bg-surface-alt);
 
-    --cc-btn-primary-bg: #89f8c3;
-    --cc-btn-primary-border-color: #89f8c3;
-    --cc-btn-primary-hover-bg: #559f7c;
-    --cc-btn-primary-hover-border-color: #559f7c;
-    --cc-btn-primary-color: #000000;
+  --cc-btn-primary-color: white;
+  --cc-btn-primary-bg: var(--color-cta-bg);
+  --cc-btn-primary-border-color: var(--color-cta-bg);
+  --cc-btn-primary-hover-bg: var(--color-cta-hover);
+  --cc-btn-primary-hover-border-color: var(--color-cta-hover);
 
-    --cc-btn-secondary-bg: rgba(239, 239, 239, 0);
-    --cc-btn-secondary-border-color: rgba(239, 239, 239, 0);
-    --cc-btn-secondary-hover-bg: rgba(239, 239, 239, 0);
-    --cc-btn-secondary-hover-border-color: rgba(239, 239, 239, 0);
+  --cc-btn-secondary-bg: rgba(239, 239, 239, 0);
+  --cc-btn-secondary-border-color: rgba(239, 239, 239, 0);
+  --cc-btn-secondary-hover-bg: rgba(239, 239, 239, 0);
+  --cc-btn-secondary-hover-border-color: rgba(239, 239, 239, 0);
 
-    --cc-toggle-on-bg: var(--cc-btn-primary-bg);
+  --cc-toggle-on-bg: var(--cc-btn-primary-bg);
 }
 
 #cc-main button.pm__btn:hover {
-    background: var(--cc-btn-primary-hover-bg) !important;
+  background: var(--cc-btn-primary-hover-bg) !important;
 }
 
 .cm__footer {
-    background: black !important;
+  background: black !important;
 }
 .cm__footer a {
-    color: #eaeff2 !important;
+  color: #eaeff2 !important;
 }
