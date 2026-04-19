@@ -6,13 +6,15 @@
 
     <ul class="nav col-md-4 justify-content-end list-unstyled d-flex">
       <li class="ms-3">
-        <a href="#">Impressum</a>
+        <a href="{% url 'website:impressum' %}">Impressum</a>
       </li>
       <li class="ms-3">
-        <a href="#">Kontakt</a>
+        <a href="{% url 'website:dps' %}">Datenschutz</a>
       </li>
       <li class="ms-3">
-        <a href="#">Datenschutz</a>
+        <a href="#" data-cc="show-preferencesModal">
+          Cookie Policy
+        </a>
       </li>
     </ul>
   </footer>
