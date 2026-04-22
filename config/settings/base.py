@@ -348,8 +348,8 @@ LOGGING = {
 # TikTok Connection (OAuth + Portability API)
 # ------------------------------------------------------------------------------
 AUTH_TOKEN_SECRET = env.str("AUTH_TOKEN_SECRET")  # Authlib config
-TIKTOK_CLIENT_ID = env.str("TIKTOK_CLIENT_ID")
-TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET")
+TIKTOK_CLIENT_ID = env.str("TIKTOK_CLIENT_ID", "")
+TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET", "")
 
 
 # DDM and related settings
