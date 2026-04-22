@@ -36,6 +36,7 @@ jobs:
       DJANGO_SETTINGS_MODULE: config.settings.ci
       SECRET_KEY: ci-only-secret-not-used-in-production
       SALT_KEY: ci-only-salt-not-used-in-production
+      AUTH_TOKEN_SECRET: ci-only-secret-authli-uses-to-sign-state-tokens
 
     steps:
       - uses: actions/checkout@v4
