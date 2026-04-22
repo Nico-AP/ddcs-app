@@ -1,11 +1,25 @@
+{% load static %}
+
+{% block extra_head %}
+  <style id="plotly.js-style-global"></style>
+{% endblock extra_head %}
+
 <div id="header">
   <div class="container p-0">
     <div class="row">
-      <div class="col text-center pt-5 pb-1 pt-md-5 pb-md-5 mt-md-5">
+      <div class="col text-center pt-3 pb-1 pt-md-5 pb-md-3 mt-md-5">
+        <div class="fs-6 mb-3 text-hero-subtitle">
+          Das Vorgänger-Projekt
+        </div>
+
         <div class="col ps-1 pe-1 ps-md-2 pe-md-2">
-          <p class="header-title">Dein <span
+          <p class="header-title mb-0">Dein <span
               class="heading-effect">Feed</span><span>,</span> Deine <span
               class="heading-effect">Wahl</span><span>.</span></p>
+          <p class="fw-bold fs-3">zur Bundestagswahl 2025</p>
+        </div>
+        <div class="sticker-container">
+          <span class="thank-you-sticker px-5 py-2 fw-bold">Danke für eure Teilnahme!</span>
         </div>
       </div>
     </div>
@@ -13,144 +27,146 @@
 </div>
 
 <div class="landing-content">
-  <div class="container main-section intro-text text-center">
-    <div class="row pb-5">
+  <div class="container pb-5 main-section intro-text text-center border-bottom">
+    <div class="row">
       <div class="col">
 
-        <!-- Public TikTok Stats Section -->
         <div class="text-center pb-3 pb-md-5">
           <p class="fw-bold ps-1 pe-1 pt-1 pb-3 pt-md-3 fw-500 fs-4 fs-md-3">
             Am 23. Februar 2025 hat die Bundestagswahl stattgefunden.<br />
             Die
             <span class="highlight-second fw-500 fs-4 fs-md-3">Parteien</span>
-            haben dazu täglich auf TikTok geposted...
+            waren dabei auf TikTok aktiv:
           </p>
-          <div class="plot-wrapper p-1 pe-2 p-md-4 pe-md-5 rounded-md-2 dfdw-25-bg-dark">
-            {# TODO: Include Party Activity Plot #}
-          </div>
+          {% include "website/dfdw_2025/plot_slideshow.html" %}
         </div>
 
       </div>
     </div>
 
-    <hr />
-
-    <div class="py-5">
-      <div class="row justify-content-center">
-        <div class="col">
-          <h3 class="ps-1 pe-1 pb-1 pb-md-3 fw-500">
-            Dazu haben
-            <span class="stats-value fw-500">wir mit euch</span>
-            Daten gesammelt und
-            <span class="stats-value fw-500">das ist dabei herausgekommen</span>
-          </h3>
-        </div>
-      </div>
-
-      <div class="row justify-content-center text-start pt-4 ps-2 pe-2">
-        <div class="col-12 col-md-4">
-          <h4>Medienberichterstattung</h4>
-
-          <ul class="mb-4">
-            <li class="mb-3">
-              <a href="https://www.stuttgarter-zeitung.de/dein-feed-deine-wahl" target="_blank" rel="noopener noreferrer">
-                Sammlung aller Artikel der Stuttgarter Zeitung zum Projekt "Dein Feed, Deine Wahl"
-              </a>
-            </li>
-            <li class="mb-3">
-              <a href="https://www.br.de/nachrichten/netzwelt/mitmachprojekt-wie-beeinflusst-tiktok-die-wahlentscheidung,Uczub34" target="_blank" rel="noopener noreferrer">
-                Mitmachprojekt: Wie beeinflusst TikTok die Wahlentscheidung? (BR)
-              </a>
-            </li>
-            <li class="mb-3">
-              <a href="https://www.br.de/nachrichten/netzwelt/wahlkampf-im-netz-wie-forscher-mehr-transparenz-schaffen-wollen,UdcRo9K" target="_blank" rel="noopener noreferrer">
-                Wahlkampf im Netz: Wie Forscher mehr Transparenz schaffen wollen (BR)
-              </a>
-            </li>
-            <li class="mb-3">
-              <a href="https://www.br.de/nachrichten/netzwelt/tiktok-wahlkampf-zur-bundestagswahl-linke-und-afd-punkten-politische-raender-gewinnen-die-jugend,Udj4ei2" target="_blank" rel="noopener noreferrer">
-                TikTok-Wahlkampf: Die politischen Ränder gewinnen die Jugend (BR)
-              </a>
-            </li>
-            <li class="mb-3">
-              <a href="https://www.fu-berlin.de/campusleben/forschen/2026/260409-was-sagt-die-wissenschaft-tiktok-wahlen/index.html" target="_blank" rel="noopener noreferrer">
-                Wird TikTok künftig Wahlen beeinflussen? (campus.leben)
-              </a>
-            </li>
-          </ul>
-
-        </div>
-
-        <div class="col-12 col-md-4">
-          <h4>Konferenzpräsentationen</h4>
-
-          <ul class="list-unstyled mb-4">
-            <li class="mb-3">
-              <div>
-                <strong>Simon Koenigsdorff, Nico Pfiffner, und Alina Hanss:</strong><br />
-                <a href="https://25.scicar.de/scicar25/schedule/" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
-                  Politik auf TikTok: Ein interdisziplinäres Datenspende-Projekt zur Bundestagswahl
-                </a><br />
-                <small class="text-muted">(SciCar2025)</small>
-              </div>
-            </li>
-            <li class="mb-3">
-              <div>
-                <strong>Jakob Ohme:</strong><br />
-                <a href="https://www.uibk.ac.at/de/congress/ecreapolcomm25/" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
-                  Unraveling TikTok's Role in the 2025 Federal German Elections with the Help of Data Donation
-                </a><br />
-                <small class="text-muted">(ECREA PolCom 2025)</small>
-              </div>
-            </li>
-            <li class="mb-3">
-              <div>
-                <strong>Lion Wedel:</strong><br />
-                <a href="https://www.conftool.org/aoir2025/sessions.php" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
-                  Dein-Feed-Deine-Wahl [your-feed-your-choice/election] - What do TikTok users actually see?
-                </a><br />
-                <small class="text-muted">(AoIR 2025)</small>
-              </div>
-            </li>
-          </ul>
-        </div>
-
-        <div class="col-12 col-md-4">
-          <h4>Wissenschaftliche Publikationen</h4>
-
-          <ul class="list-unstyled mb-4">
-            <li class="mb-2">
-              <div>
-                <strong>Wedel, Lion; Pfiffner, Nico; Ohme, Jakob; Friemel, Thomas N.; Gaisbauer, Felix; Lehner, Marco; Schöffel, Robert; Koenigsdorff, Simon; Plavec, Jan Georg; Wolf, Julika (2026):</strong><br />
-                <a href="https://nbn-resolving.org/urn:nbn:de:0168-ssoar-108733-2" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
-                  Political content and news exposure of German TikTok users during the 2025 Federal German Elections.
-                </a><br />
-                <small class="text-muted">Preprint</small>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="row justify-content-center">
-        <div class="col">
-          <p class="fw-bolder mb-0 pt-5 pb-3 fs-4">
-            Wir danken allen Teilnehmenden für ihre Unterstützung!
-          </p>
-        </div>
+    <div class="row justify-content-center">
+      <div class="col">
+        <p class="ps-1 pe-1 pb-1 pb-md-3 fw-500 fw-bold fs-4">
+          Dazu haben wir mit euch Daten gesammelt – wir danken allen Teilnehmenden für ihre Unterstützung!
+        </p>
       </div>
 
     </div>
+  </div>
 
-    <hr />
+  <div class="container py-5 border-bottom align-items-center">
+    <div class="row justify-content-center">
+      <div class="col">
 
+        <div class="fs-6 mb-3 text-hero-subtitle">
+          Medienspiegel & wissenschaftliche Beiträge
+        </div>
+
+        <div>
+          <h2>Das kam dabei heraus</h2>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="row justify-content-center text-start pt-4 ps-2 pe-2">
+      <div class="col-12 col-md-4">
+        <h4>Medienberichterstattung</h4>
+
+        <ul class="mb-4 list-unstyled pt-2">
+          <li class="mb-3">
+            <a href="https://www.stuttgarter-zeitung.de/dein-feed-deine-wahl" target="_blank" class="text-decoration-none" rel="noopener noreferrer">
+              Sammlung aller Artikel der Stuttgarter Zeitung zum Projekt "Dein Feed, Deine Wahl"
+            </a><br />
+            <small class="text-muted">(Stuttgarter Zeitung)</small>
+          </li>
+          <li class="mb-3">
+            <a href="https://www.br.de/nachrichten/netzwelt/mitmachprojekt-wie-beeinflusst-tiktok-die-wahlentscheidung,Uczub34" class="text-decoration-none" target="_blank" rel="noopener noreferrer">
+              Mitmachprojekt: Wie beeinflusst TikTok die Wahlentscheidung?
+            </a><br />
+            <small class="text-muted">(BR)</small>
+          </li>
+          <li class="mb-3">
+            <a href="https://www.br.de/nachrichten/netzwelt/wahlkampf-im-netz-wie-forscher-mehr-transparenz-schaffen-wollen,UdcRo9K" class="text-decoration-none" target="_blank" rel="noopener noreferrer">
+              Wahlkampf im Netz: Wie Forscher mehr Transparenz schaffen wollen
+            </a><br />
+            <small class="text-muted">(BR)</small>
+          </li>
+          <li class="mb-3">
+            <a href="https://www.br.de/nachrichten/netzwelt/tiktok-wahlkampf-zur-bundestagswahl-linke-und-afd-punkten-politische-raender-gewinnen-die-jugend,Udj4ei2" class="text-decoration-none" target="_blank" rel="noopener noreferrer">
+              TikTok-Wahlkampf: Die politischen Ränder gewinnen die Jugend
+            </a><br />
+            <small class="text-muted">(BR)</small>
+          </li>
+          <li class="mb-3">
+            <a href="https://www.fu-berlin.de/campusleben/forschen/2026/260409-was-sagt-die-wissenschaft-tiktok-wahlen/index.html" class="text-decoration-none" target="_blank" rel="noopener noreferrer">
+              Wird TikTok künftig Wahlen beeinflussen?
+            </a><br />
+            <small class="text-muted">(campus.leben)</small>
+          </li>
+        </ul>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <h4>Konferenzpräsentationen</h4>
+
+        <ul class="list-unstyled mb-4 pt-2">
+          <li class="mb-3">
+            <div>
+              <strong>Simon Koenigsdorff, Nico Pfiffner, und Alina Hanss:</strong><br />
+              <a href="https://25.scicar.de/scicar25/schedule/" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
+                Politik auf TikTok: Ein interdisziplinäres Datenspende-Projekt zur Bundestagswahl
+              </a><br />
+              <small class="text-muted">(SciCar2025)</small>
+            </div>
+          </li>
+          <li class="mb-3">
+            <div>
+              <strong>Jakob Ohme:</strong><br />
+              <a href="https://www.uibk.ac.at/de/congress/ecreapolcomm25/" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
+                Unraveling TikTok's Role in the 2025 Federal German Elections with the Help of Data Donation
+              </a><br />
+              <small class="text-muted">(ECREA PolCom 2025)</small>
+            </div>
+          </li>
+          <li class="mb-3">
+            <div>
+              <strong>Lion Wedel:</strong><br />
+              <a href="https://www.conftool.org/aoir2025/sessions.php" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
+                Dein-Feed-Deine-Wahl [your-feed-your-choice/election] - What do TikTok users actually see?
+              </a><br />
+              <small class="text-muted">(AoIR 2025)</small>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <h4>Wissenschaftliche Publikationen</h4>
+
+        <ul class="list-unstyled mb-4 pt-2">
+          <li class="mb-2">
+            <div>
+              <strong>Wedel, Lion; Pfiffner, Nico; Ohme, Jakob; Friemel, Thomas N.; Gaisbauer, Felix; Lehner, Marco; Schöffel, Robert; Koenigsdorff, Simon; Plavec, Jan Georg; Wolf, Julika (2026):</strong><br />
+              <a href="https://nbn-resolving.org/urn:nbn:de:0168-ssoar-108733-2" target="_blank" rel="noopener noreferrer" class="text-decoration-none">
+                Political content and news exposure of German TikTok users during the 2025 Federal German Elections.
+              </a><br />
+              <small class="text-muted">Preprint</small>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
     <div class="row justify-content-center py-5 text-center">
 
       <div class="col-12 col-md-6">
 
-        <h3 class="ps-1 pe-1 pb-1 pb-md-3 fw-500">
+        <h2>
           Das Team hinter Dein Feed, Deine Wahl. 2025
-        </h3>
+        </h2>
 
         <p class="mt-5">
           Dein Feed, Deine Wahl. zu den Bundestagswahlen 2025 war
@@ -171,3 +187,7 @@
   </div>
 
 </div>
+
+{# djlint:off #}
+<svg id="js-plotly-tester" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="position: absolute; left: -10000px; top: -10000px; width: 9000px; height: 9000px; z-index: 1;"><path class="js-reference-point" d="M0,0H1V1H0Z" style="stroke-width: 0px; fill: black;"></path></svg>
+{# djlint:on #}
