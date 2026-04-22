@@ -1,0 +1,78 @@
+{% extends "datadonation/base.html" %}
+
+{% block content %}
+  <div class="container align-items-center justify-content-center mt-5 pb-5">
+    <div class="row justify-content-center pt-4">
+      <div class="col-11 col-md-8 col-xl-7 col-xxl-6">
+        <div class="text-hero-subtitle mb-1">Schritt 1</div>
+        <h1>Daten von TikTok anfordern</h1>
+
+        <div class="fs-5 mt-4">
+          <p>
+            Wir leiten dich dafür zu TikTok weiter, wo du dich mit deinem Account anmelden und deine Daten anfordern kannst.
+          </p>
+          <p>
+            Anschliessend wirst du zurück auf unsere Seite geleitet, wo du dir die angeforderten Daten anschauen kannst.
+          </p>
+          <p>
+            Entscheide dann in Ruhe, ob du deine Daten für unser Forschungsprojekt spenden möchtest. Bevor du der Spende explizit
+            einwilligst, werden keine Daten auf unseren Servern gespeichert.
+          </p>
+        </div>
+
+        <div class="mt-4">
+          <button type="button" class="btn btn-primary-dfdw cta-btn" data-bs-toggle="modal" data-bs-target="#tiktokInfo">
+            Mit TikTok einloggen
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block extra_content %}
+
+  <div class="modal fade" id="tiktokInfo" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="tiktokInfoLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h1 class="modal-title fs-5" id="tiktokInfoLabel">Verbindung mit deinem TikTok Account</h1>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p>Gut zu wissen:</p>
+
+          <ul>
+            <li class="pb-2">
+              Du bleibst anonym - wir speichern deinen TikTok Benutzernamen nicht.
+            </li>
+            <li class="pb-2">
+              Wir sind an den folgenden Informationen aus deinen TikTok-Nutzungsdaten Interessiert:
+              <ul>
+                <li>Welche Videos dir angezeigt wurden</li>
+                <li>Welche Inhalte du markiert oder geliked hast</li>
+                <li>Welchen Accounts du folgst</li>
+              </ul>
+            </li>
+            <li>
+              <b>Du behältst die Kontrolle:</b> Wenn du uns erlaubst, eine Kopie deiner Daten zu exportieren speichern wir
+              erstmal nichts. Wir senden diese Daten direkt auf dein Gerät wo du sie ansehen und auswählen kannst, was
+              du uns zur Verfügung stellen möchtest.
+            </li>
+          </ul>
+
+        </div>
+        <div class="modal-footer d-flex flex-row justify-content-between">
+          <div>
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Abbrechen</button>
+          </div>
+          <div>
+            <a class="btn btn-primary-dfdw cta-btn fs-5" href="{% url 'datadonation:tiktok_auth' %}">Weiter zu TikTok</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{% endblock extra_content %}

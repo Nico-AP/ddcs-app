@@ -6,6 +6,10 @@ from django.urls import include, path
 urlpatterns = [
     path(f"{settings.ADMIN_URL}", admin.site.urls),
     path("", include("ddcs.website.urls", namespace="website")),
+    path("", include("ddcs.datadonation.urls", namespace="datadonation")),
+    # DDM
+    path("ddm/", include("ddm.core.urls")),
+    path("ckeditor5/", include("django_ckeditor_5.urls")),
 ]
 
 if settings.DEBUG:

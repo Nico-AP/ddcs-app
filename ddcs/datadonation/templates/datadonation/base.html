@@ -1,0 +1,17 @@
+{% extends "website/base.html" %}
+
+{% block page_title %}Datenspende{% endblock page_title %}
+
+{% block head_seo_tags %}{% endblock head_seo_tags %}
+
+{% block main %}
+
+  {% include "datadonation/header.html" %}
+
+  {% block content %}{% endblock content %}
+
+  {% include "datadonation/footer.html" %}
+
+  {% block extra_content %}{% endblock extra_content %}
+
+{% endblock main %}

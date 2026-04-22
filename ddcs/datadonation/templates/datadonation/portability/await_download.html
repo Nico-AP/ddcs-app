@@ -1,0 +1,26 @@
+{% extends "datadonation/base.html" %}
+
+{% load static %}
+
+{% block content %}
+  <div class="container align-items-center justify-content-center mt-5 pb-5">
+    <div class="row justify-content-center pt-4">
+      <div class="col-11 col-md-8 col-xl-7 col-xxl-6">
+        <div class="text-hero-subtitle mb-1">Schritt 1</div>
+        <h1>Daten erfolgreich angefordert!</h1>
+
+        <div class="row mt-5 justify-content-center align-items-center">
+          <div class="col fs-5">
+            <p>
+              Wir warten nun darauf, dass TikTok deine Daten zur Verfügung stellt. Das kann einige Sekunden dauern.
+            </p>
+          </div>
+          <div class="col-auto">
+            <img src="{% static 'core/img/ddcs_load_icon.svg' %}" alt="Dein Feed, Deine Wahl Ladeicon" height="100px" />
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+{% endblock content %}

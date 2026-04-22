@@ -1,0 +1,14 @@
+// =============================================================================
+// Overrides default bootstrap values.
+// =============================================================================
+
+:root, .modal {
+  --bs-modal-border-width: 1px;
+  --bs-modal-border-color: lightgrey;
+  --bs-modal-border-radius: 5px;
+  --bs-modal-padding: 1.5rem;
+}
+
+:root, .btn-light {
+  --bs-btn-bg: #e2e4e6;
+}

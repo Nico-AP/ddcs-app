@@ -1,0 +1,40 @@
+{% extends "datadonation/base.html" %}
+{% load i18n static %}
+{% load render_bundle from webpack_loader %}
+{% get_current_language as LANGUAGE_CODE %}
+
+{% block page_title %}Datenspende{% endblock page_title %}
+
+{% block css %}
+  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap.min.css' %}" />
+  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap-icons.css' %}" />
+  <link href="{% static 'ddm_core/css/fonts.css' %}" rel="stylesheet" />
+  <link href="{% static 'ddm_participation/css/public-base.css' %}" rel="stylesheet" />
+  <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
+{% endblock css %}
+
+{% block content %}
+  <div class="container">
+    <div class="row justify-content-center pt-4 mt-5 b-3">
+      <div class="text-hero-subtitle mb-1">Schritt 2</div>
+      <h1>Daten prüfen und übermitteln</h1>
+    </div>
+
+    <div id="uapp"
+         class="container text-black ps-0 pe-0"
+         data-action-url='{{ request.build_absolute_uri }}'
+         data-exception-url='{% if request.is_secure %}https://{% else %}http://{% endif %}{{ request.get_host }}{% url "ddm_logging:exceptions_api" project_url_id %}'
+         data-language='{{ LANGUAGE_CODE|slice:"0:2" }}'
+         data-csrf-token="{{ csrf_token }}"
+    >
+      {{ uploader_configs|json_script:"config-data" }}
+      {{ custom_translations|json_script:"custom-translations" }}
+      {# djlint:off H020 #}<uapp></uapp>{# djlint:on #}
+    </div>
+    {% render_bundle "ddm_uploader_frontend" config="DDM_UPLOADER" %}
+
+  </div>
+{% endblock content %}
+
+{% block extra_js %}
+{% endblock extra_js %}

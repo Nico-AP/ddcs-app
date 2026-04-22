@@ -1,7 +1,9 @@
+from pathlib import Path
+
 from csp.constants import NONE, SELF
 
 from .base import *  # noqa: F403
-from .base import env
+from .base import STATIC_ROOT, env
 
 # Database
 # ------------------------------------------------------------------------------
@@ -77,3 +79,25 @@ EMAIL_SUBJECT_PREFIX = env.str(
     "DJANGO_EMAIL_SUBJECT_PREFIX",
     default="",
 )
+
+
+# DDM
+# ------------------------------------------------------------------------------
+WEBPACK_LOADER = {
+    "DDM_UPLOADER": {
+        "CACHE": True,
+        "BUNDLE_DIR_NAME": "ddm_core/frontent/uploader/",
+        "STATS_FILE": Path(STATIC_ROOT) / "ddm_core/frontend/stats",
+        "POLL_INTERVAL": 0.1,
+        "IGNORE": [r".+\.hot-update.js", r".+\.map"],
+    },
+    "DDM_QUESTIONNAIRE": {
+        "CACHE": True,
+        "BUNDLE_DIR_NAME": "ddm_core/frontend/questionnaire/",
+        "STATS_FILE": Path(STATIC_ROOT)
+        / "ddm_core/frontend/questionnaire/webpack-stats.json",
+        "POLL_INTERVAL": 0.1,
+        "TIMEOUT": None,
+        "IGNORE": [r".+\.hot-update.js", r".+\.map"],
+    },
+}

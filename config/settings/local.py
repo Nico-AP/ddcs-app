@@ -1,3 +1,7 @@
+from pathlib import Path
+
+import ddm.core
+
 from .base import *  # noqa: F403
 from .base import DEBUG, INSTALLED_APPS, LOGGING, MIDDLEWARE, env
 
@@ -47,3 +51,25 @@ if DEBUG:
         "SHOW_TEMPLATE_CONTEXT": True,
     }
     INTERNAL_IPS = ["127.0.0.1"]
+
+
+# DDM
+# ------------------------------------------------------------------------------
+WEBPACK_LOADER = {
+    "DDM_UPLOADER": {
+        "CACHE": False,
+        "BUNDLE_DIR_NAME": "core/frontend/uploader/",
+        "STATS_FILE": Path(ddm.core.__file__).parent
+        / "static/ddm_core/frontend/uploader/webpack-stats.json",
+        "POLL_INTERVAL": 0.1,  # Adjust as needed
+        "IGNORE": [r".+\.hot-update.js", r".+\.map"],
+    },
+    "DDM_QUESTIONNAIRE": {
+        "CACHE": False,
+        "BUNDLE_DIR_NAME": "core/frontend/questionnaire/",
+        "STATS_FILE": Path(ddm.core.__file__).parent
+        / "static/ddm_core/frontend/questionnaire/webpack-stats.json",
+        "POLL_INTERVAL": 0.1,  # Adjust as needed
+        "IGNORE": [r".+\.hot-update.js", r".+\.map"],
+    },
+}

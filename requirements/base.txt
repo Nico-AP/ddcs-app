@@ -1,6 +1,9 @@
 argon2-cffi==25.1.0  # https://github.com/hynek/argon2_cffi
-django==5.2.13  # https://www.djangoproject.com/ (stay with 5.2.x - LTS until 2028)
+Authlib==1.7.0  # https://github.com/authlib/authlib
+django==5.2.13  # https://www.djangoproject.com/ / https://github.com/django/django (stay with 5.2.x - LTS until 2028)
 django-csp==4.0  # https://django-csp.readthedocs.io/en/latest/installation.html
+django-ddm==2.2.0b2  # https://github.com/uzh/ddm
+django-fernet-encrypted-fields==0.4.0  # https://github.com/jazzband/django-fernet-encrypted-fields
 django-structlog==10.0.0  # github.com/jrobichaud/django-structlog/
 environs[django]==15.0.1  # https://pypi.org/project/environs/
 structlog==25.5.0  # https://www.structlog.org/ - direct dependency, transitive via django-structlog
