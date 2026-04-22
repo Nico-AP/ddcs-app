@@ -34,6 +34,8 @@ APPS_DIR = BASE_DIR / "ddcs"
 # ------------------------------------------------------------------------------
 
 SECRET_KEY = env.str("SECRET_KEY")
+SALT_KEY = env.str("SALT_KEY")  # used by django-fernet-encrypted-fields
+
 DEBUG = env.bool("DEBUG", default=False)
 
 SITE_ID = 1
@@ -348,6 +350,7 @@ LOGGING = {
 AUTH_TOKEN_SECRET = env.str("AUTH_TOKEN_SECRET")  # Authlib config
 TIKTOK_CLIENT_ID = env.str("TIKTOK_CLIENT_ID")
 TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET")
+
 
 # DDM and related settings
 # ------------------------------------------------------------------------------
