@@ -35,6 +35,7 @@ jobs:
     env:
       DJANGO_SETTINGS_MODULE: config.settings.ci
       SECRET_KEY: ci-only-secret-not-used-in-production
+      SALT_KEY: ci-only-salt-not-used-in-production
 
     steps:
       - uses: actions/checkout@v4
