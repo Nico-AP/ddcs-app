@@ -6,4 +6,5 @@ django-ddm==2.2.0b2  # https://github.com/uzh/ddm
 django-fernet-encrypted-fields==0.4.0  # https://github.com/jazzband/django-fernet-encrypted-fields
 django-structlog==10.0.0  # github.com/jrobichaud/django-structlog/
 environs[django]==15.0.1  # https://pypi.org/project/environs/
+requests==2.33.1  # https://github.com/psf/requests
 structlog==25.5.0  # https://www.structlog.org/ - direct dependency, transitive via django-structlog
