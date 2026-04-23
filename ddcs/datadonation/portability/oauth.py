@@ -13,4 +13,6 @@ oauth.register(
     authorize_url=TT_AUTH_URL,
     access_token_url=TT_ACCESS_TOKEN_URL,
     client_kwargs={"scope": "user.info.basic"},
+    # TikTok expects client_key, not the standard client_id
+    authorize_params={"client_key": settings.TIKTOK_CLIENT_ID},
 )
