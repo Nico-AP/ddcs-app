@@ -188,6 +188,7 @@
 
 </div>
 
-{# djlint:off #}
-<svg id="js-plotly-tester" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="position: absolute; left: -10000px; top: -10000px; width: 9000px; height: 9000px; z-index: 1;"><path class="js-reference-point" d="M0,0H1V1H0Z" style="stroke-width: 0px; fill: black;"></path></svg>
-{# djlint:on #}
+{% block extra_js %}
+  <script charset="utf-8" src="{% static 'website/js/plotly-3.0.0.min.js' %}"></script>
+  <script charset="utf-8" src="{% static 'website/js/dfdw_2025_plot-utils.js' %}"></script>
+{% endblock extra_js %}
