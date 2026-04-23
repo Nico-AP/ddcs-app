@@ -36,6 +36,12 @@
 
   {% block extra_head %}{% endblock extra_head %}
 
+  {% block analytics_head %}
+    {% if ANALYTICS_SCRIPT_SRC and ANALYTICS_WEBSITE_ID %}
+      <script defer src="{{ ANALYTICS_SCRIPT_SRC }}" data-website-id="{{ ANALYTICS_WEBSITE_ID }}"></script>
+    {% endif %}
+  {% endblock analytics_head %}
+
   {# Favicon #}
   <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon.svg' %}" type="image/svg+xml" />
   <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon_512x512.png' %}" type="image/png" sizes="512x512" />

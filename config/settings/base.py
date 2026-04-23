@@ -112,6 +112,7 @@ TEMPLATES = [
                 "django.template.context_processors.media",
                 "django.template.context_processors.static",
                 "ddm.core.context_processors.add_ddm_version",
+                "ddcs.website.context_processors.analytics",
             ],
         },
     },
@@ -357,3 +358,8 @@ TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET", "")
 CKEDITOR_5_FILE_UPLOAD_PERMISSION = "authenticated"
 CKEDITOR_5_ALLOW_ALL_FILE_TYPES = True
 CKEDITOR_5_UPLOAD_FILE_TYPES = ["jpeg", "pdf", "png", "mp4"]
+
+# Umami web analytics integration
+# ------------------------------------------------------------------------------
+ANALYTICS_SCRIPT_SRC = env.str("ANALYTICS_SCRIPT_SRC", None)
+ANALYTICS_WEBSITE_ID = env.str("ANALYTICS_WEBSITE_ID", None)
