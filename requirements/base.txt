@@ -4,7 +4,8 @@ django==5.2.13  # https://www.djangoproject.com/ / https://github.com/django/dja
 django-csp==4.0  # https://django-csp.readthedocs.io/en/latest/installation.html
 django-ddm==2.2.0b2  # https://github.com/uzh/ddm
 django-fernet-encrypted-fields==0.4.0  # https://github.com/jazzband/django-fernet-encrypted-fields
-django-structlog==10.0.0  # github.com/jrobichaud/django-structlog/
+django-structlog==10.0.0  # https://github.com/jrobichaud/django-structlog/
+django-two-factor-auth==1.18.1  # https://github.com/jazzband/django-two-factor-auth
 environs[django]==15.0.1  # https://pypi.org/project/environs/
 requests==2.33.1  # https://github.com/psf/requests
 structlog==25.5.0  # https://www.structlog.org/ - direct dependency, transitive via django-structlog

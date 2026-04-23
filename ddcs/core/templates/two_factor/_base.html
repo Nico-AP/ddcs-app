@@ -1,0 +1,45 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="DE">
+<head>
+  <title>{% block title %}DFDW Login{% endblock title %}</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+
+  <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon.svg' %}" type="image/svg+xml" />
+  <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon_512x512.png' %}" type="image/png" sizes="512x512" />
+  <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon_192x192.png' %}" type="image/png" sizes="192x192" />
+  <link rel="icon" href="{% static 'core/img/favicons/ddcs_favicon_32x32.png' %}" type="image/png" sizes="32x32" />
+
+  <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
+</head>
+<body class="justify-content-center">
+
+<div class="container">
+  <div class="row justify-content-center mt-5 mb-3">
+    <div class="col-auto">
+      <img src="{% static 'core/img/logos/ddcs_logo_oneline.svg' %}" alt="DFDW Logo" height="120px" />
+    </div>
+  </div>
+</div>
+
+{% block content_wrapper %}
+  <div class="container">
+    <div class="row justify-content-center mt-5 mb-3">
+      <div class="col-auto text-center">
+        {% block content %}{% endblock content %}
+      </div>
+    </div>
+  </div>
+{% endblock content_wrapper %}
+
+<div class="container">
+  <div class="row justify-content-center mt-5 mb-3">
+    <div class="col-auto">
+    </div>
+  </div>
+</div>
+</body>
+</html>
