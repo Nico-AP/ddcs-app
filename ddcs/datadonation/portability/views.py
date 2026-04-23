@@ -70,7 +70,7 @@ class TikTokCallbackView(View):
         #  should probably not live here; can be moved if information
         #  can also be derived from data requests
 
-        return redirect("/success")
+        return redirect(reverse("datadonation:tiktok_await_data"))
 
     def _get_expiration_date(self, expires_in: int) -> datetime:
         return timezone.now() + timedelta(seconds=expires_in)
