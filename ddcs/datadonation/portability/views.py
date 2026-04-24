@@ -38,17 +38,11 @@ class TikTokCallbackView(View):
             request.GET.get("state"),
         )
         try:
-            auth_kwargs = {
-                "redirect_uri": request.build_absolute_uri(
-                    reverse("datadonation:tiktok_callback")
-                ),
-            }
-            token = oauth.tiktok.authorize_access_token(request, **auth_kwargs)
+            token = oauth.tiktok.authorize_access_token(request)
         except OAuthError as e:
             logger.exception(
                 "OAuth error. error=%s description=%s", e.error, e.description
             )
-            # TODO: Rewire to redirect to download-upload approach as a fallback
             return redirect(reverse("datadonation:portability_exception"))
 
         open_id = token.get("open_id")
@@ -63,7 +57,7 @@ class TikTokCallbackView(View):
                 "access_token": token["access_token"],
                 "access_token_expires_at": access_token_expires_at,
                 "refresh_token": token.get("refresh_token", ""),
-                "refresh_expires_at": refresh_token_expires_at,
+                "refresh_token_expires_at": refresh_token_expires_at,
                 "created_at": timezone.now(),
                 "token_type": token.get("token_type", ""),
                 "scope": token.get("scope", ""),
