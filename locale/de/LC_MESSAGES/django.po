@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-23 20:31+0200\n"
+"POT-Creation-Date: 2026-04-24 07:49+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -26,14 +26,15 @@ msgstr "Deutsch"
 msgid "English"
 msgstr "Englisch"
 
-#: .\ddcs\website\templates\403.html:15 .\ddcs\website\templates\403.html:19
-#: .\ddcs\website\templates\403_csrf.html:15
-#: .\ddcs\website\templates\403_csrf.html:19
+#: .\ddcs\website\templates\exceptions\403.html:6
+#: .\ddcs\website\templates\exceptions\403.html:10
+#: .\ddcs\website\templates\exceptions\403_csrf.html:6
+#: .\ddcs\website\templates\exceptions\403_csrf.html:10
 msgid "Access Denied"
 msgstr "Zugriff verweigert"
 
-#: .\ddcs\website\templates\403.html:25
-#: .\ddcs\website\templates\403_csrf.html:25
+#: .\ddcs\website\templates\exceptions\403.html:16
+#: .\ddcs\website\templates\exceptions\403_csrf.html:16
 #, fuzzy, python-format
 #| msgid ""
 #| "You are not authorised to view this page. Please make sure you are logged "
@@ -46,11 +47,12 @@ msgstr ""
 "dass Sie angemeldet sind, oder kehren Sie zur <a "
 "href=\"%(landing_page_url)s\">Startseite</a> zurück."
 
-#: .\ddcs\website\templates\404.html:15 .\ddcs\website\templates\404.html:19
+#: .\ddcs\website\templates\exceptions\404.html:6
+#: .\ddcs\website\templates\exceptions\404.html:10
 msgid "Page Not Found"
 msgstr "Seite nicht gefunden"
 
-#: .\ddcs\website\templates\404.html:25
+#: .\ddcs\website\templates\exceptions\404.html:16
 #, fuzzy, python-format
 #| msgid ""
 #| "This page does not exist or has been moved. Return to the <a href=\"/"
@@ -62,17 +64,17 @@ msgstr ""
 "Diese Seite existiert nicht oder wurde verschoben. Zurück zur <a "
 "href=\"%(landing_page_url)s\">Startseite</a>."
 
-#: .\ddcs\website\templates\500.html:15
+#: .\ddcs\website\templates\exceptions\500.html:6
 msgid "Something went wrong"
 msgstr "Etwas ist schiefgelaufen"
 
-#: .\ddcs\website\templates\500.html:19
+#: .\ddcs\website\templates\exceptions\500.html:10
 #, fuzzy
 #| msgid "Something went wrong"
 msgid "Something went wrong on our end"
 msgstr "Auf unserer Seite ist etwas schiefgelaufen"
 
-#: .\ddcs\website\templates\500.html:22
+#: .\ddcs\website\templates\exceptions\500.html:13
 #, python-format
 msgid ""
 "We're sorry for the inconvenience. This error has been logged and we'll look "
