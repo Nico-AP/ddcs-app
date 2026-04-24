@@ -34,7 +34,9 @@ class TikTokCallbackView(View):
     def get(self, request: HttpRequest) -> HttpResponseRedirect:
         try:
             auth_kwargs = {
-                "grant_type": "authorization_code",
+                "redirect_uri": request.build_absolute_uri(
+                    reverse("datadonation:tiktok_callback")
+                ),
             }
             token = oauth.tiktok.authorize_access_token(request, **auth_kwargs)
         except OAuthError:
