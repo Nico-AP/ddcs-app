@@ -51,8 +51,8 @@ class TikTokCallbackView(View):
         )
 
         TikTokConnection.objects.update_or_create(
+            open_id=open_id,
             defaults={
-                "open_id": open_id,
                 "access_token": token["access_token"],
                 "access_token_expires_at": access_token_expires_at,
                 "refresh_token": token.get("refresh_token", ""),
@@ -60,7 +60,7 @@ class TikTokCallbackView(View):
                 "created_at": timezone.now(),
                 "token_type": token.get("token_type", ""),
                 "scope": token.get("scope", ""),
-            }
+            },
         )
 
         # TODO: Create or retrieve user object and log user in
