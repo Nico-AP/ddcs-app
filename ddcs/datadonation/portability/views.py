@@ -32,6 +32,11 @@ class TikTokConnectView(View):
 
 class TikTokCallbackView(View):
     def get(self, request: HttpRequest) -> HttpResponseRedirect:
+        logger.debug(
+            "Callback hit. code=%s state=%s",
+            request.GET.get("code"),
+            request.GET.get("state"),
+        )
         try:
             auth_kwargs = {
                 "redirect_uri": request.build_absolute_uri(
@@ -39,8 +44,10 @@ class TikTokCallbackView(View):
                 ),
             }
             token = oauth.tiktok.authorize_access_token(request, **auth_kwargs)
-        except OAuthError:
-            logger.exception("Experienced an OAuth error.")
+        except OAuthError as e:
+            logger.exception(
+                "OAuth error. error=%s description=%s", e.error, e.description
+            )
             # TODO: Rewire to redirect to download-upload approach as a fallback
             return redirect(reverse("datadonation:portability_exception"))
 
