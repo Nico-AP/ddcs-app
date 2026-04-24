@@ -40,7 +40,7 @@ class TikTokCallbackView(View):
         except OAuthError:
             logger.exception("Experienced an OAuth error.")
             # TODO: Rewire to redirect to download-upload approach as a fallback
-            return redirect(reverse("ddcs:datadonation:portability_exception"))
+            return redirect(reverse("datadonation:portability_exception"))
 
         open_id = token.get("open_id")
         access_token_expires_at = self._get_expiration_date(token["expires_in"])
