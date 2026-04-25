@@ -47,7 +47,7 @@ CONTENT_SECURITY_POLICY = {
         "default-src": [NONE],
         "script-src": [SELF],
         "style-src": [SELF],
-        "img-src": [SELF],
+        "img-src": [SELF, "*.stuttgarter-zeitung.de", "*.br.de", "*.fu-berlin.de"],
         "media-src": [SELF],
         "font-src": [SELF],
         "connect-src": [SELF],
