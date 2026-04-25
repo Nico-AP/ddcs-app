@@ -96,9 +96,13 @@ h3, .h3 { font-size: var(--font-size-h3); }
 }
 
 // Impressum
-.impressum-title {
+.impressum-title,
+.subtle-title {
   color: var(--text-secondary);
   font-weight: 600;
   letter-spacing:  0.05em;
   padding-top: 10px;
+}
+p:has(.subtle-title) {
+  margin-bottom: 0;
 }

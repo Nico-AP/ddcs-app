@@ -9,3 +9,4 @@ django-two-factor-auth==1.18.1  # https://github.com/jazzband/django-two-factor-
 environs[django]==15.0.1  # https://pypi.org/project/environs/
 requests==2.33.1  # https://github.com/psf/requests
 structlog==25.5.0  # https://www.structlog.org/ - direct dependency, transitive via django-structlog
+wagtail==7.3.1  # https://github.com/wagtail/wagtail

@@ -6,47 +6,41 @@
     <div class="col-12 py-5">
 
       <div class="fs-6 mb-3 text-hero-subtitle">
-        So funktioniert die Teilnahme
+        {{ value.pre_title }}
       </div>
 
       <div>
-        <h2>Drei einfache Schritte</h2>
+        <h2>{{ value.title }}</h2>
       </div>
 
       <div class="row pt-2 pb-4">
 
-        <div class="col-4">
+        <div class="col-12 col-sm-4 my-2">
           <div class="card h-100 text-bg-light step-card">
             <div class="card-body">
               <p><span class="participation-step-indicator">1</span></p>
-              <h3>TikTok-Daten anfordern</h3>
-              <p>Du loggst dich bei TikTok ein und forderst deine Daten an.</p>
+              <h3>{{ value.step_1_title }}</h3>
+              <p>{{ value.step_1_content }}</p>
             </div>
           </div>
         </div>
 
-        <div class="col-4">
+        <div class="col-12 col-sm-4 my-2">
           <div class="card h-100 text-bg-light step-card">
-            <div class="card-body">
+            <div class="card-body d-flex flex-column justify-content-between">
               <p><span class="participation-step-indicator">2</span></p>
-              <h3>Daten prüfen und übermitteln</h3>
-              <p>
-                TikTok gibt dir Zugriff auf deine Daten. Du schaust die Daten in Ruhe an und entscheidest,
-                welche Daten du teilst.
-              </p>
+              <h3>{{ value.step_2_title }}</h3>
+              <p>{{ value.step_2_content }}</p>
             </div>
           </div>
         </div>
 
-        <div class="col-4">
+        <div class="col-12 col-sm-4 my-2">
           <div class="card h-100 text-bg-light step-card">
             <div class="card-body">
               <p><span class="participation-step-indicator">3</span></p>
-              <h3>Einige Fragen beantworten</h3>
-              <p>
-                Zum Schluss beantwortest du einige Fragen und erhältst dann einen personalisierten Report zu
-                deiner TikTok-Nutzung.
-              </p>
+              <h3>{{ value.step_3_title }}</h3>
+              <p>{{ value.step_3_content }}</p>
             </div>
           </div>
         </div>
@@ -54,9 +48,7 @@
       </div>
 
       <div>
-        <p>
-          Die Teilnahme dauert nur <b>wenige Minuten</b> und ist <b>vollkommen anonym</b>.
-        </p>
+        {{ value.content }}
       </div>
 
       <div class="d-flex flex-row">

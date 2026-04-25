@@ -1,4 +1,11 @@
-.white-fade-bg {
-  background: #fff;
-  background: linear-gradient(90deg,rgb(255, 255, 255) 50%, rgba(255, 255, 255, 0.85) 83%, rgba(255, 255, 255, 0) 100%);
+@use '../abstracts/index' as *;
+
+.hero-img {
+  max-width: 85%;
+}
+
+@media (min-width: $bp-md) {
+  .hero-img {
+    max-width: 100%;
+  }
 }

@@ -3,6 +3,9 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 from two_factor.urls import urlpatterns as tf_urls
+from wagtail import urls as wagtail_urls
+from wagtail.admin import urls as wagtailadmin_urls
+from wagtail.documents import urls as wagtaildocs_urls
 
 urlpatterns = [
     path(f"{settings.ADMIN_URL}", admin.site.urls),
@@ -13,6 +16,9 @@ urlpatterns = [
     # DDM
     path("ddm/", include("ddm.core.urls")),
     path("ckeditor5/", include("django_ckeditor_5.urls")),
+    # CMS - Wagtail
+    path("cms/", include(wagtailadmin_urls)),
+    path("documents/", include(wagtaildocs_urls)),
 ]
 
 if settings.DEBUG:
@@ -22,6 +28,7 @@ if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
+urlpatterns += [path("", include(wagtail_urls))]
 
 handler400 = "ddcs.website.views.custom_400"
 handler403 = "ddcs.website.views.custom_403"

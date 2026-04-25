@@ -12,3 +12,15 @@ body {
   flex-direction: column;
   justify-content: space-between;
 }
+
+body > section:not(#hero) {
+    border-bottom: 1px solid lightgrey;
+}
+
+body > section:last-of-type {
+    border-bottom: 0 !important;
+}
+
+.content-page h2 {
+  padding-top: 1rem;
+}

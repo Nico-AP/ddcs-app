@@ -1,0 +1,46 @@
+{% load static %}
+
+<section id="{{ value.anchor_id }}">
+  <div class="container align-items-center justify-content-center mt-5 mb-5">
+    <div class="row justify-content-center">
+      <div class="col-auto mt-2 mt-sm-5 mb-2 mb-sm-5 text-center">
+        <img class="hero-img" src="{% static 'core/img/logos/ddcs_logo.svg' %}" alt="Dein Feed, Deine Wahl." height="180px" />
+      </div>
+    </div>
+
+    <div class="row justify-content-center text-center">
+      <div class="col-12 col-md-8 col-lg-8 mb-4 text-hero-subtitle">
+        {{ value.subtitle }}
+      </div>
+    </div>
+
+    <div class="row justify-content-center text-center">
+      <div class="col-12 col-md-8 col-lg-8 text-hero-lead">
+        {{ value.intro }}
+      </div>
+    </div>
+
+    {% if value.show_cta_button %}
+      <div class="row justify-content-center text-center pt-5 pb-5">
+        <div class="col-12">
+          <div class="d-flex flex-row align-items-center justify-content-center">
+            <div class="me-3 cta-bg">
+              <a href="{{ value.cta_button_link }}" class="btn btn-dark btn-primary-dfdw cta-btn">
+                {{ value.cta_button_label }}
+              </a>
+            </div>
+
+            {% if value.show_secondary_link %}
+              <div class="me-3 ms-3">
+                <a href="{{ value.secondary_link_target }}" target="{{ value.secondary_link_target }}">
+                  {{ value.secondary_link_label }}
+                </a>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    {% endif %}
+
+  </div>
+</section>

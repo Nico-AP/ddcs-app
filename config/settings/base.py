@@ -75,6 +75,21 @@ THIRD_PARTY_APPS = [
     "django_otp.plugins.otp_email",  # <- for email capability.
     "two_factor",
     "two_factor.plugins.email",  # <- for email capability.
+    # CMS - Wagtail
+    "wagtail.contrib.forms",
+    "wagtail.contrib.redirects",
+    "wagtail.contrib.settings",
+    "wagtail.embeds",
+    "wagtail.sites",
+    "wagtail.users",
+    "wagtail.snippets",
+    "wagtail.documents",
+    "wagtail.images",
+    "wagtail.search",
+    "wagtail.admin",
+    "wagtail",
+    "modelcluster",
+    "taggit",
 ]
 
 LOCAL_APPS = [
@@ -98,6 +113,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "csp.middleware.CSPMiddleware",
     "django_structlog.middlewares.RequestMiddleware",
+    "wagtail.contrib.redirects.middleware.RedirectMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -373,3 +389,55 @@ CKEDITOR_5_UPLOAD_FILE_TYPES = ["jpeg", "pdf", "png", "mp4"]
 # ------------------------------------------------------------------------------
 ANALYTICS_SCRIPT_SRC = env.str("ANALYTICS_SCRIPT_SRC", None)
 ANALYTICS_WEBSITE_ID = env.str("ANALYTICS_WEBSITE_ID", None)
+
+# Wagtail
+# ------------------------------------------------------------------------------
+WAGTAIL_SITE_NAME = "Dein Feed, Deine Wahl."
+WAGTAILADMIN_BASE_URL = f"https://{ALLOWED_HOSTS[0]}"
+WAGTAILDOCS_EXTENSIONS = [
+    "csv",
+    "docx",
+    "key",
+    "odt",
+    "pdf",
+    "pptx",
+    "rtf",
+    "txt",
+    "xlsx",
+    "zip",
+]
+WAGTAILADMIN_RICH_TEXT_EDITORS = {
+    "default": {
+        "WIDGET": "wagtail.admin.rich_text.DraftailRichTextArea",
+        "OPTIONS": {
+            "features": [
+                # Text style
+                "bold",
+                "italic",
+                "underline",
+                "strikethrough",
+                "code",
+                "superscript",
+                "subscript",
+                # Headings
+                "h2",
+                "h3",
+                "h4",
+                "h5",
+                # Lists
+                "ol",
+                "ul",
+                # Blocks
+                "blockquote",
+                "hr",
+                # Links & embeds
+                "link",
+                "document-link",
+                "image",
+                "embed",
+                # Custom features
+                "subtle-title",
+            ]
+        },
+    }
+}

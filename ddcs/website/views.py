@@ -6,18 +6,6 @@ from django.utils.decorators import method_decorator
 from django.views.generic import TemplateView
 
 
-class LandingPageView(TemplateView):
-    template_name = "website/landing_page/base.html"
-
-
-class ImpressumView(TemplateView):
-    template_name = "website/impressum/base.html"
-
-
-class DataProtectionStatementView(TemplateView):
-    template_name = "website/dps/base.html"
-
-
 # The parts copied from the 2025 website contain a lot of inline styles and sources
 #  not worth refactoring.
 @method_decorator(

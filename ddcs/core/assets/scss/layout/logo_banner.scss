@@ -1,0 +1,11 @@
+@use '../abstracts/index' as *;
+
+.wzb-banner .border-end {
+  border: 0 !important;
+}
+
+@media (min-width: $bp-sm) {
+  .wzb-banner .border-end {
+    border-right: 1px solid var(--bs-dark-border-subtle) !important;
+  }
+}

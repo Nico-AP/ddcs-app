@@ -1,10 +1,8 @@
 {% load static %}
-
-{% url 'website:landing_page' as landing_page_url %}
-
+{# djlint:off D018 #}
 <nav class="navbar navbar-expand-lg bg-body-tertiary sticky-top">
   <div class="container">
-    <a class="navbar-brand ff-rubik" href="{{ landing_page_url }}">
+    <a class="navbar-brand ff-rubik" href="/">
       Dein <span class="fw-bold">Feed</span>, Deine <span class="fw-bold">Wahl</span>.
       <img src="{% static 'core/img/favicons/ddcs_favicon.svg' %}" alt="Dein Feed, Deine Wahl." height="25px" />
     </a>
@@ -14,9 +12,10 @@
     <div class="collapse navbar-collapse" id="navbarSupportedContent">
       <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
         <li class="nav-item px-1">
-          <a class="nav-link fw-bold" href="{% url 'website:landing_page' %}">zur Hauptseite</a>
+          <a class="nav-link fw-bold" href="/">zur Hauptseite</a>
         </li>
       </ul>
     </div>
   </div>
 </nav>
+{# djlint:on #}

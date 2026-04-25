@@ -1,0 +1,10 @@
+{% extends "website/base.html" %}
+{% load wagtailcore_tags %}
+
+{% block main %}
+  {% include "website/components/navigation.html" %}
+  {% for block in page.body %}
+    {% include_block block %}
+  {% endfor %}
+  {% include "website/components/footer.html" %}
+{% endblock main %}

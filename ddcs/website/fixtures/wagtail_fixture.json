@@ -1,0 +1,817 @@
+[
+{
+  "model": "wagtailcore.locale",
+  "pk": 1,
+  "fields": {
+    "language_code": "de"
+  }
+},
+{
+  "model": "wagtailcore.modellogentry",
+  "pk": 1,
+  "fields": {
+    "content_type": [
+      "wagtailcore",
+      "site"
+    ],
+    "label": "localhost",
+    "action": "wagtail.create",
+    "data": {},
+    "timestamp": "2026-04-24T12:22:56.784Z",
+    "uuid": "8b1c1a7c-3921-42c9-820e-ae57d98bde48",
+    "user": [
+      "admin"
+    ],
+    "revision": null,
+    "content_changed": true,
+    "deleted": false,
+    "object_id": "2"
+  }
+},
+{
+  "model": "wagtailcore.modellogentry",
+  "pk": 2,
+  "fields": {
+    "content_type": [
+      "wagtailcore",
+      "site"
+    ],
+    "label": "Dein Feed, Deine Wahl.",
+    "action": "wagtail.edit",
+    "data": {},
+    "timestamp": "2026-04-24T12:24:17.897Z",
+    "uuid": "6f74fbcd-8168-4e05-b47e-426c2dfefa5d",
+    "user": [
+      "admin"
+    ],
+    "revision": null,
+    "content_changed": true,
+    "deleted": false,
+    "object_id": "2"
+  }
+},
+{
+  "model": "wagtailcore.modellogentry",
+  "pk": 3,
+  "fields": {
+    "content_type": [
+      "wagtailcore",
+      "site"
+    ],
+    "label": "Dein Feed, Deine Wahl. [default]",
+    "action": "wagtail.edit",
+    "data": {},
+    "timestamp": "2026-04-24T12:24:25.197Z",
+    "uuid": "d37c7167-3a05-494a-a3fd-97a6f57965f5",
+    "user": [
+      "admin"
+    ],
+    "revision": null,
+    "content_changed": true,
+    "deleted": false,
+    "object_id": "2"
+  }
+},
+{
+  "model": "wagtailcore.modellogentry",
+  "pk": 4,
+  "fields": {
+    "content_type": [
+      "ddcs_website",
+      "navigationsettings"
+    ],
+    "label": "Navigation Settings for Dein Feed, Deine Wahl. [default]",
+    "action": "wagtail.edit",
+    "data": {},
+    "timestamp": "2026-04-24T13:48:42.688Z",
+    "uuid": "153e823c-490e-48e8-b0d2-518f76396280",
+    "user": [
+      "admin"
+    ],
+    "revision": null,
+    "content_changed": true,
+    "deleted": false,
+    "object_id": "1"
+  }
+},
+{
+  "model": "wagtailcore.modellogentry",
+  "pk": 5,
+  "fields": {
+    "content_type": [
+      "ddcs_website",
+      "navigationsettings"
+    ],
+    "label": "Navigation Settings for Dein Feed, Deine Wahl. [default]",
+    "action": "wagtail.edit",
+    "data": {},
+    "timestamp": "2026-04-24T13:50:04.290Z",
+    "uuid": "52d0d274-3ce9-499c-b36c-2da402ea72e7",
+    "user": [
+      "admin"
+    ],
+    "revision": null,
+    "content_changed": false,
+    "deleted": false,
+    "object_id": "1"
+  }
+},
+{
+  "model": "wagtailcore.modellogentry",
+  "pk": 6,
+  "fields": {
+    "content_type": [
+      "ddcs_website",
+      "navigationsettings"
+    ],
+    "label": "Navigation Settings for Dein Feed, Deine Wahl. [default]",
+    "action": "wagtail.edit",
+    "data": {},
+    "timestamp": "2026-04-24T13:50:44.669Z",
+    "uuid": "768fb4c4-52a6-46f3-9c2b-81e4bd629a6f",
+    "user": [
+      "admin"
+    ],
+    "revision": null,
+    "content_changed": false,
+    "deleted": false,
+    "object_id": "1"
+  }
+},
+{
+  "model": "wagtailcore.modellogentry",
+  "pk": 7,
+  "fields": {
+    "content_type": [
+      "ddcs_website",
+      "navigationsettings"
+    ],
+    "label": "Navigation Settings for Dein Feed, Deine Wahl. [default]",
+    "action": "wagtail.edit",
+    "data": {},
+    "timestamp": "2026-04-24T15:01:59.776Z",
+    "uuid": "7cbc0d28-8cb2-4499-9591-b03dfb756282",
+    "user": [
+      "admin"
+    ],
+    "revision": null,
+    "content_changed": true,
+    "deleted": false,
+    "object_id": "1"
+  }
+},
+{
+  "model": "wagtailcore.collection",
+  "fields": {
+    "path": "0001",
+    "depth": 1,
+    "numchild": 0,
+    "name": "Root"
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Editors"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "add_document",
+      "wagtaildocs",
+      "document"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "add_document",
+      "wagtaildocs",
+      "document"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Editors"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "change_document",
+      "wagtaildocs",
+      "document"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "change_document",
+      "wagtaildocs",
+      "document"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Editors"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "choose_document",
+      "wagtaildocs",
+      "document"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "choose_document",
+      "wagtaildocs",
+      "document"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Editors"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "add_image",
+      "wagtailimages",
+      "image"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "add_image",
+      "wagtailimages",
+      "image"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Editors"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "change_image",
+      "wagtailimages",
+      "image"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "change_image",
+      "wagtailimages",
+      "image"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Editors"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "choose_image",
+      "wagtailimages",
+      "image"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.groupcollectionpermission",
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "collection": [
+      "Root"
+    ],
+    "permission": [
+      "choose_image",
+      "wagtailimages",
+      "image"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.task",
+  "pk": 1,
+  "fields": {
+    "name": "Moderators approval",
+    "content_type": [
+      "wagtailcore",
+      "groupapprovaltask"
+    ],
+    "active": true
+  }
+},
+{
+  "model": "wagtailcore.groupapprovaltask",
+  "pk": 1,
+  "fields": {
+    "task_ptr": 1,
+    "groups": [
+      [
+        "Moderators"
+      ]
+    ]
+  }
+},
+{
+  "model": "wagtailcore.page",
+  "fields": {
+    "path": "0001",
+    "depth": 1,
+    "numchild": 1,
+    "translation_key": "a34524a4-17f1-417f-a7ac-652f310f1122",
+    "locale": 1,
+    "latest_revision": null,
+    "live": true,
+    "has_unpublished_changes": false,
+    "first_published_at": null,
+    "last_published_at": null,
+    "live_revision": null,
+    "go_live_at": null,
+    "expire_at": null,
+    "expired": false,
+    "locked": false,
+    "locked_at": null,
+    "locked_by": null,
+    "title": "Root",
+    "draft_title": "Root",
+    "slug": "root",
+    "content_type": [
+      "wagtailcore",
+      "page"
+    ],
+    "url_path": "/",
+    "owner": null,
+    "seo_title": "",
+    "show_in_menus": false,
+    "search_description": "",
+    "latest_revision_created_at": null,
+    "alias_of": null
+  }
+},
+{
+  "model": "wagtailcore.page",
+  "fields": {
+    "path": "00010001",
+    "depth": 2,
+    "numchild": 2,
+    "translation_key": "acd77e83-5759-4af9-8bce-545ece051f3e",
+    "locale": 1,
+    "latest_revision": null,
+    "live": true,
+    "has_unpublished_changes": false,
+    "first_published_at": "2026-04-24T12:21:04.439Z",
+    "last_published_at": "2026-04-24T13:13:23.671Z",
+    "live_revision": null,
+    "go_live_at": null,
+    "expire_at": null,
+    "expired": false,
+    "locked": false,
+    "locked_at": null,
+    "locked_by": null,
+    "title": "Dein Feed, Deine Wahl.",
+    "draft_title": "Dein Feed, Deine Wahl.",
+    "slug": "dein-feed-deine-wahl",
+    "content_type": [
+      "ddcs_website",
+      "sitepage"
+    ],
+    "url_path": "/dein-feed-deine-wahl/",
+    "owner": [
+      "admin"
+    ],
+    "seo_title": "",
+    "show_in_menus": false,
+    "search_description": "",
+    "latest_revision_created_at": "2026-04-24T13:13:23.120Z",
+    "alias_of": null
+  }
+},
+{
+  "model": "wagtailcore.page",
+  "fields": {
+    "path": "000100010001",
+    "depth": 3,
+    "numchild": 0,
+    "translation_key": "f8246789-c966-47df-841a-5953b5f3de30",
+    "locale": 1,
+    "latest_revision": null,
+    "live": true,
+    "has_unpublished_changes": false,
+    "first_published_at": "2026-04-24T15:01:48.805Z",
+    "last_published_at": "2026-04-24T15:01:48.805Z",
+    "live_revision": null,
+    "go_live_at": null,
+    "expire_at": null,
+    "expired": false,
+    "locked": false,
+    "locked_at": null,
+    "locked_by": null,
+    "title": "Datenschutzerkl�rung",
+    "draft_title": "Datenschutzerkl�rung",
+    "slug": "datenschutzerkl�rung",
+    "content_type": [
+      "ddcs_website",
+      "sitepage"
+    ],
+    "url_path": "/dein-feed-deine-wahl/datenschutzerkl�rung/",
+    "owner": [
+      "admin"
+    ],
+    "seo_title": "",
+    "show_in_menus": false,
+    "search_description": "",
+    "latest_revision_created_at": "2026-04-24T15:01:48.762Z",
+    "alias_of": null
+  }
+},
+{
+  "model": "wagtailcore.page",
+  "fields": {
+    "path": "000100010002",
+    "depth": 3,
+    "numchild": 0,
+    "translation_key": "b184e4ea-85b1-4a0d-8677-58281d1f4c34",
+    "locale": 1,
+    "latest_revision": null,
+    "live": true,
+    "has_unpublished_changes": false,
+    "first_published_at": "2026-04-24T13:29:26.925Z",
+    "last_published_at": "2026-04-24T14:58:41.882Z",
+    "live_revision": null,
+    "go_live_at": null,
+    "expire_at": null,
+    "expired": false,
+    "locked": false,
+    "locked_at": null,
+    "locked_by": null,
+    "title": "Impressum",
+    "draft_title": "Impressum",
+    "slug": "impressum",
+    "content_type": [
+      "ddcs_website",
+      "sitepage"
+    ],
+    "url_path": "/dein-feed-deine-wahl/impressum/",
+    "owner": [
+      "admin"
+    ],
+    "seo_title": "",
+    "show_in_menus": false,
+    "search_description": "",
+    "latest_revision_created_at": "2026-04-24T14:58:41.823Z",
+    "alias_of": null
+  }
+},
+{
+  "model": "wagtailcore.grouppagepermission",
+  "pk": 1,
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "page": [
+      "/"
+    ],
+    "permission": [
+      "add_page",
+      "wagtailcore",
+      "page"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.grouppagepermission",
+  "pk": 2,
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "page": [
+      "/"
+    ],
+    "permission": [
+      "change_page",
+      "wagtailcore",
+      "page"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.grouppagepermission",
+  "pk": 3,
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "page": [
+      "/"
+    ],
+    "permission": [
+      "publish_page",
+      "wagtailcore",
+      "page"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.grouppagepermission",
+  "pk": 4,
+  "fields": {
+    "group": [
+      "Editors"
+    ],
+    "page": [
+      "/"
+    ],
+    "permission": [
+      "add_page",
+      "wagtailcore",
+      "page"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.grouppagepermission",
+  "pk": 5,
+  "fields": {
+    "group": [
+      "Editors"
+    ],
+    "page": [
+      "/"
+    ],
+    "permission": [
+      "change_page",
+      "wagtailcore",
+      "page"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.grouppagepermission",
+  "pk": 6,
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "page": [
+      "/"
+    ],
+    "permission": [
+      "lock_page",
+      "wagtailcore",
+      "page"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.grouppagepermission",
+  "pk": 7,
+  "fields": {
+    "group": [
+      "Moderators"
+    ],
+    "page": [
+      "/"
+    ],
+    "permission": [
+      "unlock_page",
+      "wagtailcore",
+      "page"
+    ]
+  }
+},
+{
+  "model": "wagtailcore.pagesubscription",
+  "pk": 1,
+  "fields": {
+    "user": [
+      "admin"
+    ],
+    "page": [
+      "/dein-feed-deine-wahl/"
+    ],
+    "comment_notifications": true
+  }
+},
+{
+  "model": "wagtailcore.pagesubscription",
+  "pk": 2,
+  "fields": {
+    "user": [
+      "admin"
+    ],
+    "page": [
+      "/dein-feed-deine-wahl/datenschutzerkl�rung/"
+    ],
+    "comment_notifications": true
+  }
+},
+{
+  "model": "wagtailcore.pagesubscription",
+  "pk": 3,
+  "fields": {
+    "user": [
+      "admin"
+    ],
+    "page": [
+      "/dein-feed-deine-wahl/impressum/"
+    ],
+    "comment_notifications": true
+  }
+},
+{
+  "model": "ddcs_website.sitepage",
+  "fields": {
+    "page_ptr": [
+      "/dein-feed-deine-wahl/"
+    ],
+    "body": "[{\"type\": \"hero\", \"value\": {\"anchor_id\": \"hero\", \"subtitle\": \"Ein Citizen Science Projekt zu den Landtagswahlen 2026\", \"intro\": \"<p data-block-key=\\\"8e4t1\\\">Im Vorfeld der Wahlen posten die Parteien t\\u00e4glich auf TikTok. Wir m\\u00f6chten herausfinden, welche politischen Inhalte die W\\u00e4hler:innen tats\\u00e4chlich sehen.<br/><b>Hilf uns dabei, indem du uns zeigst, was du auf TikTok siehst!</b></p>\", \"show_cta_button\": true, \"cta_button_label\": \"Jetzt mitmachen\", \"cta_button_link\": \"https://stage.dein-feed-deine-wahl.de/connect/tiktok/\", \"show_secondary_link\": true, \"secondary_link_label\": \"mehr erfahren\", \"secondary_link\": \"https://stage.dein-feed-deine-wahl.de/#participation\", \"secondary_link_target\": \"_self\"}, \"id\": \"475bad4b-43fc-4693-b019-a41f69d9f0e3\"}, {\"type\": \"logo_banner\", \"value\": {}, \"id\": \"b7315788-1c3e-4534-8b40-6f4015685a09\"}, {\"type\": \"participation_section\", \"value\": {\"anchor_id\": \"participation\", \"pre_title\": \"So funktioniert die Teilnahme\", \"title\": \"Drei einfache Schritte\", \"content\": \"<p data-block-key=\\\"pa5a8\\\">Die Teilnahme dauert nur <b>wenige Minuten</b> und ist <b>vollkommen anonym</b>.</p>\", \"step_1_title\": \"TikTok-Daten anfordern\", \"step_1_content\": \"<p data-block-key=\\\"sz6bk\\\">Du loggst dich bei TikTok ein und forderst deine Daten an.</p>\", \"step_2_title\": \"Daten pr\\u00fcfen und \\u00fcbermitteln\", \"step_2_content\": \"<p data-block-key=\\\"0ldfe\\\">TikTok gibt dir Zugriff auf deine Daten. Du schaust die Daten in Ruhe an und entscheidest, welche Daten du teilst.</p>\", \"step_3_title\": \"Einige Fragen beantworten\", \"step_3_content\": \"<p data-block-key=\\\"t1bq9\\\">Zum Schluss beantwortest du einige Fragen und erh\\u00e4ltst dann einen personalisierten Report zu deiner TikTok-Nutzung.</p>\"}, \"id\": \"cc88d22f-5189-4251-a99c-f653fd130f6d\"}, {\"type\": \"section\", \"value\": {\"anchor_id\": \"relevance\", \"pre_title\": \"Weshalb deine Teilnahme wichtig ist\", \"title\": \"Deine Daten machen den Unterschied\", \"content\": \"<p data-block-key=\\\"qdcc7\\\">Hast du dich auch schon gefragt, welche Rolle TikTok im Wahlkampf eigentlich wirklich spielt? Dann hilf uns dabei, genau diese Frage zu beantworten.</p><p data-block-key=\\\"eibjb\\\">Das Projekt \\\"Dein Feed, Deine Wahl.\\\" kombiniert TikTok-Nutzungsdaten und Selbstausk\\u00fcnfte und erlaubt somit R\\u00fcckschl\\u00fcsse darauf, welche Personengruppen welche politischen Inhalte auf TikTok zu sehen bekommen und wie dies mit ihrer Wahlentscheidung zusammenh\\u00e4ngt.</p>\"}, \"id\": \"138becb2-ee9b-4e00-b132-6ba4f0827a3a\"}, {\"type\": \"card_section\", \"value\": {\"anchor_id\": \"media\", \"pre_title\": \"Medienspiegel\", \"title\": \"Medienberichte zum Projekt\", \"cards\": [{\"type\": \"item\", \"value\": {\"title\": \"Sammlung aller Artikel der Stuttgarter Zeitung zum Projekt \\\"Dein Feed, Deine Wahl\\\" 2025\", \"source_name\": \"Stuttgarter Zeitung\", \"url\": \"https://www.stuttgarter-zeitung.de/dein-feed-deine-wahl\", \"include_image\": true, \"image_url\": \"https://www.stuttgarter-zeitung.de/www/stuttgarter_zeitung/images/logo_social.jpg\"}, \"id\": \"00f15ea2-50d2-4b15-a6ae-8fce027ab085\"}, {\"type\": \"item\", \"value\": {\"title\": \"Mitmachprojekt: Wie beeinflusst TikTok die Wahlentscheidung?\", \"source_name\": \"BR\", \"url\": \"https://www.br.de/nachrichten/netzwelt/mitmachprojekt-wie-beeinflusst-tiktok-die-wahlentscheidung\", \"include_image\": true, \"image_url\": \"https://img.br.de/c757b445-bc39-4306-95b8-c96212d82d86.jpeg?q=80&rect=783%2C1042%2C2901%2C1633&w=1600&h=900\"}, \"id\": \"0c378cd6-5c11-4299-b1e2-5d21b38a0281\"}, {\"type\": \"item\", \"value\": {\"title\": \"Wahlkampf im Netz: Wie Forscher mehr Transparenz schaffen wollen\", \"source_name\": \"BR\", \"url\": \"https://www.br.de/nachrichten/netzwelt/wahlkampf-im-netz-wie-forscher-mehr-transparenz-schaffen-wollen\", \"include_image\": true, \"image_url\": \"https://img.br.de/3f8d8a40-0ae2-4f5b-8482-68c7aec6429c.jpeg?q=80&rect=77%2C339%2C5394%2C3033&w=1600&h=900\"}, \"id\": \"3ab6078c-1a8b-4476-8226-48bdb9bda77a\"}, {\"type\": \"item\", \"value\": {\"title\": \"TikTok-Wahlkampf: Die politischen R\\u00e4nder gewinnen die Jugend\", \"source_name\": \"BR\", \"url\": \"https://www.br.de/nachrichten/netzwelt/tiktok-wahlkampf-zur-bundestagswahl-linke-und-afd-punkten-politische-raender-gewinnen-die-jugend\", \"include_image\": true, \"image_url\": \"https://img.br.de/5bb1c3b3-cd41-4f38-81ae-75f39e50c333.jpeg?q=80&rect=682%2C434%2C4653%2C2616&w=1600&h=900\"}, \"id\": \"354c2ac9-651c-4251-bf61-c9b9b17e9aa5\"}, {\"type\": \"item\", \"value\": {\"title\": \"Wird TikTok k\\u00fcnftig Wahlen beeinflussen?\", \"source_name\": \"campus.leben\", \"url\": \"https://www.fu-berlin.de/campusleben/forschen/2026/260409-was-sagt-die-wissenschaft-tiktok-wahlen/index.html\", \"include_image\": false, \"image_url\": \"\"}, \"id\": \"41536411-4510-4a8d-bfc7-f4bc45f414db\"}]}, \"id\": \"edd0535c-82a9-466b-9784-4878123423f4\"}, {\"type\": \"section\", \"value\": {\"anchor_id\": \"about\", \"pre_title\": \"Hintergrund\", \"title\": \"Forschungsteam & Institutionen\", \"content\": \"<p data-block-key=\\\"wqdto\\\">\\\"Dein Feed, Deine Wahl\\\" ist ein Projekt des Weizenbaum Instituts Berlin.</p><p data-block-key=\\\"34n9i\\\">Erstmals wurde das Projekt 2025 im Rahmen der Deutschen Bundestagswahlen in Kollaboration mit der Universit\\u00e4t Z\\u00fcrich, dem Bayrischen Rundfunk und der Stuttgarter Zeitung/Nachrichten durchgef\\u00fchrt.</p>\"}, \"id\": \"f345fc7b-ccee-441f-8d5a-9c7ca677b08c\"}]",
+    "nav_links": "[{\"type\": \"link\", \"value\": {\"label\": \"Dein Feed, Deine Wahl 2025\", \"page\": null, \"url\": \"http://127.0.0.1:8000/2025/\", \"anchor_id\": \"\"}, \"id\": \"6f2b0175-82e6-40ab-b1cc-2f51e982ceb9\"}]",
+    "nav_anchors": "[{\"type\": \"anchor\", \"value\": {\"anchor_id\": \"participation\", \"label\": \"So funktioniert's\"}, \"id\": \"5e15db42-a03b-468e-ac0e-df37bfb74a0f\"}]"
+  }
+},
+{
+  "model": "ddcs_website.sitepage",
+  "fields": {
+    "page_ptr": [
+      "/dein-feed-deine-wahl/datenschutzerkl�rung/"
+    ],
+    "body": "[{\"type\": \"regular_page\", \"value\": {\"pre_title\": \"Rechtliches\", \"title\": \"Datenschutzerkl\\u00e4rung\", \"content\": \"<p data-block-key=\\\"9xbp4\\\">Stand 19.04.2026</p><h2 data-block-key=\\\"82lu1\\\">1. Welche Daten wir erheben</h2><p data-block-key=\\\"12ht7\\\">Diese Website verwendet keine Tracking-Cookies und keine Analyse-Tools von Drittanbietern.</p><p data-block-key=\\\"1evb5\\\">Beim Besuch dieser Website werden automatisch durch den Webserver technische Zugriffsdaten (sog. Server-Logfiles) erfasst. Dazu geh\\u00f6ren:</p><p data-block-key=\\\"2b1ff\\\">&lt; zu erg\\u00e4nzen &gt;</p><p data-block-key=\\\"3tqsr\\\">Eine Zusammenf\\u00fchrung dieser Daten mit anderen Datenquellen findet nicht statt. Die IP-Adresse wird unmittelbar nach der Erfassung anonymisiert.</p><h2 data-block-key=\\\"fg3fh\\\">2. Zweck der Verarbeitung</h2><p data-block-key=\\\"888c8\\\">Die Verarbeitung der Server-Logfiles dient ausschlie\\u00dflich dem technischen Betrieb und der Sicherheit der Webseite. Eine dar\\u00fcber hinausgehende Nutzung oder Weitergabe an Dritte findet nicht statt.</p><h2 data-block-key=\\\"drvkg\\\">3. Speicherung der Daten</h2><p data-block-key=\\\"a4j37\\\">Unsere Daten werden auf Servern gespeichert, die von der netcup GmbH betrieben werden. Die Server befinden sich in Deutschland und sind DSGVO-konform.           </p><h2 data-block-key=\\\"25fkq\\\">4. Ihre Datenschutzrechte</h2><p data-block-key=\\\"72a4v\\\">Gem\\u00e4\\u00df DSGVO hat jede betroffene Person das Recht auf:           </p><ul><li data-block-key=\\\"9go5j\\\">Auskunft (nach Art. 15 DSGVO)</li><li data-block-key=\\\"egv8m\\\">Berichtigung (nach Art. 16 DSGVO)</li><li data-block-key=\\\"ahpsg\\\">L\\u00f6schung (nach Art. 17 DSGVO)</li><li data-block-key=\\\"lg67\\\">Einschr\\u00e4nkung der Verarbeitung (nach Art. 18 DSGVO)</li><li data-block-key=\\\"20pb0\\\">Daten\\u00fcbertragbarkeit (nach Art. 20 DSGVO)</li><li data-block-key=\\\"8f07p\\\">Recht auf Widerspruch (nach Art. 21 DSGVO)</li></ul><p data-block-key=\\\"34b4r\\\">Beim Auskunftsrecht und beim L\\u00f6schungsrecht gelten die Einschr\\u00e4nkungen nach \\u00a7\\u00a7 34 und 35 BDSG.           </p><p data-block-key=\\\"dsoj2\\\">Dar\\u00fcber hinaus besteht ein Beschwerderecht bei einer Datenschutzaufsichtsbeh\\u00f6rde (Art.13 Abs. 2 lit. d i.V.m. Art. 14 Abs. 2  lit. D DSGVO, Art. 77 DSGVO i.V.m. \\u00a7 19 BDSG).           </p><p data-block-key=\\\"2b2p4\\\">Der Text der DSGVO findet sich im Internet unter www.dsgvo-gesetz.de sowie der Text des BDSG unter <a href=\\\"https://www.gesetze-im-internet.de/bdsg_2018/\\\">www.gesetze-im-internet.de/bdsg_2018/</a> </p><p data-block-key=\\\"1fdkj\\\">Automatisierte Entscheidungsfindung im Sinne des Art. 22 DSGVO wird nicht verwendet.           </p><h2 data-block-key=\\\"8bo6o\\\">5. Einsatz von Cookies</h2><p data-block-key=\\\"54vr0\\\">Cookies sind Textdateien, die auf Ihrem Computer gespeichert  werden, um standardm\\u00e4\\u00dfige Informationen und Daten zum Besucherverhalten zu erfassen.             Diese Webseite verwendet ausschlie\\u00dflich technisch notwendige  Cookies f\\u00fcr grundlegende Funktionen wie Sitzungsverwaltung und  Sicherheit. Wir setzen keine Cookies f\\u00fcr Analyse, Werbung oder Tracking  ein.  <a href=\\\"https://stage.dein-feed-deine-wahl.de/datenschutz/#\\\">Hier finden Sie eine Liste der Cookie-Informationen</a>, die wir f\\u00fcr den reibungslosen Betrieb der Webseite speichern.           </p><p data-block-key=\\\"bdm0b\\\"> </p><h2 data-block-key=\\\"7danq\\\">6. Datenschutzerkl\\u00e4rungen anderer Webseiten</h2><p data-block-key=\\\"4r5ra\\\">Diese Webseite enth\\u00e4lt Links zu anderen Webseiten. Unsere Datenschutzerkl\\u00e4rung gilt nur f\\u00fcr unsere Webseite. Wenn Sie auf einen Link zu einer anderen Website klicken, gilt unsere Datenschutzerkl\\u00e4rung nicht l\\u00e4nger.</p><h2 data-block-key=\\\"cqfb9\\\">7. \\u00c4nderungen an unserer Datenschutzerkl\\u00e4rung</h2><p data-block-key=\\\"fuqr1\\\">Wir \\u00fcberpr\\u00fcfen unsere Datenschutzerkl\\u00e4rung regelm\\u00e4\\u00dfig und  ver\\u00f6ffentlicht etwaige Aktualisierungen auf dieser Webseite. Diese Datenschutzerkl\\u00e4rung wurde zuletzt am 19. April 2026  aktualisiert.</p><h2 data-block-key=\\\"b8t67\\\">8. Kontakt</h2><p data-block-key=\\\"ea9d4\\\">Bei Fragen zur Webseite oder unserer Studie wenden Sie sich bitte an den verantwortlichen Forscher: Dr. Jakob Ohme (<a href=\\\"mailto:jakob.ohme@weizenbaum-institut.de?subject=Anfrage%20bzgl.%20Dein%20Feed%2C%20Deine%20Wahl.\\\">jakob.ohme@weizenbaum-institut.de</a>).           </p><h2 data-block-key=\\\"gd35\\\">9. So wenden Sie sich an die zust\\u00e4ndige Beh\\u00f6rde</h2><p data-block-key=\\\"dk6se\\\">F\\u00fcr Beschwerden \\u00fcber die Studie oder die Forschung k\\u00f6nnen Sie sich an den benannten Datenschutzbeauftragten  des Weizenbaum-Instituts e.V. wenden (<a href=\\\"mailto:datenschutz@weizenbaum-institut.de?subject=Datenschutzanfrage%20bzgl.%20Dein%20Feed%2C%20Deine%20Wahl.\\\">datenschutz@weizenbaum-institut.de</a>). Alle Beschwerden und Anmerkungen werden vertraulich behandelt.           </p>\"}, \"id\": \"3deb20b7-72cd-4440-b277-45187a6584be\"}]",
+    "nav_links": "[]",
+    "nav_anchors": "[]"
+  }
+},
+{
+  "model": "ddcs_website.sitepage",
+  "fields": {
+    "page_ptr": [
+      "/dein-feed-deine-wahl/impressum/"
+    ],
+    "body": "[{\"type\": \"regular_page\", \"value\": {\"pre_title\": \"Rechtliches\", \"title\": \"Impressum\", \"content\": \"<p data-block-key=\\\"w5397\\\">Stand: 19.04.2026</p><h2 data-block-key=\\\"kq77\\\">Verantwortliche Institution</h2><p data-block-key=\\\"knan\\\">Weizenbaum-Institut e. V. Hardenbergstra\\u00dfe 32, 10623 Berlin, Deutschland</p><h2 data-block-key=\\\"2krn6\\\">Projektverantwortlichkeit</h2><p data-block-key=\\\"9keao\\\"><span class=\\\"subtle-title\\\">Forschungsgruppe</span class=\\\"subtle-title\\\"></p><p data-block-key=\\\"9l2c6\\\">Dynamiken der digitalen Nachrichtenvermittlung</p><p data-block-key=\\\"f2a8e\\\"><span class=\\\"subtle-title\\\">Verantwortliche Person</span class=\\\"subtle-title\\\"></p><p data-block-key=\\\"5ujc\\\">Dr. Jakob Ohme</p><p data-block-key=\\\"14qt0\\\"><span class=\\\"subtle-title\\\">E-Mail</span class=\\\"subtle-title\\\"></p><p data-block-key=\\\"d7qud\\\"><a href=\\\"mailto:jakob.ohme@weizenbaum-institut.de\\\">jakob.ohme@weizenbaum-institut.de</a></p><h2 data-block-key=\\\"cnak3\\\">F\\u00f6rderung &amp; Finanzierung</h2><p data-block-key=\\\"4bqp9\\\">Dieses Projekt ist gef\\u00f6rdert durch das <a href=\\\"https://www.bmftr.bund.de/\\\">Bundesministerium f\\u00fcr Forschung, Technologie und Raumfahrt</a>.</p><p data-block-key=\\\"e9ov6\\\">Die inhaltliche Verantwortung f\\u00fcr dieses Projekt liegt ausschlie\\u00dflich bei den Projektverantwortlichen. Die F\\u00f6rderinstitution nimmt keinen Einfluss auf Inhalte oder Ergebnisse.</p><h2 data-block-key=\\\"8jl70\\\">Haftungshinweis</h2><p data-block-key=\\\"2d61g\\\">Trotz sorgf\\u00e4ltiger inhaltlicher Kontrolle \\u00fcbernehmen wir keine Haftung f\\u00fcr die Inhalte externer Links. F\\u00fcr den Inhalt der verlinkten Seiten sind ausschlie\\u00dflich deren Betreiber verantwortlich.</p><p data-block-key=\\\"78ait\\\">Die auf dieser Website bereitgestellten Inhalte dienen ausschlie\\u00dflich zu Informationszwecken im Rahmen des Forschungsprojekts. Eine Gew\\u00e4hr f\\u00fcr Aktualit\\u00e4t, Vollst\\u00e4ndigkeit oder Richtigkeit kann nicht \\u00fcbernommen werden.</p><h2 data-block-key=\\\"a319t\\\">Urheberrecht</h2><p data-block-key=\\\"bt0jp\\\">Die im Rahmen dieses Projekts erstellten Inhalte und Werke auf dieser Webseite unterliegen dem deutschen Urheberrecht. Vervielf\\u00e4ltigung, Bearbeitung, Verbreitung und jede Art der Verwertung au\\u00dferhalb der Grenzen des Urheberrechtes bed\\u00fcrfen der schriftlichen Zustimmung.</p>\"}, \"id\": \"f70ab49a-0b3a-47db-b882-02a26c1f37a3\"}]",
+    "nav_links": "[]",
+    "nav_anchors": "[]"
+  }
+},
+{
+  "model": "wagtailcore.site",
+  "fields": {
+    "hostname": "localhost",
+    "port": 80,
+    "site_name": "Dein Feed, Deine Wahl.",
+    "root_page": [
+      "/dein-feed-deine-wahl/"
+    ],
+    "is_default_site": true
+  }
+},
+{
+  "model": "wagtailredirects.redirect",
+  "pk": 1,
+  "fields": {
+    "old_path": "/impressum",
+    "site": [
+      "localhost",
+      80
+    ],
+    "is_permanent": true,
+    "redirect_page": [
+      "/dein-feed-deine-wahl/impressum/"
+    ],
+    "redirect_page_route_path": "",
+    "redirect_link": "",
+    "automatically_created": true,
+    "created_at": "2026-04-24T13:29:28.687Z"
+  }
+},
+{
+  "model": "wagtailredirects.redirect",
+  "pk": 2,
+  "fields": {
+    "old_path": "/impressum-2",
+    "site": [
+      "localhost",
+      80
+    ],
+    "is_permanent": true,
+    "redirect_page": [
+      "/dein-feed-deine-wahl/impressum/"
+    ],
+    "redirect_page_route_path": "",
+    "redirect_link": "",
+    "automatically_created": true,
+    "created_at": "2026-04-24T14:58:42.074Z"
+  }
+},
+{
+  "model": "wagtailredirects.redirect",
+  "pk": 3,
+  "fields": {
+    "old_path": "/test",
+    "site": [
+      "localhost",
+      80
+    ],
+    "is_permanent": true,
+    "redirect_page": [
+      "/dein-feed-deine-wahl/datenschutzerkl�rung/"
+    ],
+    "redirect_page_route_path": "",
+    "redirect_link": "",
+    "automatically_created": true,
+    "created_at": "2026-04-24T14:58:54.424Z"
+  }
+},
+{
+  "model": "ddcs_website.navigationsettings",
+  "pk": 1,
+  "fields": {
+    "site": [
+      "localhost",
+      80
+    ],
+    "nav_links": "[]",
+    "footer_pages": [
+      [
+        "/dein-feed-deine-wahl/datenschutzerkl�rung/"
+      ],
+      [
+        "/dein-feed-deine-wahl/impressum/"
+      ]
+    ]
+  }
+}
+]
