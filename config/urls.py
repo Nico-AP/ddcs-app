@@ -2,17 +2,21 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
-from two_factor.urls import urlpatterns as tf_urls
 from wagtail import urls as wagtail_urls
 from wagtail.admin import urls as wagtailadmin_urls
 from wagtail.documents import urls as wagtaildocs_urls
 
+from ddcs.auth.views import Admin2FALoginView, CMS2FALoginView
+
 urlpatterns = [
-    path(f"{settings.ADMIN_URL}", admin.site.urls),
+    # Auth (overrides base admin and CMS login views).
+    path(f"{settings.ADMIN_URL}/login", Admin2FALoginView.as_view(), name="login"),
+    path("cms/login/", CMS2FALoginView.as_view(), name="wagtailadmin_login"),
+    # Admin
+    path(f"{settings.ADMIN_URL}/", admin.site.urls),
+    # DDCS
     path("", include("ddcs.website.urls", namespace="website")),
     path("", include("ddcs.datadonation.urls", namespace="datadonation")),
-    # 2FA
-    path("", include(tf_urls)),
     # DDM
     path("ddm/", include("ddm.core.urls")),
     path("ckeditor5/", include("django_ckeditor_5.urls")),

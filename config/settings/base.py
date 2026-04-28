@@ -236,8 +236,7 @@ AUTHENTICATION_BACKENDS = [
 ]
 AUTH_USER_MODEL = "ddcs_core.User"
 
-# 2FA
-LOGIN_URL = "two_factor:login"
+LOGIN_URL = "login"
 
 # Fixtures
 # ------------------------------------------------------------------------------
