@@ -1,11 +1,56 @@
 @use '../abstracts/index' as *;
 
-.wzb-banner .border-end {
+.logo-banner {
+  background: #e5e9ec;
+  color: #63686c;
+}
+
+.logo-banner .border-end {
   border: 0 !important;
 }
 
 @media (min-width: $bp-sm) {
-  .wzb-banner .border-end {
+  .logo-banner .border-end {
     border-right: 1px solid var(--bs-dark-border-subtle) !important;
+  }
+}
+
+.wzb-logo {
+  height: 40px;
+}
+
+.bftr-logo {
+  height: 88px;
+}
+
+.htad-logo {
+  height: 88px;
+}
+
+@media (min-width: $bp-sm) {
+  .wzb-logo {
+    height: 37px;
+  }
+
+  .bftr-logo {
+    height: 82px;
+  }
+
+  .htad-logo {
+    height: 82px;
+  }
+}
+
+@media (min-width: $bp-md) {
+  .wzb-logo {
+    height: 50px;
+  }
+
+  .bftr-logo {
+    height: 110px;
+  }
+
+  .htad-logo {
+    height: 110px;
   }
 }

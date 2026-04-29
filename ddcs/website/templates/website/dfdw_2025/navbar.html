@@ -4,8 +4,10 @@
   <div class="container">
     {# djlint:off D018 #}
     <a class="navbar-brand ff-rubik" href="/">
-      Dein <span class="fw-bold">Feed</span>, Deine <span class="fw-bold">Wahl</span>.
-      <img src="{% static 'core/img/favicons/ddcs_favicon.svg' %}" alt="Dein Feed, Deine Wahl." height="25px" />
+      <div class="d-flex align-items-center">
+        <div class="pe-2"><img class="navbar-icon" src="{% static 'core/img/favicons/ddcs_favicon.svg' %}" alt="Dein Feed, Deine Wahl." height="20px" /></div>
+        <div class="user-select-none">Dein <span class="fw-bold">Feed</span>, Deine <span class="fw-bold">Wahl</span>.</div>
+      </div>
     </a>
     {# djlint:on #}
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
@@ -14,7 +16,12 @@
     <div class="collapse navbar-collapse" id="navbarSupportedContent">
       <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
         <li class="nav-item px-1">
-          <a class="nav-link fw-bold" href="{% url 'website:dfdw_2025' %}">Dein Feed, Deine Wahl 2025</a>
+          {# djlint:off D018 #}
+          <a class="nav-link" href="/">Hauptseite</a>
+          {# djlint:on #}
+        </li>
+        <li class="nav-item px-1">
+          <span class="nav-link nav-link-disabled fw-bold user-select-none">Dein Feed, Deine Wahl 2025</span>
         </li>
       </ul>
     </div>

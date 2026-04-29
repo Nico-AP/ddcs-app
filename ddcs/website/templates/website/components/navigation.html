@@ -6,14 +6,16 @@
   <div class="container">
     {# djlint:off D018 #}
     <a class="navbar-brand ff-rubik" href="/">{# djlint:on #}
-      Dein <span class="fw-bold">Feed</span>, Deine <span class="fw-bold">Wahl</span>.
-      <img src="{% static 'core/img/favicons/ddcs_favicon.svg' %}" alt="Dein Feed, Deine Wahl." height="25px" />
+      <div class="d-flex align-items-center">
+        <div class="pe-2"><img class="navbar-icon" src="{% static 'core/img/favicons/ddcs_favicon.svg' %}" alt="Dein Feed, Deine Wahl." height="20px" /></div>
+        <div class="user-select-none">Dein <span class="fw-bold">Feed</span>, Deine <span class="fw-bold">Wahl</span>.</div>
+      </div>
     </a>
     {% if navigation.nav_anchors or navigation.nav_links %}
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-  {% endif %}
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+    {% endif %}
     <nav class="collapse navbar-collapse" id="navbarSupportedContent">
       <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
         {% for link in navigation.nav_anchors %}

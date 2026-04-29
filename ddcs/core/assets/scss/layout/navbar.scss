@@ -1,7 +1,15 @@
+.navbar-icon {
+  margin-top: -3px;
+}
+
 .navbar-brand {
   color: var(--text-primary);
 }
 
 .navbar-toggler {
   border: none;
+}
+
+.nav-link-disabled:hover {
+  color: var(--bs-nav-link-color);
 }
