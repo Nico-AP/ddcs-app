@@ -319,26 +319,35 @@ LOGGING = {
         },
         "general": {
             "level": "INFO",
-            "class": "logging.handlers.RotatingFileHandler",
+            "()": "config.logging_utils.SizedTimedRotatingFileHandler",
             "filename": LOG_DIR / "general.log",
-            "maxBytes": 1024 * 1024 * 15,
-            "backupCount": 5,
+            "when": "midnight",
+            "interval": 1,
+            "backupCount": 30,  # 30 days
+            "maxBytes": 1024 * 1024 * 25,  # max. 25 MB per day
+            "encoding": "utf-8",
             "formatter": "json",
         },
         "error_file": {
             "level": "ERROR",
-            "class": "logging.handlers.RotatingFileHandler",
+            "()": "config.logging_utils.SizedTimedRotatingFileHandler",
             "filename": LOG_DIR / "errors.log",
-            "maxBytes": 1024 * 1024 * 15,
-            "backupCount": 5,
+            "when": "midnight",
+            "interval": 1,
+            "backupCount": 90,  # 90 days
+            "maxBytes": 1024 * 1024 * 25,  # max. 25 MB per day
+            "encoding": "utf-8",
             "formatter": "json",
         },
         "security_file": {
             "level": "WARNING",
-            "class": "logging.handlers.RotatingFileHandler",
+            "()": "config.logging_utils.SizedTimedRotatingFileHandler",
             "filename": LOG_DIR / "security.log",
-            "maxBytes": 1024 * 1024 * 10,
-            "backupCount": 10,
+            "when": "midnight",
+            "interval": 1,
+            "backupCount": 180,  # 180 days
+            "maxBytes": 1024 * 1024 * 25,  # max. 25 MB per day
+            "encoding": "utf-8",
             "formatter": "json",
         },
         "mail_admins": {

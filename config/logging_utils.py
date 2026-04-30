@@ -3,6 +3,7 @@
 import hashlib
 import ipaddress
 import logging
+import logging.handlers
 import time
 from collections import defaultdict
 from typing import Any
@@ -82,3 +83,23 @@ class ThrottledAdminEmailFilter(logging.Filter):
 
         self._timestamps[signature] = now
         return True
+
+
+class SizedTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
+    """Rolls over on either a time interval OR a size threshold,
+    whichever fires first.
+    """
+
+    def __init__(self, filename: str, maxBytes: int = 0, **kwargs) -> None:  # noqa: N803
+        super().__init__(filename, **kwargs)
+        self.maxBytes = maxBytes
+
+    def shouldRollover(self, record: logging.LogRecord) -> int:  # noqa: N802
+        if super().shouldRollover(record):
+            return 1
+        if self.maxBytes > 0 and self.stream is not None:
+            msg = "%s\n" % self.format(record)  # noqa: UP031
+            self.stream.seek(0, 2)
+            if self.stream.tell() + len(msg) >= self.maxBytes:
+                return 1
+        return 0
