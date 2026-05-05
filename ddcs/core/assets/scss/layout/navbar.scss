@@ -1,3 +1,5 @@
+@use '../abstracts/index' as *;
+
 .navbar-icon {
   margin-top: -3px;
 }
@@ -12,4 +14,22 @@
 
 .nav-link-disabled:hover {
   color: var(--bs-nav-link-color);
+}
+
+.nav-item {
+  font-size: var(--font-size-body-small);
+}
+
+.nav-item-local {
+  font-weight: 300;
+}
+
+.last-local-nav {
+  @media (min-width: $bp-lg) {
+    border-right: 1px solid var(--border-default);
+  }
+}
+
+.nav-active {
+  font-weight: bold;
 }

@@ -79,6 +79,16 @@ h3, .h3 { font-size: var(--font-size-h3); }
   color:              var(--text-primary);
 }
 
+.eyebrow {
+  font-weight:        var(--font-weight-600);
+  letter-spacing:     var(--letter-spacing-subtitle);
+  text-transform:     uppercase;
+  color:              var(--text-accent);
+  line-height:        1.4;
+  font-size:          var(--font-size-body);
+  margin-bottom:      16px;
+}
+
 // Body — large variant
 .text-body-lg {
   font-size:          var(--font-size-body-lg);

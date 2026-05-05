@@ -18,14 +18,20 @@
     <nav class="collapse navbar-collapse" id="navbarSupportedContent">
       <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
         {% for link in navigation.nav_anchors %}
-          <li class="nav-item px-1">
+          <li class="nav-item nav-item-local px-1 {% if forloop.last %}last-local-nav{% endif %}">
             <a class="nav-link" href="{{ link.url }}">{{ link.label }}</a>
           </li>
         {% endfor %}
 
+        <li class="nav-item px-1">
+          {# djlint:off D018 #}
+          <a class="nav-link {% if request.path == "/" %}nav-active{% endif %}" href="/">Home</a>
+          {# djlint:on #}
+        </li>
+
         {% for link in navigation.nav_links %}
           <li class="nav-item px-1">
-            <a class="nav-link" href="{{ link.url }}">{{ link.label }}</a>
+            <a class="nav-link {% if request.path == link.url %}nav-active{% endif %}" href="{{ link.url }}">{{ link.label }}</a>
           </li>
         {% endfor %}
       </ul>
