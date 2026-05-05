@@ -24,4 +24,9 @@ urlpatterns = [
         views.TikTokAwaitDataView.as_view(),
         name="tiktok_await_data",
     ),
+    path(
+        "connect/tiktok/datenspende/",
+        views.PortabilityDonationView.as_view(),
+        name="portability_donation",
+    ),
 ]

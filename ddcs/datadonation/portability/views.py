@@ -2,7 +2,9 @@ import logging
 from datetime import datetime, timedelta
 
 from authlib.integrations.django_client import OAuthError
-from django.http import HttpRequest, HttpResponseRedirect
+from ddm.participation.views import DataDonationView, create_participation_session
+from ddm.projects.models import DonationProject
+from django.http import Http404, HttpRequest, HttpResponseRedirect
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -11,6 +13,7 @@ from django.views.generic import TemplateView
 
 from ddcs.datadonation.portability.models import TikTokConnection
 from ddcs.datadonation.portability.oauth import oauth
+from ddcs.datadonation.settings import DDM_TIKTOK_PROJECT_SLUG
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +89,27 @@ class TikTokAwaitDataView(TemplateView):
 class CheckDataAvailabilityView(View):
     def get(self, request: HttpRequest) -> None:  # TODO: or should it be post?
         pass
+
+
+class PortabilityDonationView(DataDonationView):
+    template_name = "datadonation/portability/donation.html"
+
+    def _initialize_values(self, request: HttpRequest) -> None:
+        """Overwrite project initialization and current step assignment"""
+        try:
+            self.object = DonationProject.objects.get(slug=DDM_TIKTOK_PROJECT_SLUG)
+        except DonationProject.DoesNotExist as e:
+            raise Http404 from e
+
+        create_participation_session(request, self.object)
+        self.participant = self.get_participant_from_session(request)
+        if self.participant.current_step is None or self.participant.current_step < 1:
+            self.participant.current_step = 1
+            self.participant.start_time = timezone.now()
+            self.participant.save()
+
+        # Update DDM step
+        self.current_step = 1  # TODO: Check robustness
 
 
 class PortabilityExceptionView(TemplateView):

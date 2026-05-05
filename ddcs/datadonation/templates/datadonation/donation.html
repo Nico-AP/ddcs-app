@@ -15,16 +15,16 @@
 
 {% block content %}
   <div class="container">
-    <div class="row justify-content-center pt-4 mt-5 b-3">
+    <div class="row justify-content-center pt-4 mt-5 b-3 pb-3">
       <div class="text-hero-subtitle mb-1">Schritt 2</div>
       <h1>Daten prüfen und übermitteln</h1>
     </div>
 
     <div id="uapp"
-         class="container text-black ps-0 pe-0"
+         class="container text-black ps-0 pe-0 pb-5 ddm-portability"
          data-action-url='{{ request.build_absolute_uri }}'
          data-exception-url='{% if request.is_secure %}https://{% else %}http://{% endif %}{{ request.get_host }}{% url "ddm_logging:exceptions_api" project_url_id %}'
-         data-language='{{ LANGUAGE_CODE|slice:"0:2" }}'
+         data-language='de'
          data-csrf-token="{{ csrf_token }}"
     >
       {{ uploader_configs|json_script:"config-data" }}

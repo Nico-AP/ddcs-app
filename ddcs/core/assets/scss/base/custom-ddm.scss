@@ -1,0 +1,33 @@
+#uapp {
+
+  font-size: var(--font-size-body-small);
+
+  .uploader-section .text-success {
+    color: var(--text-accent) !important;
+  }
+
+  .uploader-section .selected-donate-agree.donation-btn {
+    background: var(--color-cta-bg) !important;
+  }
+
+  .flow-btn {
+    color:              var(--color-cta-text) !important;
+    background:         var(--color-cta-bg);
+    background-color:   var(--color-cta-bg);
+    transition:         background-color var(--transition-fast);
+    border-radius:      var(--radius-md);
+    padding:            0.75rem 1.5rem;
+    font-size:          var(--font-size-body);
+    font-weight:        var(--font-weight-bold);
+    line-height:        1;
+  }
+  .flow-btn:hover {
+    background-color: var(--color-cta-hover);
+    color:            var(--color-cta-text);
+    text-decoration:  none;
+  }
+}
+
+#uapp.ddm-portability {
+  visibility: hidden; // visibility is controlled through JS
+}
