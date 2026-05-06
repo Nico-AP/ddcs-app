@@ -74,7 +74,7 @@ class SectionBlock(blocks.StructBlock):
     pre_title = blocks.CharBlock()
     title = blocks.CharBlock()
 
-    body = StreamField(
+    body = blocks.StreamBlock(
         [
             ("richtext", blocks.RichTextBlock()),
             ("subtitle", SubtitleBlock()),
