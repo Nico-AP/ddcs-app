@@ -84,8 +84,6 @@ class SectionBlock(blocks.StructBlock):
         use_json_field=True,
     )
 
-    content = blocks.RichTextBlock()  # TODO: Delete
-
     class Meta:
         template = "website/components/section.html"
         icon = "radio-full"
@@ -159,8 +157,6 @@ class RegularPageBlock(blocks.StructBlock):
         blank=True,
         use_json_field=True,
     )
-
-    content = blocks.RichTextBlock()  # TODO: Delete
 
     class Meta:
         template = "website/components/content_page.html"
