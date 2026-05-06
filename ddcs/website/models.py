@@ -45,6 +45,24 @@ class LogoBannerBlock(blocks.StructBlock):
         icon = "radio-full"
 
 
+class SubtitleBlock(blocks.StructBlock):
+    title = blocks.CharBlock(required=True)
+
+    class Meta:
+        template = "website/components/subtitle_block.html"
+        icon = "title"
+
+
+class ButtonBlock(blocks.StructBlock):
+    label = blocks.CharBlock(required=True)
+    link = blocks.URLBlock(required=True)
+    link_target = UrlTargetChoiceBlock(default="_self")
+
+    class Meta:
+        template = "website/components/button_block.html"
+        icon = "bold"
+
+
 class SectionBlock(blocks.StructBlock):
     anchor_id = blocks.CharBlock(
         required=False,
@@ -55,7 +73,18 @@ class SectionBlock(blocks.StructBlock):
     )
     pre_title = blocks.CharBlock()
     title = blocks.CharBlock()
-    content = blocks.RichTextBlock()
+
+    body = StreamField(
+        [
+            ("richtext", blocks.RichTextBlock()),
+            ("subtitle", SubtitleBlock()),
+            ("button", ButtonBlock()),
+        ],
+        blank=True,
+        use_json_field=True,
+    )
+
+    content = blocks.RichTextBlock()  # TODO: Delete
 
     class Meta:
         template = "website/components/section.html"
@@ -121,7 +150,17 @@ class CardSectionBlock(blocks.StructBlock):
 class RegularPageBlock(blocks.StructBlock):
     pre_title = blocks.CharBlock()
     title = blocks.CharBlock()
-    content = blocks.RichTextBlock()
+    body = blocks.StreamBlock(
+        [
+            ("richtext", blocks.RichTextBlock()),
+            ("subtitle", SubtitleBlock()),
+            ("button", ButtonBlock()),
+        ],
+        blank=True,
+        use_json_field=True,
+    )
+
+    content = blocks.RichTextBlock()  # TODO: Delete
 
     class Meta:
         template = "website/components/content_page.html"

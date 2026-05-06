@@ -8,9 +8,9 @@
         <h2>{{ value.title }}</h2>
       </div>
 
-      <div class="d-flex flex-column">
-        {{ value.content }}
-      </div>
+      {% for block in value.body %}
+        {{ block }}
+      {% endfor %}
 
     </div>
   </div>

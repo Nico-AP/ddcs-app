@@ -49,6 +49,11 @@ h3, .h3 { font-size: var(--font-size-h3); }
   h2, .h2 { font-size: 22px; }
 }
 
+.h1-subtitle {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-bold);
+  color:  var(--text-accent);
+}
 
 // ---------------------------------------------------------------------------
 // UTILITY CLASSES
