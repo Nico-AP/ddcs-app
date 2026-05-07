@@ -93,7 +93,7 @@ WEBPACK_LOADER = {
     "DDM_UPLOADER": {
         "CACHE": True,
         "BUNDLE_DIR_NAME": "ddm_core/frontent/uploader/",
-        "STATS_FILE": Path(STATIC_ROOT) / "ddm_core/frontend/stats",
+        "STATS_FILE": Path(STATIC_ROOT) / "ddm_core/frontend/webpack-stats.json",
         "POLL_INTERVAL": 0.1,
         "IGNORE": [r".+\.hot-update.js", r".+\.map"],
     },
