@@ -52,6 +52,7 @@ CONTENT_SECURITY_POLICY = {
         "style-src": [SELF],
         "img-src": [
             SELF,
+            "data:",
             "*.stuttgarter-zeitung.de",
             "*.br.de",
             "*.fu-berlin.de",
