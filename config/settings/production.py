@@ -45,7 +45,10 @@ X_FRAME_OPTIONS = "SAMEORIGIN"
 CONTENT_SECURITY_POLICY = {
     "DIRECTIVES": {
         "default-src": [NONE],
-        "script-src": [SELF],
+        "script-src": [
+            SELF,
+            "https://analytics.dein-feed-deine-wahl.de",
+        ],
         "style-src": [SELF],
         "img-src": [
             SELF,
