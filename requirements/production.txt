@@ -1,3 +1,3 @@
 -r base.txt
-gunicorn==25.3.0  # https://github.com/benoitc/gunicorn
-psycopg[binary]==3.3.3  # https://www.psycopg.org/psycopg3/docs/basic/install.html
+gunicorn==26.0.0  # https://github.com/benoitc/gunicorn
+psycopg[binary]==3.3.4  # https://www.psycopg.org/psycopg3/docs/basic/install.html
