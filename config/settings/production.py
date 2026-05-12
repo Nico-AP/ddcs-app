@@ -60,7 +60,10 @@ CONTENT_SECURITY_POLICY = {
         ],
         "media-src": [SELF],
         "font-src": [SELF],
-        "connect-src": [SELF],
+        "connect-src": [
+            SELF,
+            "https://analytics.dein-feed-deine-wahl.de",
+        ],
         "frame-ancestors": [NONE],
         "base-uri": [NONE],
         "form-action": [SELF],
