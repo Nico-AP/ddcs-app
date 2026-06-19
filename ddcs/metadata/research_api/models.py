@@ -9,68 +9,125 @@ class ResearchAPIDataModel(models.Model):
         abstract = True
 
 
-class VideoInfosAPI(ResearchAPIDataModel):
-    video = models.ForeignKey("ddcs.metadata.TikTokVideo", on_delete=models.CASCADE)
-
-    description = models.TextField(
-        blank=True,
-        help_text="Video description as retrieved from TikTok.",
-    )
-    create_time = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Video creation time as retrieved from TikTok.",
-    )
-    inferred_create_time = models.DateTimeField(
-        null=True,
-        blank=True,
-        help_text="Create time as inferred from the TikTok ID.",
-    )
-    location_created = models.CharField(
-        max_length=255,
-        blank=True,
-        help_text=(
-            "Country code where the video was created as retrieved from TikTok."
-        ),
-    )
-    duration = models.IntegerField(
-        null=True,
-        blank=True,
-        help_text="Video duration as retrieved from TikTok.",
+class APIVideoInfos(ResearchAPIDataModel):
+    video = models.ForeignKey(
+        "ddcs_metadata.TikTokVideo",
+        on_delete=models.CASCADE,
+        related_name="api_infos",
     )
 
-    # TODO: Add music, effects, hashtags as many2many fields
+    # Infos retrieved from API:
+    description = models.TextField(blank=True)
+    create_time = models.DateTimeField(null=True, blank=True)
+    region_code = models.CharField(max_length=255, blank=True)
+    duration = models.IntegerField(null=True, blank=True)
+    voice_to_text = models.TextField(blank=True)
+    is_stem_verified = models.BooleanField(null=True, blank=True)
+    video_mention_list = models.JSONField(null=True, blank=True)
+    video_label = models.JSONField(null=True, blank=True)
+    effect_list = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "API Video Infos"
+        verbose_name_plural = "API Video Infos"
 
     def __str__(self) -> str:
-        return f"Research API metadata for TikTok video {self.video.id}"
+        return f"Research API video infos for video {self.video}"
 
 
-class UserInfosAPI(ResearchAPIDataModel):
-    user = models.ForeignKey("ddcs.metadata.TikTokUser", on_delete=models.CASCADE)
-
-    name = models.CharField(
-        max_length=255,
-        help_text="Unique name of the creator.",
-        unique=True,
+class APIVideoStatistics(ResearchAPIDataModel):
+    video = models.ForeignKey(
+        "ddcs_metadata.TikTokVideo",
+        on_delete=models.CASCADE,
+        related_name="statistics",
     )
 
-    display_name = models.CharField(
-        max_length=255,
-        help_text="Longer name of the creator.",
-        blank=True,
-    )
+    view_count = models.PositiveIntegerField(null=True, blank=True)
+    like_count = models.PositiveIntegerField(null=True, blank=True)
+    comment_count = models.PositiveIntegerField(null=True, blank=True)
+    share_count = models.PositiveIntegerField(null=True, blank=True)
+    favorites_count = models.PositiveIntegerField(null=True, blank=True)
 
-    is_verified = models.BooleanField(
-        null=True,
-        blank=True,
-        help_text="Whether a creator is verified or not.",
-    )
-
-    is_private = models.BooleanField(
-        null=True,
-        blank=True,
-        help_text="Whether a creator is private or not.",
-    )
+    class Meta:
+        verbose_name = "API Video Statistics"
+        verbose_name_plural = "API Video Statistics"
 
     def __str__(self) -> str:
-        return f"Research API metadata for TikTok user {self.user.id}"
+        return f"Research API statistics for video {self.video}"
+
+
+class APIUserInfos(ResearchAPIDataModel):
+    user = models.ForeignKey(
+        "ddcs_metadata.TikTokUser",
+        on_delete=models.CASCADE,
+        related_name="api_infos",
+    )
+
+    # Infos retrieved from API:
+    name = models.CharField(max_length=255)
+    display_name = models.CharField(max_length=255, blank=True)
+    is_verified = models.BooleanField(null=True, blank=True)
+    is_private = models.BooleanField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "API User Infos"
+        verbose_name_plural = "API User Infos"
+
+    def __str__(self) -> str:
+        return f"Research API metadata for user {self.user}"
+
+
+class APIUserStatistics(ResearchAPIDataModel):
+    user = models.ForeignKey(
+        "ddcs_metadata.TikTokUser",
+        on_delete=models.CASCADE,
+        related_name="statistics",
+    )
+
+    following_count = models.PositiveIntegerField(null=True, blank=True)
+    follower_count = models.PositiveIntegerField(null=True, blank=True)
+    video_count = models.PositiveIntegerField(null=True, blank=True)
+    likes_count = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "API User Statistics"
+        verbose_name_plural = "API User Statistics"
+
+    def __str__(self) -> str:
+        return f"Research API statistics for user {self.user}"
+
+
+class APIMusicInfos(ResearchAPIDataModel):
+    music = models.ForeignKey(
+        "ddcs_metadata.TikTokMusic",
+        on_delete=models.CASCADE,
+        related_name="api_infos",
+    )
+
+    # Infos retrieved from API:
+    name = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "API Music Infos"
+        verbose_name_plural = "API Music Infos"
+
+    def __str__(self) -> str:
+        return f"Research API metadata for TikTok Music {self.music}"
+
+
+class APIHashtagInfos(ResearchAPIDataModel):
+    hashtag = models.ForeignKey(
+        "ddcs_metadata.TikTokHashtag",
+        on_delete=models.CASCADE,
+        related_name="api_infos",
+    )
+
+    # Infos retrieved from API:
+    description = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "API Hashtag Infos"
+        verbose_name_plural = "API Hashtag Infos"
+
+    def __str__(self) -> str:
+        return f"Research API metadata for TikTok Hashtag {self.hashtag}"

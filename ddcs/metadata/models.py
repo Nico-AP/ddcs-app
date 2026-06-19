@@ -1,37 +1,119 @@
 from django.db import models
 
 
-class TikTokVideo(models.Model):
-    video_id = models.BigIntegerField()
+class DataOrigins(models.TextChoices):
+    RESEARCH_API = "RESEARCH_API", "Research API"
+    SCRAPER = "SCRAPER", "Scraper"
+    DONATION = "DONATION", "Donation"
+    IMPORT = "IMPORT", "Import"
 
+
+class BaseMetadataModel(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    added_by = models.CharField(choices=DataOrigins, max_length=24)
+
+    # Scraping Infos
+    scraped_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
+
+
+class APIMonitoredMixin(models.Model):
+    """Contains fields to control whether/how an object is monitored through the api.
+
+    monitor_api controls whether it is monitored or not.
+    Objects with higher monitoring_priority are monitored first; lower priority
+        come later and may fall through if api limit is reached.
+    """
+
+    monitor_api = models.BooleanField(default=False)
+    monitoring_priority_api = models.IntegerField(default=0)
+    api_last_monitored_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
+
+
+class TikTokVideo(BaseMetadataModel):
+    id_tiktok = models.BigIntegerField(unique=True, db_index=True)
+
+    inferred_create_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Create time as inferred from the TikTok ID.",
+    )  # Note: Is currently populated by API Service;
+    # need to remember to compute this if objects are ever created in other places.
+
+    user = models.ForeignKey(
+        "TikTokUser",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+    )
+
+    music = models.ForeignKey(
+        "TikTokMusic",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+    )
+
+    hashtags = models.ManyToManyField("TikTokHashtag", blank=True)
 
     class Meta:
         verbose_name = "TikTok Video"
         verbose_name_plural = "TikTok Videos"
 
     def __str__(self) -> str:
-        return f"TikTok Video {self.pk}"
+        return str(self.id_tiktok)
 
 
-class TikTokUser(models.Model):
-    user_id = models.BigIntegerField()
-
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    # Monitoring settings
-    monitor = models.BooleanField(default=False)
-    monitoring_priority = models.IntegerField(default=0)
-    last_monitored_at = models.DateTimeField(blank=True, null=True)
+class TikTokUser(BaseMetadataModel, APIMonitoredMixin):
+    name = models.CharField(
+        max_length=255, unique=True, db_index=True
+    )  # unique user name
+    id_tiktok = models.BigIntegerField(db_index=True, null=True, blank=True)
 
     class Meta:
         verbose_name = "TikTok User"
         verbose_name_plural = "TikTok Users"
 
     def __str__(self) -> str:
-        return f"TikTok User {self.pk}"
+        if self.name:
+            return self.name
+        if self.id_tiktok:
+            return str(self.id_tiktok)
+        return f"{self.pk} (pk)"
+
+    def has_api_user_infos(self) -> bool:
+        return self.api_infos.exists()
 
 
-# TODO: Add Music, Effects, Hashtags if applicable.
+class TikTokMusic(BaseMetadataModel):
+    id_tiktok = models.BigIntegerField(unique=True, db_index=True)
+
+    class Meta:
+        verbose_name = "TikTok Music"
+        verbose_name_plural = "TikTok Music"
+
+    def __str__(self) -> str:
+        return f"TikTok Music {self.id_tiktok}"
+
+
+class TikTokHashtag(BaseMetadataModel, APIMonitoredMixin):
+    name = models.CharField(max_length=255, db_index=True, unique=True)
+    id_tiktok = models.BigIntegerField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Hashtags"
+        verbose_name_plural = "Hashtags"
+
+    def __str__(self) -> str:
+        if self.name:
+            return self.name
+        if self.id_tiktok:
+            return str(self.id_tiktok)
+        return f"{self.pk} (pk)"
