@@ -24,3 +24,5 @@ LOGGING = {
     },
     "root": {"handlers": ["console"], "level": "ERROR"},
 }
+
+CELERY_DEFAULT_QUEUE = "ci"
