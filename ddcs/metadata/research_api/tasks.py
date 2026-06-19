@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta
 
 from celery import shared_task
+from celery.exceptions import SoftTimeLimitExceeded
 from django.utils import timezone
 
 from ddcs.metadata.models import TikTokHashtag, TikTokUser
@@ -10,7 +11,16 @@ from ddcs.metadata.research_api.service import ResearchAPIService
 logger = logging.getLogger(__name__)
 
 
-@shared_task
+# TODO: Add appropriate autoretry_for=(ResearchAPIError, requests.RequestException)
+@shared_task(
+    bind=True,
+    acks_late=True,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    max_retries=3,
+    soft_time_limit=55 * 60,
+    time_limit=60 * 60,
+)
 def query_videos_by_user(
     batch_size: int = 50,
     query_start_date: datetime | None = None,
@@ -30,15 +40,14 @@ def query_videos_by_user(
     """
     logger.info("Starting query_videos_by_user task.")
 
-    users_to_query = (
-        TikTokUser.objects.order_by(
-            "-monitoring_priority_api",
-            "api_last_monitored_at",
-        )
-        .filter(monitor_api=True)
+    usernames = list(
+        TikTokUser.objects.filter(monitor_api=True)
         .exclude(api_last_monitored_at__date=timezone.now().date())
+        .order_by("-monitoring_priority_api", "api_last_monitored_at")
+        .values_list("name", flat=True)
     )
-    if not users_to_query.exists():
+
+    if not usernames:
         logger.info("No users registered for monitoring (query_videos_by_user).")
         return
 
@@ -49,19 +58,41 @@ def query_videos_by_user(
     if not query_start_date:
         query_start_date = query_end_date
 
-    usernames = list(users_to_query.values_list("name", flat=True))
-    for i in range(0, len(usernames), batch_size):
-        user_batch = usernames[i : i + batch_size]
-        service.get_user_videos(
-            user_batch,
-            end_date=query_end_date.date(),
-            start_date=query_start_date.date(),
-        )
+    total_batches = (len(usernames) + batch_size - 1) // batch_size
+    processed_batches = 0
 
-        # Update monitoring status
-        TikTokUser.objects.filter(name__in=user_batch).update(
-            api_last_monitored_at=timezone.now(),
+    try:
+        for i in range(0, len(usernames), batch_size):
+            user_batch = usernames[i : i + batch_size]
+            service.get_user_videos(
+                user_batch,
+                end_date=query_end_date.date(),
+                start_date=query_start_date.date(),
+            )
+
+            # Update monitoring status
+            TikTokUser.objects.filter(name__in=user_batch).update(
+                api_last_monitored_at=timezone.now(),
+            )
+
+            processed_batches += 1
+            logger.info(
+                "query_videos_by_user: batch %d/%d done (%d users). "
+                "Cumulative videos: %d.",
+                processed_batches,
+                total_batches,
+                len(user_batch),
+                service.sync_stats["videos_retrieved"],
+            )
+
+    except SoftTimeLimitExceeded:
+        logger.warning(
+            "query_videos_by_user hit soft time limit after %d/%d batches; "
+            "remaining hashtags will be picked up on the next run.",
+            processed_batches,
+            total_batches,
         )
+        return
 
     logger.info(
         "query_videos_by_user: Completed sync. "
@@ -79,47 +110,85 @@ def query_videos_by_user(
     )
 
 
-@shared_task
-def query_videos_by_hashtag(batch_size: int = 50) -> None:
+# TODO: Add appropriate autoretry_for=(ResearchAPIError, requests.RequestException)
+@shared_task(
+    bind=True,
+    acks_late=True,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    max_retries=3,
+    soft_time_limit=55 * 60,
+    time_limit=60 * 60,
+)
+def query_videos_by_hashtag(
+    batch_size: int = 50,
+    query_start_date: datetime | None = None,
+    query_end_date: datetime | None = None,
+) -> None:
     """Query videos by selected hashtags through Research API.
 
     Args:
         batch_size: Number of hashtags to query at a time. Defaults to 50.
+        query_start_date: Start date for querying videos.
+            Defaults to 4 days before today.
+        query_end_date: End date for querying videos.
+            Defaults to 4 days before today.
 
     Returns:
         None
     """
     logger.info("Starting query_videos_by_hashtag task.")
 
-    hashtags_to_query = (
-        TikTokHashtag.objects.order_by(
-            "-monitoring_priority_api",
-            "api_last_monitored_at",
-        )
-        .filter(monitor_api=True)
+    hashtags = list(
+        TikTokHashtag.objects.filter(monitor_api=True)
         .exclude(api_last_monitored_at__date=timezone.now().date())
+        .order_by("-monitoring_priority_api", "api_last_monitored_at")
+        .values_list("name", flat=True)
     )
-    if not hashtags_to_query.exists():
+    if not hashtags:
         logger.info("No hashtags registered for monitoring (query_videos_by_hashtag).")
         return
 
     service = ResearchAPIService()
-    query_end_date = timezone.now() - timedelta(days=1)
-    query_start_date = query_end_date - timedelta(days=3)
+    if not query_end_date:
+        query_end_date = timezone.now() - timedelta(days=4)
+    if not query_start_date:
+        query_start_date = query_end_date
 
-    hashtags = list(hashtags_to_query.values_list("name", flat=True))
-    for i in range(0, len(hashtags), batch_size):
-        hashtag_batch = hashtags[i : i + batch_size]
-        service.get_hashtag_videos(
-            hashtag_batch,
-            end_date=query_end_date.date(),
-            start_date=query_start_date.date(),
-        )
+    total_batches = (len(hashtags) + batch_size - 1) // batch_size
+    processed_batches = 0
+    try:
+        for i in range(0, len(hashtags), batch_size):
+            hashtag_batch = hashtags[i : i + batch_size]
+            service.get_hashtag_videos(
+                hashtag_batch,
+                end_date=query_end_date.date(),
+                start_date=query_start_date.date(),
+            )
 
-        # Update monitoring status
-        TikTokUser.objects.filter(name__in=hashtag_batch).update(
-            api_last_monitored_at=timezone.now(),
+            # Update monitoring status
+            TikTokHashtag.objects.filter(name__in=hashtag_batch).update(
+                api_last_monitored_at=timezone.now(),
+            )
+
+            processed_batches += 1
+            logger.info(
+                "query_videos_by_hashtag: batch %d/%d done (%d hashtags). "
+                "Cumulative videos: %d.",
+                processed_batches,
+                total_batches,
+                len(hashtag_batch),
+                service.sync_stats["videos_retrieved"],
+            )
+
+    except SoftTimeLimitExceeded:
+        logger.warning(
+            "query_videos_by_hashtag hit soft time limit after %d/%d batches; "
+            "remaining hashtags will be picked up on the next run.",
+            processed_batches,
+            total_batches,
         )
+        return
 
     logger.info(
         "query_videos_by_hashtag: Completed sync. "
