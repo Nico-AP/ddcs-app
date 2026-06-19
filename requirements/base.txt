@@ -1,15 +1,15 @@
 argon2-cffi==25.1.0  # https://github.com/hynek/argon2_cffi
 Authlib==1.7.2  # https://github.com/authlib/authlib
 celery==5.6.3  # https://github.com/celery/celery
-django==5.2.14  # https://www.djangoproject.com/ / https://github.com/django/django (stay with 5.2.x - LTS until 2028)
+django==5.2.15  # https://www.djangoproject.com/ / https://github.com/django/django (stay with 5.2.x - LTS until 2028)
 django-celery-beat==2.9.0  # https://github.com/celery/django-celery-beat/
 django-csp==4.0  # https://django-csp.readthedocs.io/en/latest/installation.html
 django-ddm==2.2.0b3  # https://github.com/uzh/ddm
 django-fernet-encrypted-fields==0.4.0  # https://github.com/jazzband/django-fernet-encrypted-fields
-django-structlog==10.0.0  # https://github.com/jrobichaud/django-structlog/
+django-structlog==10.1.0  # https://github.com/jrobichaud/django-structlog/
 django-two-factor-auth==1.18.1  # https://github.com/jazzband/django-two-factor-auth
 environs[django]==15.0.1  # https://pypi.org/project/environs/
-requests==2.33.1  # https://github.com/psf/requests
+requests==2.34.2  # https://github.com/psf/requests
 structlog==25.5.0  # https://www.structlog.org/ - direct dependency, transitive via django-structlog
 tiktok-metadata-kit==0.1.2  # https://github.com/Nico-AP/tiktok-metadata-kit
-wagtail==7.4.0  # https://github.com/wagtail/wagtail
+wagtail==7.4.2  # https://github.com/wagtail/wagtail
