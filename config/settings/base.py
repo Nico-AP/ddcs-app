@@ -11,9 +11,11 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import json
+import ssl
 from pathlib import Path
 
 import structlog
+from celery.schedules import crontab
 from django.utils.translation import gettext_lazy as _
 from environs import Env
 
@@ -64,6 +66,7 @@ THIRD_PARTY_APPS = [
     "ddm.participation",
     "ddm.projects",
     "ddm.core",
+    "django_celery_beat",
     "django_ckeditor_5",
     "webpack_loader",
     "rest_framework",
@@ -97,6 +100,8 @@ LOCAL_APPS = [
     "ddcs.website",
     "ddcs.datadonation",
     "ddcs.datadonation.portability",
+    "ddcs.metadata",
+    "ddcs.metadata.research_api",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -238,6 +243,7 @@ AUTH_USER_MODEL = "ddcs_core.User"
 
 LOGIN_URL = "login"
 
+
 # Fixtures
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#fixture-dirs
@@ -263,6 +269,48 @@ ADMIN_URL = env.str("ADMIN_URL", default="admin/")
 ADMINS = [tuple(admin) for admin in json.loads(env.str("ADMINS", "[]"))]
 
 MANAGERS = ADMINS
+
+
+# Redis
+# ------------------------------------------------------------------------------
+REDIS_URL = env.str("REDIS_URL", default="redis://127.0.0.1:6379/")
+REDIS_DB = env.int("REDIS_DB", default=0)
+REDIS_SSL = REDIS_URL.startswith("rediss://")
+
+
+# Celery (https://docs.celeryq.dev/en/stable/userguide/configuration.html)
+# ------------------------------------------------------------------------------
+CELERY_TIMEZONE = TIME_ZONE
+
+CELERY_BROKER_URL = REDIS_URL + str(REDIS_DB)
+CELERY_RESULT_BACKEND = REDIS_URL + str(REDIS_DB)
+CELERY_RESULT_EXTENDED = True
+CELERY_RESULT_BACKEND_ALWAYS_RETRY = True
+CELERY_RESULT_BACKEND_MAX_RETRIES = 10
+
+CELERY_BROKER_USE_SSL = {"ssl_cert_reqs": ssl.CERT_NONE} if REDIS_SSL else None
+CELERY_REDIS_BACKEND_USE_SSL = CELERY_BROKER_USE_SSL
+
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+
+CELERY_TASK_TIME_LIMIT = 10 * 60
+CELERY_TASK_SOFT_TIME_LIMIT = 5 * 60
+CELERY_TASK_SEND_SENT_EVENT = True
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_DEFAULT_QUEUE = env.str("CELERY_DEFAULT_QUEUE")
+
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+# Beat schedule prepopulates the DB on first run. After that, the DB takes
+# precedence — edit via Django admin or delete the entry to reset to these values.
+CELERY_BEAT_SCHEDULE = {
+    "researchapi-query-videos-by-username": {
+        "task": "ddcs.metadata.research_api.tasks.query_videos_by_user",
+        "schedule": crontab(hour=2, minute=0),
+    },
+}
 
 
 # Logging
@@ -356,6 +404,15 @@ LOGGING = {
             "include_html": False,
             "filters": ["require_debug_false", "throttle_admin_email"],
         },
+        "metadata_file": {
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "metadata.log",
+            "maxBytes": 1024 * 1024 * 25,  # max. 25 MB per day
+            "backupCount": 5,
+            "encoding": "utf-8",
+            "formatter": "json",
+        },
     },
     "root": {
         "level": "INFO",
@@ -377,6 +434,11 @@ LOGGING = {
             "propagate": False,
             "level": "WARNING",
         },
+        "ddcs.metadata": {
+            "handlers": ["metadata_file"],
+            "propagate": False,
+            "level": "INFO",
+        },
     },
 }
 
@@ -385,6 +447,12 @@ LOGGING = {
 AUTH_TOKEN_SECRET = env.str("AUTH_TOKEN_SECRET")  # Authlib config
 TIKTOK_CLIENT_ID = env.str("TIKTOK_CLIENT_ID", "")
 TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET", "")
+
+
+# TikTok Research API
+# ------------------------------------------------------------------------------
+TIKTOK_RESEARCH_API_KEY = env.str("TIKTOK_RESEARCH_API_KEY", "")
+TIKTOK_RESEARCH_API_SECRET = env.str("TIKTOK_RESEARCH_API_SECRET", "")
 
 
 # DDM and related settings

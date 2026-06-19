@@ -27,6 +27,11 @@ EMAIL_BACKEND = env(
 )
 
 
+# Celery
+# ------------------------------------------------------------------------------
+CELERY_TASK_ALWAYS_EAGER = True  # tasks run inline, no worker needed
+
+
 # Logging
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#logging
