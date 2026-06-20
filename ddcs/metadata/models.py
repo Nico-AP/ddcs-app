@@ -117,3 +117,33 @@ class TikTokHashtag(BaseMetadataModel, APIMonitoredMixin):
         if self.id_tiktok:
             return str(self.id_tiktok)
         return f"{self.pk} (pk)"
+
+
+class ResearchAPIQueryTracker(models.Model):
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField(null=True)
+
+    query_function = models.CharField(max_length=100)
+    query_parameters = models.JSONField()
+
+    query_result = models.JSONField(null=True)
+
+    class Status(models.TextChoices):
+        STARTED = "started"
+        COMPLETED = "completed"
+        SOFT_TIME_LIMIT_EXCEEDED = "soft_time_limit_exceeded"
+        FAILED = "failed"
+
+    query_status = models.CharField(
+        max_length=32, choices=Status.choices, default=Status.STARTED
+    )
+
+    class Meta:
+        verbose_name = "Research API Query Tracker"
+        verbose_name_plural = "Research API Query Trackers"
+
+    def __str__(self) -> str:
+        return (
+            f"{self.query_function} [{self.query_status}] @ "
+            f"{self.start_time:%Y-%m-%d %H:%M}"
+        )

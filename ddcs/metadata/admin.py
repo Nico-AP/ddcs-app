@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.http import HttpRequest
 
 from ddcs.metadata.models import (
+    ResearchAPIQueryTracker,
     TikTokHashtag,
     TikTokMusic,
     TikTokUser,
@@ -139,3 +140,25 @@ class TikTokHashtagAdmin(admin.ModelAdmin):
     search_fields = ("name", "id_tiktok")
     readonly_fields = ("created_at", "updated_at", "api_last_monitored_at")
     inlines = (APIHashtagInfosInline,)
+
+
+@admin.register(ResearchAPIQueryTracker)
+class ResearchAPIQueryTrackerAdmin(admin.ModelAdmin):
+    list_display = (
+        "start_time",
+        "end_time",
+        "query_function",
+        "query_parameters",
+        "query_result",
+        "query_status",
+    )
+    list_filter = ("query_function", "query_status")
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
+        return False
+
+    def get_readonly_fields(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
+        return [field.name for field in self.model._meta.fields]  # noqa: SLF001

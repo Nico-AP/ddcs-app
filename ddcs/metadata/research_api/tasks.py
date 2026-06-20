@@ -1,11 +1,12 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from django.utils import timezone
 
-from ddcs.metadata.models import TikTokHashtag, TikTokUser
+from ddcs.metadata.models import ResearchAPIQueryTracker, TikTokHashtag, TikTokUser
 from ddcs.metadata.research_api.service import ResearchAPIService
 
 logger = logging.getLogger(__name__)
@@ -22,18 +23,19 @@ logger = logging.getLogger(__name__)
     time_limit=60 * 60,
 )
 def query_videos_by_user(
+    self,  # noqa: ANN001
     batch_size: int = 50,
-    query_start_date: datetime | None = None,
-    query_end_date: datetime | None = None,
+    query_start_date: str | None = None,
+    query_end_date: str | None = None,
 ) -> None:
     """Query videos published by selected users through Research API.
 
     Args:
         batch_size: Number of users to query at a time. Defaults to 50.
-        query_start_date: Start date for querying videos.
-            Defaults to 4 days before today.
-        query_end_date: End date for querying videos.
-            Defaults to 4 days before today.
+        query_start_date: Start date for querying videos as a string in the
+            format "20201231" ("%Y%m%d"). Defaults to 4 days before today.
+        query_end_date: End date for querying videos as a string in the
+            format "20201231" ("%Y%m%d"). Defaults to 4 days before today.
 
     Returns:
         None
@@ -51,16 +53,29 @@ def query_videos_by_user(
         logger.info("No users registered for monitoring (query_videos_by_user).")
         return
 
-    service = ResearchAPIService()
-
-    if not query_end_date:
+    if query_end_date:
+        query_end_date = datetime.strptime(query_end_date, "%Y%m%d").replace(tzinfo=UTC)
+    else:
         query_end_date = timezone.now() - timedelta(days=4)
-    if not query_start_date:
+
+    if query_start_date:
+        query_start_date = datetime.strptime(query_start_date, "%Y%m%d").replace(
+            tzinfo=UTC
+        )
+    else:
         query_start_date = query_end_date
 
+    query_parameter = {
+        "start": str(query_start_date),
+        "end": str(query_end_date),
+        "batch_size": batch_size,
+        "queried_objects": usernames,
+    }
+    tracker = register_query_tracker("query_videos_by_user", query_parameter)
+
+    service = ResearchAPIService()
     total_batches = (len(usernames) + batch_size - 1) // batch_size
     processed_batches = 0
-
     try:
         for i in range(0, len(usernames), batch_size):
             user_batch = usernames[i : i + batch_size]
@@ -92,7 +107,23 @@ def query_videos_by_user(
             processed_batches,
             total_batches,
         )
+        update_query_tracker(
+            tracker,
+            service.sync_stats,
+            ResearchAPIQueryTracker.Status.SOFT_TIME_LIMIT_EXCEEDED,
+        )
         return
+
+    except Exception:
+        logger.exception(
+            "query_videos_by_user failed after %d/%d batches.",
+            processed_batches,
+            total_batches,
+        )
+        update_query_tracker(
+            tracker, service.sync_stats, ResearchAPIQueryTracker.Status.FAILED
+        )
+        raise
 
     logger.info(
         "query_videos_by_user: Completed sync. "
@@ -108,6 +139,9 @@ def query_videos_by_user(
         query_end_date,
         query_start_date,
     )
+    update_query_tracker(
+        tracker, service.sync_stats, ResearchAPIQueryTracker.Status.COMPLETED
+    )
 
 
 # TODO: Add appropriate autoretry_for=(ResearchAPIError, requests.RequestException)
@@ -121,18 +155,19 @@ def query_videos_by_user(
     time_limit=60 * 60,
 )
 def query_videos_by_hashtag(
+    self,  # noqa: ANN001
     batch_size: int = 50,
-    query_start_date: datetime | None = None,
-    query_end_date: datetime | None = None,
+    query_start_date: str | None = None,
+    query_end_date: str | None = None,
 ) -> None:
     """Query videos by selected hashtags through Research API.
 
     Args:
         batch_size: Number of hashtags to query at a time. Defaults to 50.
-        query_start_date: Start date for querying videos.
-            Defaults to 4 days before today.
-        query_end_date: End date for querying videos.
-            Defaults to 4 days before today.
+        query_start_date: Start date for querying videos as a string in the
+            format "20201231" ("%Y%m%d"). Defaults to 4 days before today.
+        query_end_date: End date for querying videos as a string in the
+            format "20201231" ("%Y%m%d"). Defaults to 4 days before today.
 
     Returns:
         None
@@ -149,12 +184,30 @@ def query_videos_by_hashtag(
         logger.info("No hashtags registered for monitoring (query_videos_by_hashtag).")
         return
 
-    service = ResearchAPIService()
-    if not query_end_date:
+    if query_end_date:
+        query_end_date = datetime.strptime(query_end_date, "%Y%m%d").replace(tzinfo=UTC)
+    else:
         query_end_date = timezone.now() - timedelta(days=4)
-    if not query_start_date:
+
+    if query_start_date:
+        query_start_date = datetime.strptime(query_start_date, "%Y%m%d").replace(
+            tzinfo=UTC
+        )
+    else:
         query_start_date = query_end_date
 
+    query_parameter = {
+        "start": str(query_start_date),
+        "end": str(query_end_date),
+        "batch_size": batch_size,
+        "queried_objects": hashtags,
+    }
+    tracker = register_query_tracker(
+        "query_videos_by_hashtag",
+        query_parameter,
+    )
+
+    service = ResearchAPIService()
     total_batches = (len(hashtags) + batch_size - 1) // batch_size
     processed_batches = 0
     try:
@@ -188,7 +241,23 @@ def query_videos_by_hashtag(
             processed_batches,
             total_batches,
         )
+        update_query_tracker(
+            tracker,
+            service.sync_stats,
+            ResearchAPIQueryTracker.Status.SOFT_TIME_LIMIT_EXCEEDED,
+        )
         return
+
+    except Exception:
+        logger.exception(
+            "query_videos_by_hashtag failed after %d/%d batches.",
+            processed_batches,
+            total_batches,
+        )
+        update_query_tracker(
+            tracker, service.sync_stats, ResearchAPIQueryTracker.Status.FAILED
+        )
+        raise
 
     logger.info(
         "query_videos_by_hashtag: Completed sync. "
@@ -204,3 +273,28 @@ def query_videos_by_hashtag(
         query_end_date,
         query_start_date,
     )
+    update_query_tracker(
+        tracker, service.sync_stats, ResearchAPIQueryTracker.Status.COMPLETED
+    )
+
+
+def register_query_tracker(
+    query_function: str,
+    query_parameter: dict[str, Any],
+) -> ResearchAPIQueryTracker:
+    return ResearchAPIQueryTracker.objects.create(
+        start_time=timezone.now(),
+        query_function=query_function,
+        query_parameters=query_parameter,
+    )
+
+
+def update_query_tracker(
+    query_tracker: ResearchAPIQueryTracker,
+    sync_stats: dict[str, Any],
+    query_status: str,
+) -> None:
+    query_tracker.end_time = timezone.now()
+    query_tracker.query_status = query_status
+    query_tracker.query_result = sync_stats
+    query_tracker.save()
