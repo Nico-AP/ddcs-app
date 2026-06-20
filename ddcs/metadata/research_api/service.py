@@ -107,6 +107,7 @@ class ResearchAPIService:
         )
 
     def _process_api_response(self, data: dict) -> None:
+        data = self._sanitize(data)
         user = self._sync_user(data["username"])
         music = self._sync_music(data.get("music_id"))
         video = self._sync_video(data, user=user, music=music)
@@ -225,3 +226,14 @@ class ResearchAPIService:
         return {
             "description": api_data.get("hashtag_description", ""),
         }
+
+    @staticmethod
+    def _sanitize(value: Any) -> Any:  # noqa: ANN401
+        """Recursively strip NUL bytes from strings anywhere in the API payload."""
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        if isinstance(value, dict):
+            return {k: ResearchAPIService._sanitize(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [ResearchAPIService._sanitize(v) for v in value]
+        return value
