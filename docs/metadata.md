@@ -107,6 +107,24 @@ computation lives in
 compute and pass `inferred_create_time` explicitly.
 
 
+## Access Records through the Admin
+
+The four base/registry models have admin entries in
+[`ddcs/metadata/admin.py`](../ddcs/metadata/admin.py). Each parent's change page
+shows the matching Research API rows as **read-only `TabularInline`s**:
+
+| Parent          | Inlines                               |
+|-----------------|---------------------------------------|
+| `TikTokVideo`   | `APIVideoInfos`, `APIVideoStatistics` |
+| `TikTokUser`    | `APIUserInfos`, `APIUserStatistics`   |
+| `TikTokMusic`   | `APIMusicInfos`                       |
+| `TikTokHashtag` | `APIHashtagInfos`                     |
+
+The Research API and Scraper models are intentionally **not** registered as standalone
+admin entries — they are service-owned and editing historical snapshots through
+the admin is not intended.
+
+
 ## Populating the registry
 
 Initial users and hashtags to monitor are loaded from newline-delimited text
@@ -131,7 +149,7 @@ python manage.py import_hashtags_to_monitor [--file PATH] [--priority N]
 - The command reports `created` vs `updated` counts on stdout.
 
 
-## Monitoring & sync
+## Research API: Monitoring & sync
 
 ### Per-object monitoring controls
 
@@ -146,7 +164,7 @@ python manage.py import_hashtags_to_monitor [--file PATH] [--priority N]
 ### The sync task
 
 [`research_api/tasks.py`](../ddcs/metadata/research_api/tasks.py) defines
-`query_videos_by_user` and `query_videos_by_hashtag` the Celery task that pulls new videos for monitored users/hashtags:
+`query_videos_by_user` and `query_videos_by_hashtag` – the Celery tasks that pulls new videos for monitored users/hashtags:
 
 1. Selects `TikTokUser`/`TikTokHashtag` rows where `monitor_api=True` and
    `api_last_monitored_at__date != today`, ordered by
@@ -166,25 +184,6 @@ If the task fails on one day, content posted during the gap will be missed.
 
 The Celery beat schedule is configured in [`config/celery.py`](../config/celery.py).
 `query_videos_by_user` and `query_videos_by_hashtag` will be automatically added 
-to scheduled tasks. IMPORTANT: Changes to this setting will not take effect on
-existing systems, that already have the task schedule populated (i.e., existing 
-tasks take precedent). If changes are made to the default schedule, these must
-be manually added to running systems.
-
-
-## Admin
-
-All four base/registry models have admin entries in
-[`ddcs/metadata/admin.py`](../ddcs/metadata/admin.py). Each parent's change page
-shows the matching Research API rows as **read-only `TabularInline`s**:
-
-| Parent          | Inlines                               |
-|-----------------|---------------------------------------|
-| `TikTokVideo`   | `APIVideoInfos`, `APIVideoStatistics` |
-| `TikTokUser`    | `APIUserInfos`, `APIUserStatistics`   |
-| `TikTokMusic`   | `APIMusicInfos`                       |
-| `TikTokHashtag` | `APIHashtagInfos`                     |
-
-The Research API models are intentionally **not** registered as standalone
-admin entries — they are service-owned and editing historical snapshots through
-the admin is not intended.
+to scheduled tasks. IMPORTANT: Any time new code is pushed to the server, 
+the schedule defined in this setting will override any adjustments made through the
+admin interface.

@@ -133,10 +133,13 @@ class ResearchAPIQueryTracker(models.Model):
         COMPLETED = "completed"
         SOFT_TIME_LIMIT_EXCEEDED = "soft_time_limit_exceeded"
         FAILED = "failed"
+        PARTIAL_FAILURE = "partial_failure"
 
     query_status = models.CharField(
         max_length=32, choices=Status.choices, default=Status.STARTED
     )
+
+    query_exception_details = models.JSONField(blank=True, null=True)
 
     class Meta:
         verbose_name = "Research API Query Tracker"
