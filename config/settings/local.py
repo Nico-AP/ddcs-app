@@ -36,9 +36,9 @@ CELERY_TASK_ALWAYS_EAGER = True  # tasks run inline, no worker needed
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#logging
 
-LOGGING["loggers"]["django"]["handlers"].append("console")
-LOGGING["loggers"]["django.request"]["handlers"].append("console")
-LOGGING["loggers"]["django.security"]["handlers"].append("console")
+LOGGING["loggers"]["django"]["handlers"] = ["console"]
+LOGGING["loggers"]["django.request"]["handlers"] = ["console"]
+LOGGING["loggers"]["django.security"]["handlers"] = ["console"]
 
 
 # django-debug-toolbar - https://github.com/django-commons/django-debug-toolbar
