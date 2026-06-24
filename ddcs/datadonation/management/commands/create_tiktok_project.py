@@ -5,7 +5,12 @@ from ddm.projects.models import DonationProject, ResearchProfile
 from django.contrib.auth import get_user_model
 from django.core.management import BaseCommand, CommandError, CommandParser
 
-from ddcs.datadonation.settings import DDM_TIKTOK_PROJECT_SLUG
+from ddcs.datadonation.config import (
+    DDM_TIKTOK_PROJECT_SLUG,
+    FOLLOWED_BP_NAME,
+    LIKED_VIDEOS_BP_NAME,
+    WATCH_HISTORY_BP_NAME,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +43,7 @@ FILE_UPLOADER_CONFIG = {
 
 BLUEPRINT_CONFIGS = [
     {
-        "name": "watch_history",
+        "name": WATCH_HISTORY_BP_NAME,
         "display_name": "Angesehene Videos",
         "description": "Videos, die du dir angesehen hast.",
         "display_position": 1,
@@ -337,7 +342,7 @@ BLUEPRINT_CONFIGS = [
         ],
     },
     {
-        "name": "followed_accounts",
+        "name": FOLLOWED_BP_NAME,
         "display_name": "Gefolgte Accounts",
         "description": "Accounts, denen du folgst.",
         "display_position": 8,
@@ -369,7 +374,7 @@ BLUEPRINT_CONFIGS = [
         ],
     },
     {
-        "name": "liked_videos",
+        "name": LIKED_VIDEOS_BP_NAME,
         "display_name": "Gelikte Videos",
         "description": "Videos, die du geliked hast.",
         "display_position": 9,

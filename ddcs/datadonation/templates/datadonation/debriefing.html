@@ -16,26 +16,24 @@
 {% block content %}
   <div class="container">
     <div class="row justify-content-center pt-4 mt-5 b-3 pb-3">
-      <div class="text-hero-subtitle mb-1">Schritt 2</div>
-      <h1>Daten prüfen und übermitteln</h1>
+      <div class="text-hero-subtitle mb-1">Abschluss</div>
+      <h1>Herzlichen Dank!</h1>
+
+      <p>
+        Sie sind nun am Ende der Studie angelangt.
+        Wenn Sie Ihre TikTok-Daten erfolgreich hochgeladen haben,
+        wird Ihnen auf der nächsten Seite Ihr personalisierter Nutzungsreport
+        angezeigt.
+      </p>
+
+      {# TODO: Handle cases where participant has not donated anything. #}
+
     </div>
 
-    <div id="uapp"
-         class="container text-black ps-0 pe-0 pb-5 ddm-portability"
-         data-action-url='{{ request.build_absolute_uri }}'
-         data-exception-url='{% if request.is_secure %}https://{% else %}http://{% endif %}{{ request.get_host }}{% url "ddm_logging:exceptions_api" project_url_id %}'
-         data-language='de'
-         data-csrf-token="{{ csrf_token }}"
-    >
-      {{ uploader_configs|json_script:"config-data" }}
-      {{ custom_translations|json_script:"custom-translations" }}
-      {# djlint:off H020 #}<uapp></uapp>{# djlint:on #}
-    </div>
-    {% render_bundle "ddm_uploader_frontend" config="DDM_UPLOADER" %}
+    <a class="btn btn-dark btn-primary-dfdw" href="{% url 'reports:report' participant_id %}">zum Report</a>
 
   </div>
 {% endblock content %}
 
 {% block extra_js %}
-  <script src="{% static 'datadonation/update_ddm_ui.js' %}"></script>
 {% endblock extra_js %}

@@ -21,7 +21,7 @@
     </div>
 
     <div id="uapp"
-         class="container text-black ps-0 pe-0 pb-5 ddm-portability"
+         class="container text-black ps-0 pe-0 pb-5"
          data-action-url='{{ request.build_absolute_uri }}'
          data-exception-url='{% if request.is_secure %}https://{% else %}http://{% endif %}{{ request.get_host }}{% url "ddm_logging:exceptions_api" project_url_id %}'
          data-language='de'

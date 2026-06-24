@@ -1,1 +1,0 @@
-DDM_TIKTOK_PROJECT_SLUG = "tiktok"
