@@ -63,19 +63,15 @@ def _synthetic_party_counts() -> list[PartyCountRecord]:
 
 def _synthetic_daily_party_counts(days: int = 30) -> list[DailyPartyCountRecord]:
     start = datetime.now(tz=UTC).date() - timedelta(days=days)
-    records = []
-    for i in range(days):
-        day = (start + timedelta(days=i)).isoformat()
-
-        records = [
-            {
-                "date": day,
-                "party": party,
-                "count": randint(0, 10),
-            }
-            for party in SYNTHETIC_PARTIES
-        ]
-    return records
+    return [
+        {
+            "date": (start + timedelta(days=i)).isoformat(),
+            "party": party,
+            "count": randint(0, 10),
+        }
+        for i in range(days)
+        for party in SYNTHETIC_PARTIES
+    ]
 
 
 def _synthetic_hashtags_by_video(video_ids: list[int]) -> dict[int, list[str]]:
