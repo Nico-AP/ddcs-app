@@ -1,0 +1,26 @@
+<div id="report-statistics">
+
+  {% include "reports/partials/intro_stats.html" %}
+
+  {% if party_distribution_user.html %}
+    {% include "reports/partials/party_distribution_user.html" %}
+  {% endif %}
+
+  {% if temporal_party_distribution_user.html %}
+    {% include "reports/partials/temporal_party_distribution_user.html" %}
+  {% endif %}
+
+  {% if top_videos %}
+    {% include "reports/partials/top_videos_table.html" with top_videos=top_videos %}
+  {% endif %}
+
+  {% if wordcloud_party_user.html %}
+    {% include "reports/partials/wordcloud_party_user.html" %}
+  {% endif %}
+
+  {% if wordcloud_non_party_user.html %}
+    {% include "reports/partials/wordcloud_non_party_user.html" %}
+  {% endif %}
+
+  {# TODO: Add share buttons #}
+</div>

@@ -1,0 +1,17 @@
+.report-block {
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+}
+
+.wordcloud-container svg text {
+    font-family: 'Rubik', sans-serif;
+}
+
+.report-highlight {
+  font-weight:        var(--font-weight-600);
+  letter-spacing:     var(--letter-spacing-subtitle);
+  text-transform:     uppercase;
+  color:              var(--text-accent);
+  line-height:        1.4;
+  font-size:          var(--font-size-text-hero);
+}

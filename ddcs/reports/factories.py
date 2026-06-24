@@ -1,0 +1,139 @@
+"""
+Factories for generating synthetic ParticipantReportStatistics instances.
+
+Used during development to populate the report view with realistic-looking
+data without requiring an actual data donation.
+"""
+
+# ruff: noqa: S311
+
+from datetime import UTC, datetime, timedelta
+from random import choices, randint, shuffle
+
+from ddm.participation.models import Participant
+
+from ddcs.reports.config import N_TOP_VIDEOS, PARTIES_ORDER
+from ddcs.reports.models import ParticipantReportStatistics
+from ddcs.reports.types import DailyPartyCountRecord, PartyCountRecord, TopVideoRecord
+
+# Mirrors what the real pipeline emits: every entry in PARTIES_ORDER,
+# including NO_PARTY_KEY for non-party political (and neutral) videos.
+SYNTHETIC_PARTIES = list(PARTIES_ORDER)
+
+SYNTHETIC_USERNAMES = [
+    "spd_official",
+    "cdu_deutschland",
+    "gruene_official",
+    "fdp_official",
+    "afd_official",
+    "dielinke",
+    "bsw_official",
+]
+
+SYNTHETIC_HASHTAGS = [
+    "politik",
+    "bundestagswahl",
+    "demokratie",
+    "deutschland",
+    "wahl2025",
+    "bundestag",
+    "wahlkampf",
+    "news",
+    "regierung",
+    "jungealternative",
+    "jungeliberale",
+    "jungeunion",
+    "jusos",
+    "katringoertingeckardt",
+    "keinechancedercdu",
+    "koalition",
+    "kubicki",
+    "larsklingbeil",
+    "lauterbach",
+    "linke",
+    "linkesindzecke",
+    "linkewohnkngssitutuation",
+    "linksfraktion",
+]
+
+
+def _synthetic_party_counts() -> list[PartyCountRecord]:
+    return [{"party": party, "count": randint(1, 50)} for party in SYNTHETIC_PARTIES]
+
+
+def _synthetic_daily_party_counts(days: int = 30) -> list[DailyPartyCountRecord]:
+    start = datetime.now(tz=UTC).date() - timedelta(days=days)
+    records = []
+    for i in range(days):
+        day = (start + timedelta(days=i)).isoformat()
+
+        records = [
+            {
+                "date": day,
+                "party": party,
+                "count": randint(0, 10),
+            }
+            for party in SYNTHETIC_PARTIES
+        ]
+    return records
+
+
+def _synthetic_hashtags_by_video(video_ids: list[int]) -> dict[int, list[str]]:
+    return {
+        video_id: choices(SYNTHETIC_HASHTAGS, k=randint(0, 5)) for video_id in video_ids
+    }
+
+
+def _synthetic_top_videos(
+    video_ids: list[int], n: int = N_TOP_VIDEOS
+) -> list[TopVideoRecord]:
+    shuffled = list(set(video_ids))
+    shuffle(shuffled)
+    return [
+        {
+            "video_id": video_id,
+            "username": choices(SYNTHETIC_USERNAMES)[0],
+            "party": choices(SYNTHETIC_PARTIES)[0],
+            "view_count": randint(1, 20),
+            "hashtags": choices(SYNTHETIC_HASHTAGS, k=randint(0, 5)),
+        }
+        for video_id in shuffled[:n]
+    ]
+
+
+def _synthetic_hashtag_list() -> list[str]:
+    return choices(SYNTHETIC_HASHTAGS, k=randint(150, 500))
+
+
+def get_synthetic_report_statistics(
+    participant: Participant,
+) -> ParticipantReportStatistics:
+    """Generate a synthetic ParticipantReportStatistics instance for
+    testing and report inspection.
+
+    Creates realistic-looking but randomly generated data. The instance is saved
+    to the database and associated with the given participant.
+    """
+    seen_pol_video_ids = [randint(1000000, 9999999) for _ in range(randint(20, 100))]
+    liked_pol_video_ids = choices(seen_pol_video_ids, k=randint(5, 20))
+    followed_pol_users = choices(
+        SYNTHETIC_USERNAMES, k=randint(1, len(SYNTHETIC_USERNAMES))
+    )
+
+    return ParticipantReportStatistics(
+        participant=participant,
+        # Pad the total above the political count so the share-political ratio
+        # in the report stays plausibly under 100%.
+        videos_seen_count_total=randint(
+            len(seen_pol_video_ids) * 2, len(seen_pol_video_ids) * 5
+        ),
+        seen_pol_video_ids=seen_pol_video_ids,
+        liked_pol_video_ids=liked_pol_video_ids,
+        followed_pol_users=followed_pol_users,
+        party_counts=_synthetic_party_counts(),
+        daily_party_counts=_synthetic_daily_party_counts(),
+        hashtags_by_pol_video=_synthetic_hashtags_by_video(seen_pol_video_ids),
+        top_videos=_synthetic_top_videos(seen_pol_video_ids),
+        party_hashtags=_synthetic_hashtag_list(),
+        non_party_hashtags=_synthetic_hashtag_list(),
+    )

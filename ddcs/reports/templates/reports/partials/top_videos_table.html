@@ -1,0 +1,47 @@
+<div class="report-block bg-gray">
+  <p class="fw-bold">Die <span class="report-highlight">viralsten</span> Politik-Videos in deinem Feed</p>
+  <div class="top-videos-container pt-2">
+    <table class="table table-striped top-videos-table">
+      <thead>
+      <tr>
+        <th>Account</th>
+        <th>Views</th>
+        <th>Hashtags</th>
+        <th>Link</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for video in top_videos %}
+        <tr>
+          <td class="account-cell">
+            <span class="account-name">@{{ video.username }}</span>
+          </td>
+          <td class="views-cell">
+            {{ video.view_count|floatformat:0 }}
+          </td>
+          <td class="hashtags-cell">
+            {% for tag in video.filtered_hashtags %}
+              <span class="hashtag">#{{ tag }}</span>
+            {% empty %}
+              —
+            {% endfor %}
+          </td>
+          <td class="link-cell">
+            <a href="https://www.tiktok.com/share/video/{{ video.video_id }}"
+               target="_blank"
+               rel="noopener noreferrer"
+               class="video-link">
+              Video ansehen
+            </a>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="description text-center fs-6 text-secondary">
+      Hier berücksichtigen wir alle Videos die einen politischen Hashtag
+      enthalten.
+    </div>
+  </div>
+</div>
+<hr />

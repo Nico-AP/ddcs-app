@@ -1,0 +1,25 @@
+<div class="report-block text-hero-lead">
+  <p>
+    Seit dem {{ start_date|date:"j.n.Y" }} hast du insgesamt
+    <span class="report-highlight">{{ n_seen_total }}</span>
+    {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %} auf TikTok
+    angesehen.
+  </p>
+  <p>
+    {% if n_seen_pol_videos == 0 %}
+      Davon hatte <span class="report-highlight">kein</span> Video einen politischen Hashtag.
+    {% elif n_seen_pol_videos == 1 %}
+      Davon hatte nur <span class="report-highlight">1</span> Video einen politischen Hashtag.
+    {% else %}
+      Davon hatten <span class="report-highlight">{{ n_seen_pol_videos }}</span> Videos einen politischen Hashtag.
+    {% endif %}
+  </p>
+  {% if n_seen_pol_videos > 0 %}
+    <p>
+      Das entspricht <span class="report-highlight">{{ share_political }}%</span> der Videos,
+      die du gesehen hast.
+    </p>
+  {% endif %}
+</div>
+
+<hr />

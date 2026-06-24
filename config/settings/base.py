@@ -68,6 +68,7 @@ THIRD_PARTY_APPS = [
     "ddm.core",
     "django_celery_beat",
     "django_ckeditor_5",
+    "django_htmx",
     "webpack_loader",
     "rest_framework",
     "rest_framework.authtoken",
@@ -102,6 +103,7 @@ LOCAL_APPS = [
     "ddcs.datadonation.portability",
     "ddcs.metadata",
     "ddcs.metadata.research_api",
+    "ddcs.reports",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -118,6 +120,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "csp.middleware.CSPMiddleware",
     "django_structlog.middlewares.RequestMiddleware",
+    "django_htmx.middleware.HtmxMiddleware",
     "wagtail.contrib.redirects.middleware.RedirectMiddleware",
 ]
 

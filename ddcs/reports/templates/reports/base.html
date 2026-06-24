@@ -1,0 +1,44 @@
+{% extends "website/base.html" %}
+
+{% load static django_htmx %}
+
+{% block page_title %}Report{% endblock page_title %}
+
+{% block head_seo_tags %}{% endblock head_seo_tags %}
+
+{% block extra_head %}{% htmx_script %}{% endblock extra_head %}
+
+{% block main %}
+
+  {% include "reports/header.html" %}
+
+  {% block content %}
+    <div class="container">
+      <div class="row justify-content-center pt-4 mt-5 b-3 pb-3 text-center">
+        <div class="mb-1"><h1>Dein Report</h1></div>
+
+        <div id="report-statistics" class="htmx-smooth-transition"
+             hx-get="{% if participant_id != 'synthetic' %}{% url 'reports:get_report' participant_id %}{% else %}{% url 'reports:get_synthetic_report' %}{% endif %}"
+             hx-trigger="load, every 60s"
+             hx-swap="outerHTML swap:1500ms settle:1500ms">
+          <div>
+            <div>Dein Report wird geladen</div>
+            <div class="mt-4">
+              <img src="{% static 'core/img/ddcs_load_icon.svg' %}" alt="Dein Feed, Deine Wahl Ladeicon" height="100px" />
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  {% endblock content %}
+
+  {% include "website/components/footer.html" %}
+
+  {% block extra_content %}{% endblock extra_content %}
+
+{% endblock main %}
+
+{% block extra_js %}
+  <script src="{% static 'reports/js/plotly-3.6.0.min.js' %}"></script>
+{% endblock extra_js %}

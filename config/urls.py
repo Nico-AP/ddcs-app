@@ -17,6 +17,7 @@ urlpatterns = [
     # DDCS
     path("", include("ddcs.website.urls", namespace="website")),
     path("", include("ddcs.datadonation.urls", namespace="datadonation")),
+    path("", include("ddcs.reports.urls", namespace="reports")),
     # DDM
     path("ddm/", include("ddm.core.urls")),
     path("ckeditor5/", include("django_ckeditor_5.urls")),
