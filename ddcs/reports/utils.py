@@ -15,6 +15,6 @@ def load_account_party_mapping() -> dict[str, str]:
 
     Key = username, value = party.
     """
-    with Path(ACCOUNT_PARTY_MAPPING_CSV_PATH).open("wb") as csv_file:
+    with Path(ACCOUNT_PARTY_MAPPING_CSV_PATH).open("r", encoding="utf-8") as csv_file:
         reader = csv.DictReader(csv_file, delimiter=",")
         return {row["username"]: row["partei"] for row in reader}

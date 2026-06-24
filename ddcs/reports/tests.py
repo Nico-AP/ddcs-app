@@ -32,7 +32,7 @@ class LoadAccountPartyMappingTests(TestCase):
     def test_csv_has_required_columns(self):
         # Loader reads `username` and `partei`; the CSV must provide both.
         expected_columns = {"username", "partei"}
-        with Path(ACCOUNT_PARTY_MAPPING_CSV_PATH).open("wb") as f:
+        with Path(ACCOUNT_PARTY_MAPPING_CSV_PATH).open("r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             self.assertEqual(set(reader.fieldnames), expected_columns)
 
