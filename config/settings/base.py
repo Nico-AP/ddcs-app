@@ -108,6 +108,12 @@ LOCAL_APPS = [
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
+# treebeard.E001 is emitted by recent django-treebeard against Wagtail's
+# Page/Collection managers, which don't yet subclass MP_NodeManager.
+# It's a forward-compat warning (hard error in Treebeard 6) — silence
+# until Wagtail ships the upstream fix.
+SILENCED_SYSTEM_CHECKS = ["treebeard.E001"]
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
