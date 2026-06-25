@@ -6,7 +6,10 @@
 
 {% block head_seo_tags %}{% endblock head_seo_tags %}
 
-{% block extra_head %}{% htmx_script nonce=request.csp_nonce %}{% endblock extra_head %}
+{% block extra_head %}
+  <script src="{% static 'django_htmx/htmx.min.js' %}" defer="" nonce="{{request.csp_nonce}}"></script>
+  <script src="{% static 'django_htmx/django-htmx.js' %}" data-debug="True" defer="" nonce="{{request.csp_nonce}}"></script>
+{% endblock extra_head %}
 
 {% block main %}
 
