@@ -43,13 +43,17 @@ X_FRAME_OPTIONS = "SAMEORIGIN"
 # django-csp - https://django-csp.readthedocs.io/en/latest/configuration.html
 
 CONTENT_SECURITY_POLICY = {
+    "INCLUDE_NONCE_IN": ["script-src"],
     "DIRECTIVES": {
         "default-src": [NONE],
         "script-src": [
             SELF,
             "https://analytics.dein-feed-deine-wahl.de",
         ],
-        "style-src": [SELF],
+        "style-src": [
+            SELF,
+            "unsafe-inline",  # required for Plotly dynamic styles + htmx styles
+        ],
         "img-src": [
             SELF,
             "data:",
