@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from csp.constants import NONE, SELF
+from csp.constants import NONE, SELF, UNSAFE_INLINE
 
 from .base import *  # noqa: F403
 from .base import STATIC_ROOT, env
@@ -49,10 +49,11 @@ CONTENT_SECURITY_POLICY = {
         "script-src": [
             SELF,
             "https://analytics.dein-feed-deine-wahl.de",
+            UNSAFE_INLINE,  # TODO: Remove again when htmx issue is figured out
         ],
         "style-src": [
             SELF,
-            "unsafe-inline",  # required for Plotly dynamic styles + htmx styles
+            UNSAFE_INLINE,  # required for Plotly dynamic styles + htmx styles
         ],
         "img-src": [
             SELF,
