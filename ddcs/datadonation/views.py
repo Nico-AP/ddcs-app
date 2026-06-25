@@ -6,14 +6,12 @@ from ddm.participation.views import (
 )
 from ddm.projects.models import DonationProject
 from django.http import Http404, HttpRequest
-from django.utils import timezone
 from django.utils.datastructures import MultiValueDict
 
 from ddcs.datadonation.config import DDM_TIKTOK_PROJECT_SLUG
 from ddcs.datadonation.services import post_process_donation
 
 PARTICIPATION_FLOW_STEPS = [
-    "placeholder",
     "datadonation:donation_ddm",
     "datadonation:questionnaire",
     "datadonation:debriefing",
@@ -35,13 +33,7 @@ class DonationViewDDM(DataDonationView):
 
         create_participation_session(request, self.object)
         self.participant = self.get_participant_from_session(request)
-        if self.participant.current_step is None or self.participant.current_step < 1:
-            self.participant.current_step = 1
-            self.participant.start_time = timezone.now()
-            self.participant.save()
-
-        # Update DDM step
-        self.current_step = 1  # TODO: Check robustness
+        self.current_step = self.get_current_step_from_participant(self.participant)
 
     def process_uploads(self, files: MultiValueDict) -> None:
         # Let DDM process the uploads normally
