@@ -15,7 +15,6 @@ from django.http import Http404, HttpRequest
 from django.views.generic import TemplateView
 
 from ddcs.datadonation.services import get_user_data
-from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
 from ddcs.reports.config import (
     HASHTAGS_TO_EXCLUDE,
     REPORT_FIRST_DATE_TO_INCLUDE,
@@ -85,17 +84,10 @@ class GetReportView(TemplateView):
             for video in self.statistics.top_videos
         ]
 
-    def _get_behaviour_comparisons(self) -> list[dict]:
-        participant = getattr(self, "participant", None)
-        if participant is None or not participant.pk:
-            return []
-        donor_data = get_user_data(participant)
-        return compute_behaviour_comparisons(donor_data)
-
     def get_context_data(self, **kwargs) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
 
-        behaviour_comparisons = self._get_behaviour_comparisons()
+        behaviour_comparisons = self.statistics.behaviour_comparisons
         context["behaviour_comparisons"] = behaviour_comparisons
         context["behaviour_profile_radar"] = get_behaviour_profile_radar(
             behaviour_comparisons
