@@ -114,8 +114,9 @@ Renaming any of those should be done in **both** places at once: the constant
 in `config.py` and the corresponding DDM admin entry.
 
 IN LOCAL DEV: Before `/ddm/projects/` - open `http://127.0.0.1:8000/admin/login/` to login with superuser and then open
+`http://127.0.0.1:8000/ddm/projects/` to continue. 
 
-`http://127.0.0.1:8000/ddm/projects/` to continue. there are some issue with url paths in the repro CHECK LATER
+> TODO: there are some issue with url paths in the repro
 
 ### 3. (Optional) Adjust the participation flow
 
