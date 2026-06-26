@@ -1,7 +1,13 @@
+from django import forms
 from django.contrib import admin
+from django.db.models import QuerySet
 from django.http import HttpRequest
+from import_export.admin import ExportMixin
+from import_export.forms import ExportForm
+from import_export.resources import ModelResource
 
 from ddcs.metadata.models import (
+    DataOrigins,
     ResearchAPIQueryTracker,
     TikTokHashtag,
     TikTokMusic,
@@ -17,6 +23,43 @@ from ddcs.metadata.research_api.models import (
     APIVideoInfos,
     APIVideoStatistics,
 )
+
+
+class TikTokVideoResource(ModelResource):
+    """Resource used to enable export through admin."""
+
+    class Meta:
+        model = TikTokVideo
+
+    def filter_export(self, queryset: QuerySet, **kwargs) -> QuerySet:
+        qs = super().filter_export(queryset, **kwargs)
+        export_form = kwargs.get("export_form")
+        if not export_form:
+            return qs
+
+        data_source = export_form.cleaned_data.get("data_source")
+        if data_source:
+            qs = qs.filter(added_by=data_source)
+
+        limit = export_form.cleaned_data.get("limit_to_last")
+        if limit:
+            qs = qs.order_by("-created_at")[:limit]
+
+        return qs
+
+
+class TikTokVideoExportForm(ExportForm):
+    limit_to_last = forms.IntegerField(
+        required=False,
+        initial=1000,
+        min_value=1,
+        label="Limit to last N entries (leave blank for all)",
+    )
+    data_source = forms.ChoiceField(
+        required=False,
+        choices=[("", "All sources"), *DataOrigins.choices],
+        label="Data source",
+    )
 
 
 class ReadOnlyInline(admin.TabularInline):
@@ -97,7 +140,7 @@ class APIHashtagInfosInline(ReadOnlyInline):
 
 
 @admin.register(TikTokVideo)
-class TikTokVideoAdmin(admin.ModelAdmin):
+class TikTokVideoAdmin(ExportMixin, admin.ModelAdmin):
     list_display = (
         "id_tiktok",
         "user",
@@ -110,6 +153,8 @@ class TikTokVideoAdmin(admin.ModelAdmin):
     autocomplete_fields = ("user", "music", "hashtags")
     readonly_fields = ("created_at", "updated_at", "inferred_create_time")
     inlines = (APIVideoInfosInline, APIVideoStatisticsInline)
+    resource_classes = [TikTokVideoResource]
+    export_form_class = TikTokVideoExportForm
 
 
 @admin.register(TikTokUser)

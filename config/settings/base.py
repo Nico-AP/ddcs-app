@@ -69,6 +69,7 @@ THIRD_PARTY_APPS = [
     "django_celery_beat",
     "django_ckeditor_5",
     "django_htmx",
+    "import_export",
     "webpack_loader",
     "rest_framework",
     "rest_framework.authtoken",

@@ -7,6 +7,7 @@ django-csp==4.0  # https://django-csp.readthedocs.io/en/latest/installation.html
 django-ddm==2.2.0b3  # https://github.com/uzh/ddm
 django-fernet-encrypted-fields==0.4.0  # https://github.com/jazzband/django-fernet-encrypted-fields
 django-htmx==1.27.0  # https://github.com/adamchainz/django-htmx
+django-import-export==4.4.1  # https://github.com/django-import-export/django-import-export
 django-structlog==10.1.0  # https://github.com/jrobichaud/django-structlog/
 django-two-factor-auth==1.18.1  # https://github.com/jazzband/django-two-factor-auth
 environs[django]==15.0.1  # https://pypi.org/project/environs/
