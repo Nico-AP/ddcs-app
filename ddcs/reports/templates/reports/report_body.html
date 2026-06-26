@@ -2,6 +2,10 @@
 
   {% include "reports/partials/intro_stats.html" %}
 
+  {% if behaviour_comparisons %}
+    {% include "reports/partials/behaviour_comparison.html" %}
+  {% endif %}
+
   {% if party_distribution_user.html %}
     {% include "reports/partials/party_distribution_user.html" %}
   {% endif %}

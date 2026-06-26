@@ -22,6 +22,8 @@ from ddcs.reports.config import (
 from ddcs.reports.factories import get_synthetic_report_statistics
 from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.plots import (
+    get_behaviour_distribution_violins,
+    get_behaviour_profile_radar,
     get_party_distribution_plot_user,
     get_temporal_party_distribution_plot_user,
 )
@@ -85,6 +87,15 @@ class GetReportView(TemplateView):
     def get_context_data(self, **kwargs) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
 
+        behaviour_comparisons = self.statistics.behaviour_comparisons
+        context["behaviour_comparisons"] = behaviour_comparisons
+        context["behaviour_profile_radar"] = get_behaviour_profile_radar(
+            behaviour_comparisons
+        )
+        context["behaviour_distribution_violins"] = get_behaviour_distribution_violins(
+            behaviour_comparisons
+        )
+
         # Intro text
         n_seen_total = int(self.statistics.videos_seen_count_total)
         n_seen_pol = len(self.statistics.seen_pol_video_ids)
@@ -127,3 +138,6 @@ class GetSyntheticReportView(GetReportView):
 
     def _get_statistics(self) -> ParticipantReportStatistics:
         return get_synthetic_report_statistics(self.participant)
+
+    def _get_behaviour_comparisons(self) -> list[dict]:
+        return self.statistics.behaviour_comparisons

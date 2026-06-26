@@ -102,9 +102,9 @@ LIKED_VIDEOS_BP_NAME    = "liked_videos"
 The easiest way is the management command:
 
 ```bash
-python manage.py create_tiktok_project
+python manage.py create_tiktok_project 1
 ```
-
+Where "1" refers to the (super)users ID that administrates the ddm instance.
 This creates the project and the three blueprints with the expected slugs. If
 you instead create them by hand through the DDM admin (`/ddm/projects/`), make
 sure the slug and blueprint names are character-for-character identical to the
@@ -112,6 +112,11 @@ constants above — they are how `services.py` looks up the donations.
 
 Renaming any of those should be done in **both** places at once: the constant
 in `config.py` and the corresponding DDM admin entry.
+
+IN LOCAL DEV: Before `/ddm/projects/` - open `http://127.0.0.1:8000/admin/login/` to login with superuser and then open
+`http://127.0.0.1:8000/ddm/projects/` to continue. 
+
+> TODO: there are some issue with url paths in the repro
 
 ### 3. (Optional) Adjust the participation flow
 

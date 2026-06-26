@@ -691,6 +691,7 @@ class GetReportViewTests(TestCase):
             ],
             "party_hashtags": ["politik"],
             "non_party_hashtags": ["news"],
+            "behaviour_comparisons": [],
         }
 
         defaults.update(overrides)

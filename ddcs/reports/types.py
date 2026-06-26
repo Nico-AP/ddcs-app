@@ -20,6 +20,25 @@ class TopVideoRecord(TypedDict):
     hashtags: list[str]
 
 
+class BehaviourComparisonRecord(TypedDict):
+    metric: str
+    label: str
+    radar_label: str
+    value: float
+    value_display: str
+    percentile: float
+    reference_mean: float
+    reference_mean_display: str
+    reference_mean_percentile: float
+    reference_median: float
+    reference_median_display: str
+    reference_p25: float
+    reference_p75: float
+    radar_user: float
+    radar_mean: float
+    is_fraction: bool
+
+
 class ReportStatistics(TypedDict):
     """Shape returned by ``compute_report_statistics`` and accepted by
     ``ParticipantReportStatistics(**stats)``. The keys mirror the model's
@@ -38,3 +57,5 @@ class ReportStatistics(TypedDict):
 
     party_hashtags: list[str]
     non_party_hashtags: list[str]
+
+    behaviour_comparisons: list[BehaviourComparisonRecord]

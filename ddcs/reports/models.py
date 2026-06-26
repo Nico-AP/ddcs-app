@@ -20,6 +20,8 @@ class ParticipantReportStatistics(models.Model):
     party_hashtags = models.JSONField()
     non_party_hashtags = models.JSONField()
 
+    behaviour_comparisons = models.JSONField(default=list)
+
     class Meta:
         ordering = ("-generated_at",)
         indexes = [models.Index(fields=("participant", "-generated_at"))]

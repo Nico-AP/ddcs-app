@@ -1,0 +1,82 @@
+<div class="report-block">
+  <h2 class="h4 mb-3">Dein TikTok-Nutzungsprofil</h2>
+  <p class="text-muted mb-4">
+    So nutzt du TikTok im Vergleich zu anderen Teilnehmenden.
+  </p>
+
+  {% if behaviour_profile_radar.html %}
+    <h3 class="h5 mb-3">Übersicht (Spider-Chart)</h3>
+    <div class="visualization-container mb-4">
+      {{ behaviour_profile_radar.html|safe }}
+    </div>
+    <p class="small text-muted text-center mb-4">
+      Die Achsen sind nach Perzentilen skaliert (innen&nbsp;=&nbsp;niedrig,
+      außen&nbsp;=&nbsp;hoch). Grau ist der durchschnittliche Nutzer (Mittelwert),
+      rot bist du. Fahre mit der Maus über die Punkte für echte Werte und Perzentile.
+    </p>
+  {% endif %}
+</div>
+
+{% if behaviour_distribution_violins.html %}
+  <div class="report-block">
+    <h3 class="h5 mb-3">Verteilung im Vergleich (Violin-Plot)</h3>
+    <p class="text-muted mb-3">
+      Alternative Darstellung: Die graue Violine zeigt, wie andere Teilnehmende verteilt
+      sind. Die rote Linie markiert deinen Wert.
+    </p>
+    <div class="visualization-container mb-4">
+      {{ behaviour_distribution_violins.html|safe }}
+    </div>
+  </div>
+{% endif %}
+
+<div class="report-block">
+  <h3 class="h5 mb-3">Detaillierter Vergleich (Tabelle)</h3>
+  <p class="text-muted mb-3">
+    Die Skala zeigt dein Perzentil (0&nbsp;=&nbsp;niedrigste,
+    100&nbsp;=&nbsp;höchste Werte in der Referenzgruppe).
+  </p>
+
+  {# djlint:off H021 #}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle behaviour-comparison-table">
+      <thead>
+      <tr>
+        <th scope="col">Kennzahl</th>
+        <th scope="col" class="text-end">Dein Wert</th>
+        <th scope="col" class="text-end d-none d-md-table-cell">Median</th>
+        <th scope="col" style="min-width: 12rem;">Vergleich</th>
+      </tr>
+      </thead>
+      <tbody>
+      {% for row in behaviour_comparisons %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td class="text-end font-monospace">{{ row.value_display }}</td>
+          <td class="text-end font-monospace d-none d-md-table-cell text-muted">
+            {{ row.reference_median_display }}
+          </td>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <div class="progress flex-grow-1" style="height: 0.65rem;">
+                <div class="progress-bar"
+                     role="progressbar"
+                     style="width: {{ row.percentile|floatformat:0 }}%;"
+                     aria-valuenow="{{ row.percentile|floatformat:0 }}"
+                     aria-valuemin="0"
+                     aria-valuemax="100"></div>
+              </div>
+              <span class="text-nowrap small text-muted">
+                    {{ row.percentile|floatformat:0 }}&nbsp;%
+                  </span>
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {# djlint:on #}
+</div>
+
+<hr />
