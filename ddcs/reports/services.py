@@ -11,6 +11,7 @@ from ddcs.core.types import (
     WatchHistoryRecord,
 )
 from ddcs.metadata.models import TikTokVideo
+from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
 from ddcs.reports.config import (
     N_TOP_VIDEOS,
     NO_PARTY_KEY,
@@ -227,6 +228,7 @@ def compute_report_statistics(data: TikTokUserData) -> ReportStatistics:
         "top_videos": top_videos,
         "party_hashtags": party_hashtags,
         "non_party_hashtags": non_party_hashtags,
+        "behaviour_comparisons": compute_behaviour_comparisons(data),
     }
 
 

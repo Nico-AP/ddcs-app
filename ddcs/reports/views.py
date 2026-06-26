@@ -15,6 +15,7 @@ from django.http import Http404, HttpRequest
 from django.views.generic import TemplateView
 
 from ddcs.datadonation.services import get_user_data
+from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
 from ddcs.reports.config import (
     HASHTAGS_TO_EXCLUDE,
     REPORT_FIRST_DATE_TO_INCLUDE,
@@ -22,6 +23,8 @@ from ddcs.reports.config import (
 from ddcs.reports.factories import get_synthetic_report_statistics
 from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.plots import (
+    get_behaviour_distribution_violins,
+    get_behaviour_profile_radar,
     get_party_distribution_plot_user,
     get_temporal_party_distribution_plot_user,
 )
@@ -82,8 +85,24 @@ class GetReportView(TemplateView):
             for video in self.statistics.top_videos
         ]
 
+    def _get_behaviour_comparisons(self) -> list[dict]:
+        participant = getattr(self, "participant", None)
+        if participant is None or not participant.pk:
+            return []
+        donor_data = get_user_data(participant)
+        return compute_behaviour_comparisons(donor_data)
+
     def get_context_data(self, **kwargs) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
+
+        behaviour_comparisons = self._get_behaviour_comparisons()
+        context["behaviour_comparisons"] = behaviour_comparisons
+        context["behaviour_profile_radar"] = get_behaviour_profile_radar(
+            behaviour_comparisons
+        )
+        context["behaviour_distribution_violins"] = get_behaviour_distribution_violins(
+            behaviour_comparisons
+        )
 
         # Intro text
         n_seen_total = int(self.statistics.videos_seen_count_total)
@@ -127,3 +146,6 @@ class GetSyntheticReportView(GetReportView):
 
     def _get_statistics(self) -> ParticipantReportStatistics:
         return get_synthetic_report_statistics(self.participant)
+
+    def _get_behaviour_comparisons(self) -> list[dict]:
+        return self.statistics.behaviour_comparisons

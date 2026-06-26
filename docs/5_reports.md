@@ -57,6 +57,7 @@ all in [`config.py`](../ddcs/reports/config.py):
 | `PARTIES_ORDER`                   | Display order of parties in the treemap / stacked area; unknown parties go last alphabetically. |
 | `N_TOP_VIDEOS`                    | How many videos to include in the "top videos" table.                                           |
 | `HASHTAGS_TO_EXCLUDE`             | Generic hashtags filtered out of the wordclouds (`fyp`, `viral`, etc.).                         |
+| `BEHAVIOUR_METRICS_CSV_PATH`      | Reference population CSV for behaviour comparisons (env; used for percentile baselines only). Donor metrics are computed from watch history. |
 
 ## Setup
 

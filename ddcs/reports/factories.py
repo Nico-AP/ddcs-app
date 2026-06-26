@@ -12,7 +12,13 @@ from random import choices, randint, shuffle
 
 from ddm.participation.models import Participant
 
-from ddcs.reports.config import N_TOP_VIDEOS, PARTIES_ORDER
+from ddcs.core.types import TikTokUserData
+from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
+from ddcs.reports.config import (
+    N_TOP_VIDEOS,
+    PARTIES_ORDER,
+    REPORT_FIRST_DATE_TO_INCLUDE,
+)
 from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.types import DailyPartyCountRecord, PartyCountRecord, TopVideoRecord
 
@@ -101,6 +107,19 @@ def _synthetic_hashtag_list() -> list[str]:
     return choices(SYNTHETIC_HASHTAGS, k=randint(150, 500))
 
 
+def _synthetic_behaviour_comparisons() -> list[dict]:
+    start = REPORT_FIRST_DATE_TO_INCLUDE
+    watch_history = [
+        {
+            "date": start + timedelta(days=i % 30, hours=(i * 3) % 24),
+            "link": f"https://www.tiktok.com/@user/video/{i}",
+            "video_id": i,
+        }
+        for i in range(120)
+    ]
+    return compute_behaviour_comparisons(TikTokUserData(watch_history=watch_history))
+
+
 def get_synthetic_report_statistics(
     participant: Participant,
 ) -> ParticipantReportStatistics:
@@ -132,4 +151,5 @@ def get_synthetic_report_statistics(
         top_videos=_synthetic_top_videos(seen_pol_video_ids),
         party_hashtags=_synthetic_hashtag_list(),
         non_party_hashtags=_synthetic_hashtag_list(),
+        behaviour_comparisons=_synthetic_behaviour_comparisons(),
     )
