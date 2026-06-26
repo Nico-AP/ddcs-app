@@ -11,6 +11,10 @@ from django.test import RequestFactory, TestCase
 from ddcs.core.types import TikTokUserData
 from ddcs.metadata.models import DataOrigins, TikTokHashtag, TikTokUser, TikTokVideo
 from ddcs.reports import factories, plots, services, views, wordclouds
+from ddcs.reports.behaviour_metrics import (
+    compute_behaviour_comparisons,
+    compute_watch_history_metrics,
+)
 from ddcs.reports.config import (
     ACCOUNT_PARTY_MAPPING_CSV_PATH,
     HASHTAGS_TO_EXCLUDE,
@@ -41,6 +45,42 @@ class LoadAccountPartyMappingTests(TestCase):
         # Spot-check that values are non-empty party strings.
         self.assertTrue(all(isinstance(k, str) and k for k in result))
         self.assertTrue(all(isinstance(v, str) and v for v in result.values()))
+
+
+# ============================================================
+# behaviour_metrics
+# ============================================================
+
+
+class FracInstantSkipTests(TestCase):
+    def _watch_history(self, offsets_sec: list[float]) -> TikTokUserData:
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        return TikTokUserData(
+            watch_history=[
+                {
+                    "date": base + timedelta(seconds=offset),
+                    "link": f"https://www.tiktok.com/@user/video/{i}",
+                    "video_id": i,
+                }
+                for i, offset in enumerate(offsets_sec)
+            ]
+        )
+
+    def test_empty_history_returns_no_metrics(self):
+        self.assertEqual(compute_watch_history_metrics(TikTokUserData()), {})
+
+    def test_single_watch_has_zero_instant_skip_fraction(self):
+        metrics = compute_watch_history_metrics(self._watch_history([0]))
+        self.assertEqual(metrics["frac_instant_skip"], 0.0)
+
+    def test_counts_gaps_shorter_than_one_second(self):
+        metrics = compute_watch_history_metrics(self._watch_history([0, 0.5, 10]))
+        self.assertEqual(metrics["frac_instant_skip"], 0.5)
+
+    def test_included_in_behaviour_comparisons_when_reference_csv_present(self):
+        comparisons = compute_behaviour_comparisons(self._watch_history([0, 0.5, 10]))
+        metrics = {row["metric"] for row in comparisons}
+        self.assertIn("frac_instant_skip", metrics)
 
 
 # ============================================================

@@ -29,6 +29,7 @@ PARTY_COLORS = {
     "Keine Partei": "#d4c5aa",
 }
 PLOT_FONT_FAMILY = "Rubik, Arial, sans-serif"
+_RADAR_AXIS_LABEL_FONT_SIZE = 16
 
 # Interactive: toolbar hidden but hover/tooltips enabled.
 PLOT_CONFIG = {
@@ -87,6 +88,23 @@ def _hex_to_rgba(hex_color: str, alpha: float = 0.9) -> str:
 # === Behaviour profile radar ===
 
 
+def _radar_hover_value_display(metric: str, value_display: str) -> str:
+    """Add interpretable units for spider-chart tooltips (table text unchanged)."""
+    if metric in (
+        "weekend_activity_frac",
+        "night_activity_frac",
+        "frac_instant_skip",
+    ):
+        return value_display
+    if metric == "avg_watch_per_active_day":
+        return f"{value_display}\u00a0Videos"
+    if metric == "avg_active_hours_per_day":
+        return f"{value_display}\u00a0Stunden"
+    if metric == "peak_activity_hour":
+        return f"{value_display}\u00a0Uhr"
+    return value_display
+
+
 def get_behaviour_profile_radar(
     comparisons: list[BehaviourComparisonRecord],
 ) -> dict[str, Any]:
@@ -110,14 +128,19 @@ def get_behaviour_profile_radar(
 
     user_hover = _close_customdata(
         [
-            (row["value_display"], f"{row['percentile']:.0f}\u00a0%")
+            (
+                _radar_hover_value_display(row["metric"], row["value_display"]),
+                f"{row['percentile']:.0f}\u00a0%",
+            )
             for row in comparisons
         ]
     )
     mean_hover = _close_customdata(
         [
             (
-                row["reference_mean_display"],
+                _radar_hover_value_display(
+                    row["metric"], row["reference_mean_display"]
+                ),
                 f"{row['reference_mean_percentile']:.0f}\u00a0%",
             )
             for row in comparisons
@@ -137,7 +160,6 @@ def get_behaviour_profile_radar(
             fill="toself",
             customdata=mean_hover,
             hovertemplate=(
-                "<b>%{theta}</b><br>"
                 "Mittelwert: %{customdata[0]}<br>"
                 "Perzentil: %{customdata[1]}"
                 "<extra>Durchschnitt</extra>"
@@ -156,10 +178,7 @@ def get_behaviour_profile_radar(
             fill="toself",
             customdata=user_hover,
             hovertemplate=(
-                "<b>%{theta}</b><br>"
-                "Du: %{customdata[0]}<br>"
-                "Perzentil: %{customdata[1]}"
-                "<extra>Du</extra>"
+                "Du: %{customdata[0]}<br>Perzentil: %{customdata[1]}<extra>Du</extra>"
             ),
         )
     )
@@ -176,7 +195,7 @@ def get_behaviour_profile_radar(
             },
             "angularaxis": {
                 "tickfont": {
-                    "size": 24,
+                    "size": _RADAR_AXIS_LABEL_FONT_SIZE,
                     "color": "black",
                     "family": PLOT_FONT_FAMILY,
                 },
@@ -200,7 +219,7 @@ def get_behaviour_profile_radar(
         font={"size": 22, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin={"l": 60, "r": 60, "t": 40, "b": 80},
+        margin={"l": 72, "r": 72, "t": 48, "b": 88},
     )
 
     return {"html": _create_plot_html(fig, config=PLOT_CONFIG)}

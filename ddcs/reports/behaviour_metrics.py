@@ -5,6 +5,7 @@ import math
 from collections import defaultdict
 from datetime import date, datetime
 from functools import lru_cache
+from itertools import pairwise
 
 from ddcs.core.types import TikTokUserData, WatchHistoryRecord
 from ddcs.reports.config import BEHAVIOUR_METRICS_CSV_PATH, REPORT_FIRST_DATE_TO_INCLUDE
@@ -13,6 +14,8 @@ from ddcs.reports.types import BehaviourComparisonRecord
 _SATURDAY_WEEKDAY = 5
 _NIGHT_HOUR_START = 22
 _NIGHT_HOUR_END = 6
+_INSTANT_SKIP_MAX_GAP_SEC = 1
+_MIN_WATCH_EVENTS_FOR_GAP = 2
 
 # Profile metrics shown in the report (totals omitted from the UI).
 PROFILE_METRICS: list[str] = [
@@ -20,19 +23,19 @@ PROFILE_METRICS: list[str] = [
     "avg_active_hours_per_day",
     "weekend_activity_frac",
     "night_activity_frac",
+    "frac_instant_skip",
     "peak_activity_hour",
 ]
 
 RADAR_LABELS: dict[str, str] = {
     "avg_watch_per_active_day": (
-        "So viele Videos siehst du <br>pro Tag wenn du TikTok öffnest"
+        "Durchschnittliche Anzahl <br>angesehene Videos pro aktivem Tag"
     ),
-    "avg_active_hours_per_day": "Zeit die du auf TikTok pro Tag verbringst",
-    "weekend_activity_frac": (
-        "So viel deiner TikTok-Zeit <br>findet am Wochenende statt"
-    ),
-    "night_activity_frac": "So viel deiner TikTok-Zeit <br>findet nachts statt",
-    "peak_activity_hour": "Wann scrollst du am aktivsten?",
+    "avg_active_hours_per_day": "Durchschnittliche Anzahl <br>aktiver Stunden pro Tag",
+    "weekend_activity_frac": ("Anteil TikTok-Zeit am Wochenende"),
+    "night_activity_frac": "Anteil TikTok-Zeit nachts",
+    "frac_instant_skip": ("Anteil Instant-Skips"),
+    "peak_activity_hour": "Deine TikTok-Tageszeit",
 }
 
 METRIC_LABELS: dict[str, str] = {
@@ -40,12 +43,14 @@ METRIC_LABELS: dict[str, str] = {
     "avg_active_hours_per_day": "Ø aktive Stunden pro Tag",
     "weekend_activity_frac": "Anteil Wochenend-Wiedergaben",
     "night_activity_frac": "Anteil Nacht-Wiedergaben (22-6 Uhr)",
-    "peak_activity_hour": "Stoßzeit (Stunde)",
+    "frac_instant_skip": "Anteil Instant-Skips (< 1 Sek. bis zum nächsten Video)",
+    "peak_activity_hour": "Tageszeit wo du auf TikTok am aktivsten bist (Stunde)",
 }
 
 FRACTION_METRICS = {
     "weekend_activity_frac",
     "night_activity_frac",
+    "frac_instant_skip",
 }
 
 
@@ -114,6 +119,19 @@ def _format_metric_value(metric: str, value: float) -> str:
     return f"{value:.2f}"
 
 
+def _frac_instant_skip(timestamps: list[datetime]) -> float:
+    """Share of views scrolled away within one second (gap to next watch event)."""
+    if len(timestamps) < _MIN_WATCH_EVENTS_FOR_GAP:
+        return 0.0
+    sorted_ts = sorted(timestamps)
+    instant_skips = sum(
+        1
+        for prev, nxt in pairwise(sorted_ts)
+        if (nxt - prev).total_seconds() < _INSTANT_SKIP_MAX_GAP_SEC
+    )
+    return instant_skips / (len(sorted_ts) - 1)
+
+
 @lru_cache(maxsize=1)
 def _load_reference_distributions() -> dict[str, list[float]]:
     """Reference population distributions per metric (CSV used for comparison only)."""
@@ -146,6 +164,7 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
     daily_watches: dict[date, int] = defaultdict(int)
     daily_hours: dict[date, set[int]] = defaultdict(set)
     hour_counts: dict[int, int] = defaultdict(int)
+    timestamps: list[datetime] = []
     weekend_watches = 0
     weekday_watches = 0
     night_watches = 0
@@ -153,6 +172,7 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
     for record in watches:
         ts = record["date"]
         assert isinstance(ts, datetime)
+        timestamps.append(ts)
         day = ts.date()
         daily_watches[day] += 1
         daily_hours[day].add(ts.hour)
@@ -177,6 +197,7 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
         / len(active_hours_per_day),
         "weekend_activity_frac": weekend_watches / (weekend_watches + weekday_watches),
         "night_activity_frac": night_watches / watch_count,
+        "frac_instant_skip": _frac_instant_skip(timestamps),
         "peak_activity_hour": float(peak_hour),
     }
 
