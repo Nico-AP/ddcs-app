@@ -106,21 +106,6 @@ def _distribution_stats(sorted_values: list[float]) -> dict[str, float]:
     }
 
 
-def trimmed_reference_distribution(
-    sorted_values: list[float],
-    *,
-    lower_percentile: float = 0.01,
-    upper_percentile: float = 0.99,
-) -> tuple[list[float], float, float]:
-    """Trim reference extremes for violin plots; return values and bounds."""
-    if not sorted_values:
-        return [], 0.0, 0.0
-    lower_bound = _quantile(sorted_values, lower_percentile)
-    upper_bound = _quantile(sorted_values, upper_percentile)
-    trimmed = [v for v in sorted_values if lower_bound <= v <= upper_bound]
-    return trimmed, lower_bound, upper_bound
-
-
 def _format_metric_value(metric: str, value: float) -> str:
     if metric in FRACTION_METRICS:
         return f"{value * 100:.1f}\u00a0%"
@@ -247,13 +232,3 @@ def compute_behaviour_comparisons(
 
 def clear_behaviour_reference_cache() -> None:
     _load_reference_distributions.cache_clear()
-
-
-def get_profile_reference_distributions() -> dict[str, list[float]]:
-    """Reference population values for profile metrics (violin plots, etc.)."""
-    reference_values = _load_reference_distributions()
-    return {
-        metric: reference_values[metric]
-        for metric in PROFILE_METRICS
-        if metric in reference_values
-    }

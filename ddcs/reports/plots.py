@@ -6,12 +6,7 @@ import plotly.graph_objects as go
 from django.conf import settings
 from django.templatetags.static import static
 from plotly.graph_objs import Figure
-from plotly.subplots import make_subplots
 
-from ddcs.reports.behaviour_metrics import (
-    get_profile_reference_distributions,
-    trimmed_reference_distribution,
-)
 from ddcs.reports.config import NO_PARTY_KEY, PARTIES_ORDER, PLOTLY_JS_STATIC_PATH
 from ddcs.reports.types import (
     BehaviourComparisonRecord,
@@ -207,127 +202,6 @@ def get_behaviour_profile_radar(
         plot_bgcolor="rgba(0,0,0,0)",
         margin={"l": 60, "r": 60, "t": 40, "b": 80},
     )
-
-    return {"html": _create_plot_html(fig, config=PLOT_CONFIG)}
-
-
-# === Behaviour distribution violins ===
-
-
-def get_behaviour_distribution_violins(
-    comparisons: list[BehaviourComparisonRecord],
-) -> dict[str, Any]:
-    """Violin per metric with a vertical line for the donor."""
-    if not comparisons:
-        return {"html": None}
-
-    reference_distributions = get_profile_reference_distributions()
-    if not reference_distributions:
-        return {"html": None}
-
-    row_count = len(comparisons)
-    fig = make_subplots(
-        rows=row_count,
-        cols=1,
-        subplot_titles=[row["label"] for row in comparisons],
-        vertical_spacing=0.14,
-    )
-
-    for index, row in enumerate(comparisons, start=1):
-        metric = row["metric"]
-        population = reference_distributions.get(metric)
-        if not population:
-            continue
-
-        display_population, lower_bound, upper_bound = trimmed_reference_distribution(
-            population
-        )
-        if not display_population:
-            continue
-
-        fig.add_trace(
-            go.Violin(
-                x=display_population,
-                orientation="h",
-                fillcolor="rgba(150, 150, 150, 0.25)",
-                line={"color": "rgba(120, 120, 120, 0.7)", "width": 1},
-                points=False,
-                showlegend=False,
-                hoverinfo="skip",
-            ),
-            row=index,
-            col=1,
-        )
-        fig.add_vline(
-            x=row["value"],
-            line={"color": "#e4454f", "width": 3},
-            row=index,
-            col=1,
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=[row["value"]],
-                y=[0],
-                mode="markers",
-                marker={
-                    "color": "#e4454f",
-                    "size": 14,
-                    "symbol": "line-ns-open",
-                    "line": {"width": 3, "color": "#e4454f"},
-                },
-                customdata=[[row["value_display"], f"{row['percentile']:.0f}\u00a0%"]],
-                hovertemplate=(
-                    "<b>Du</b><br>"
-                    "Wert: %{customdata[0]}<br>"
-                    "Perzentil: %{customdata[1]}"
-                    "<extra></extra>"
-                ),
-                showlegend=False,
-            ),
-            row=index,
-            col=1,
-        )
-
-        xaxis_key = "xaxis" if index == 1 else f"xaxis{index}"
-        axis_update: dict[str, Any] = {
-            "showgrid": True,
-            "gridcolor": "rgba(0, 0, 0, 0.08)",
-            "tickfont": {"size": 14, "family": PLOT_FONT_FAMILY},
-            "zeroline": False,
-        }
-        if row["is_fraction"]:
-            axis_update["tickformat"] = ".0%"
-        elif metric == "peak_activity_hour":
-            axis_update["ticksuffix"] = ":00"
-
-        user_value = row["value"]
-        axis_min = min(lower_bound, user_value)
-        axis_max = max(upper_bound, user_value)
-        axis_pad = (axis_max - axis_min) * 0.05 or 0.01
-        axis_update["range"] = [axis_min - axis_pad, axis_max + axis_pad]
-
-        fig.update_layout(**{xaxis_key: axis_update})
-
-        yaxis_key = "yaxis" if index == 1 else f"yaxis{index}"
-        fig.update_layout(
-            **{
-                yaxis_key: {
-                    "showticklabels": False,
-                    "showgrid": False,
-                    "zeroline": False,
-                }
-            }
-        )
-
-    fig.update_layout(
-        autosize=True,
-        height=max(700, row_count * 170),
-        font={"size": 16, "color": "black", "family": PLOT_FONT_FAMILY},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin={"l": 40, "r": 40, "t": 70, "b": 40},
-    )
-    fig.update_annotations(font={"size": 16, "family": PLOT_FONT_FAMILY}, yshift=8)
 
     return {"html": _create_plot_html(fig, config=PLOT_CONFIG)}
 

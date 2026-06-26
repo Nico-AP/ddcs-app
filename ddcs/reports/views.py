@@ -22,7 +22,6 @@ from ddcs.reports.config import (
 from ddcs.reports.factories import get_synthetic_report_statistics
 from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.plots import (
-    get_behaviour_distribution_violins,
     get_behaviour_profile_radar,
     get_party_distribution_plot_user,
     get_temporal_party_distribution_plot_user,
@@ -90,9 +89,6 @@ class GetReportView(TemplateView):
         behaviour_comparisons = self.statistics.behaviour_comparisons
         context["behaviour_comparisons"] = behaviour_comparisons
         context["behaviour_profile_radar"] = get_behaviour_profile_radar(
-            behaviour_comparisons
-        )
-        context["behaviour_distribution_violins"] = get_behaviour_distribution_violins(
             behaviour_comparisons
         )
 
