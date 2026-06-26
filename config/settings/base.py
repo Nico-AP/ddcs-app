@@ -461,16 +461,10 @@ AUTH_TOKEN_SECRET = env.str("AUTH_TOKEN_SECRET")  # Authlib config
 TIKTOK_CLIENT_ID = env.str("TIKTOK_CLIENT_ID", "")
 TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET", "")
 
-
 # TikTok Research API
 # ------------------------------------------------------------------------------
 TIKTOK_RESEARCH_API_KEY = env.str("TIKTOK_RESEARCH_API_KEY", "")
 TIKTOK_RESEARCH_API_SECRET = env.str("TIKTOK_RESEARCH_API_SECRET", "")
-
-# Reports reference data
-# ------------------------------------------------------------------------------
-BEHAVIOUR_METRICS_CSV_PATH = env.str("BEHAVIOUR_METRICS_CSV_PATH", default="")
-
 
 # DDM and related settings
 # ------------------------------------------------------------------------------

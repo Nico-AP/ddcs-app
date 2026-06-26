@@ -3,6 +3,7 @@ from pathlib import Path
 
 _DATA_DIR = Path(__file__).parent / "data"
 ACCOUNT_PARTY_MAPPING_CSV_PATH = _DATA_DIR / "account_party_mapping.csv"
+BEHAVIOUR_METRICS_CSV_PATH = _DATA_DIR / "behaviour_metrics_per_participant.csv"
 
 PLOTLY_JS_STATIC_PATH = "reports/js/plotly-3.6.0.min.js"
 REPORT_FIRST_DATE_TO_INCLUDE = datetime(2026, 5, 1, tzinfo=UTC)

@@ -1,25 +1,14 @@
 """Behaviour metrics from donated watch history, compared to a reference population."""
 
-from __future__ import annotations
-
 import csv
 import math
 from collections import defaultdict
 from datetime import date, datetime
 from functools import lru_cache
-from pathlib import Path
-from typing import TYPE_CHECKING
 
-from django.conf import settings
-
-from ddcs.reports.config import REPORT_FIRST_DATE_TO_INCLUDE
-
-if TYPE_CHECKING:
-    from ddcs.core.types import TikTokUserData, WatchHistoryRecord
-    from ddcs.reports.types import BehaviourComparisonRecord
-
-_DATA_DIR = Path(__file__).parent / "data"
-_DEFAULT_BEHAVIOUR_METRICS_CSV = _DATA_DIR / "behaviour_metrics_per_participant.csv"
+from ddcs.core.types import TikTokUserData, WatchHistoryRecord
+from ddcs.reports.config import BEHAVIOUR_METRICS_CSV_PATH, REPORT_FIRST_DATE_TO_INCLUDE
+from ddcs.reports.types import BehaviourComparisonRecord
 
 _SATURDAY_WEEKDAY = 5
 _NIGHT_HOUR_START = 22
@@ -58,13 +47,6 @@ FRACTION_METRICS = {
     "weekend_activity_frac",
     "night_activity_frac",
 }
-
-
-def _behaviour_csv_path() -> Path:
-    configured = getattr(settings, "BEHAVIOUR_METRICS_CSV_PATH", "") or ""
-    if configured:
-        return Path(configured)
-    return _DEFAULT_BEHAVIOUR_METRICS_CSV
 
 
 def _parse_float(value: str | None) -> float | None:
@@ -150,7 +132,7 @@ def _format_metric_value(metric: str, value: float) -> str:
 @lru_cache(maxsize=1)
 def _load_reference_distributions() -> dict[str, list[float]]:
     """Reference population distributions per metric (CSV used for comparison only)."""
-    path = _behaviour_csv_path()
+    path = BEHAVIOUR_METRICS_CSV_PATH
     if not path.is_file():
         return {}
 

@@ -163,3 +163,6 @@ $RECYCLE.BIN/
 # Linux
 .directory
 .Trash-*
+
+# Potentially sensitive data
+behaviour_metrics_per_participant.csv
