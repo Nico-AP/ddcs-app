@@ -17,14 +17,16 @@ from ddcs.reports.types import (
 logger = logging.getLogger(__name__)
 
 
+_PARTY_COLOR_OTHER = "#9f9f9f"
 PARTY_COLORS = {
     "SPD": "#e4454f",  # "#e3000f",
     "CDU/CSU": "#454545",  # "#000000",
     "Grüne": "#76ae63",  # "#46962b",
+    "B90/Grüne": "#76ae63",  # "#46962b",
     "FDP": "#f8eb45",  # "#ffed00",
     "AfD": "#45b4e2",  # "#009ee0",
     "Linke": "#ca6697",  # "#be3075",
-    "Sonstige": "#9f9f9f",  # "#808080",
+    "Sonstige": _PARTY_COLOR_OTHER,  # "#808080",
     "BSW": "#8e5973",  # "#691d42",
     "Keine Partei": "#d4c5aa",
 }
@@ -257,7 +259,12 @@ def get_party_distribution_plot_user(
                 for party, count in zip(labels, values, strict=True)
             ],
             texttemplate="%{text}",
-            marker={"colors": [_hex_to_rgba(PARTY_COLORS[party]) for party in labels]},
+            marker={
+                "colors": [
+                    _hex_to_rgba(PARTY_COLORS.get(party, _PARTY_COLOR_OTHER))
+                    for party in labels
+                ]
+            },
         )
     )
 
@@ -317,7 +324,7 @@ def get_temporal_party_distribution_plot_user(
                 mode="lines",
                 line={"width": 0},
                 stackgroup="one",
-                fillcolor=_hex_to_rgba(PARTY_COLORS[party]),
+                fillcolor=_hex_to_rgba(PARTY_COLORS.get(party, _PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",

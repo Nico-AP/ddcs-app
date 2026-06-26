@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-06-26 13:59+0200\n"
+"POT-Creation-Date: 2026-06-26 21:23+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,23 +18,23 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: config/settings/base.py:225
+#: .\config\settings\base.py:225
 msgid "German"
 msgstr "Deutsch"
 
-#: config/settings/base.py:226
+#: .\config\settings\base.py:226
 msgid "English"
 msgstr "Englisch"
 
-#: ddcs/website/templates/exceptions/403.html:6
-#: ddcs/website/templates/exceptions/403.html:10
-#: ddcs/website/templates/exceptions/403_csrf.html:6
-#: ddcs/website/templates/exceptions/403_csrf.html:10
+#: .\ddcs\website\templates\exceptions\403.html:6
+#: .\ddcs\website\templates\exceptions\403.html:10
+#: .\ddcs\website\templates\exceptions\403_csrf.html:6
+#: .\ddcs\website\templates\exceptions\403_csrf.html:10
 msgid "Access Denied"
 msgstr "Zugriff verweigert"
 
-#: ddcs/website/templates/exceptions/403.html:16
-#: ddcs/website/templates/exceptions/403_csrf.html:16
+#: .\ddcs\website\templates\exceptions\403.html:16
+#: .\ddcs\website\templates\exceptions\403_csrf.html:16
 #, fuzzy, python-format
 #| msgid ""
 #| "You are not authorised to view this page. Please make sure you are logged "
@@ -44,37 +44,37 @@ msgid ""
 "in, or return to the <a href=\"%(landing_page_url)s\">home page</a>."
 msgstr ""
 "Sie sind nicht berechtigt, diese Seite aufzurufen. Bitte stellen Sie sicher, "
-"dass Sie angemeldet sind, oder kehren Sie zur <a href=\"%(landing_page_url)s"
-"\">Startseite</a> zurück."
+"dass Sie angemeldet sind, oder kehren Sie zur <a "
+"href=\"%(landing_page_url)s\">Startseite</a> zurück."
 
-#: ddcs/website/templates/exceptions/404.html:6
-#: ddcs/website/templates/exceptions/404.html:10
+#: .\ddcs\website\templates\exceptions\404.html:6
+#: .\ddcs\website\templates\exceptions\404.html:10
 msgid "Page Not Found"
 msgstr "Seite nicht gefunden"
 
-#: ddcs/website/templates/exceptions/404.html:16
+#: .\ddcs\website\templates\exceptions\404.html:16
 #, fuzzy, python-format
 #| msgid ""
 #| "This page does not exist or has been moved. Return to the <a href=\"/"
 #| "\">home page</a>."
 msgid ""
-"This page does not exist or has been moved. Return to the <a href="
-"\"%(landing_page_url)s\">home page</a>."
+"This page does not exist or has been moved. Return to the <a "
+"href=\"%(landing_page_url)s\">home page</a>."
 msgstr ""
-"Diese Seite existiert nicht oder wurde verschoben. Zurück zur <a href="
-"\"%(landing_page_url)s\">Startseite</a>."
+"Diese Seite existiert nicht oder wurde verschoben. Zurück zur <a "
+"href=\"%(landing_page_url)s\">Startseite</a>."
 
-#: ddcs/website/templates/exceptions/500.html:6
+#: .\ddcs\website\templates\exceptions\500.html:6
 msgid "Something went wrong"
 msgstr "Etwas ist schiefgelaufen"
 
-#: ddcs/website/templates/exceptions/500.html:10
+#: .\ddcs\website\templates\exceptions\500.html:10
 #, fuzzy
 #| msgid "Something went wrong"
 msgid "Something went wrong on our end"
 msgstr "Auf unserer Seite ist etwas schiefgelaufen"
 
-#: ddcs/website/templates/exceptions/500.html:13
+#: .\ddcs\website\templates\exceptions\500.html:13
 #, python-format
 msgid ""
 "We're sorry for the inconvenience. This error has been logged and we'll look "
@@ -84,10 +84,10 @@ msgstr ""
 "Der Fehler wurde automatisch erfasst. Sollte das Problem weiterhin bestehen, "
 "<a href=\"%(contact_url)s\">melden Sie sich gerne bei uns</a>."
 
-#: ddcs/website/templates/website/base.html:17
-#: ddcs/website/templates/website/base.html:23
-#: ddcs/website/templates/website/base.html:24
-#: ddcs/website/templates/website/base.html:31
-#: ddcs/website/templates/website/base.html:32
+#: .\ddcs\website\templates\website\base.html:17
+#: .\ddcs\website\templates\website\base.html:23
+#: .\ddcs\website\templates\website\base.html:24
+#: .\ddcs\website\templates\website\base.html:31
+#: .\ddcs\website\templates\website\base.html:32
 msgid "Your Feed, Your Choice"
 msgstr "Dein Feed, deine Wahl"

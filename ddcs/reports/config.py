@@ -13,6 +13,7 @@ PARTIES_ORDER = [
     "SPD",
     "CDU/CSU",
     "Grüne",
+    "B90/Grüne",
     "FDP",
     "AfD",
     "Linke",
