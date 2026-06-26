@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from celery import shared_task
@@ -7,7 +7,12 @@ from celery.exceptions import SoftTimeLimitExceeded
 from django.db.models import QuerySet
 from django.utils import timezone
 
-from ddcs.metadata.models import ResearchAPIQueryTracker, TikTokHashtag, TikTokUser
+from ddcs.metadata.models import (
+    ResearchAPIQueryTracker,
+    TikTokHashtag,
+    TikTokUser,
+    TikTokUserAPISync,
+)
 from ddcs.metadata.research_api.service import ResearchAPIService
 
 logger = logging.getLogger(__name__)
@@ -100,15 +105,21 @@ def _run_query_task(  # noqa: PLR0913
     for i in range(0, len(items), batch_size):
         batch = items[i : i + batch_size]
         try:
+            start_date = query_start_date.date()
+            end_date = query_end_date.date()
             service_method(
                 batch,
-                end_date=query_end_date.date(),
-                start_date=query_start_date.date(),
+                end_date=end_date,
+                start_date=start_date,
             )
 
-            update_model.objects.filter(**{f"{filter_field_name}__in": batch}).update(
-                api_last_monitored_at=timezone.now()
+            queried_objects = update_model.objects.filter(
+                **{f"{filter_field_name}__in": batch}
             )
+            queried_objects.update(api_last_monitored_at=timezone.now())
+
+            if update_model is TikTokUser:
+                track_user_sync_coverage(queried_objects, start_date, end_date)
 
             processed_batches += 1
             logger.info(
@@ -258,3 +269,30 @@ def update_query_tracker(
     query_tracker.query_result = sync_stats
     query_tracker.exception_details = exception_details
     query_tracker.save()
+
+
+def track_user_sync_coverage(
+    queried_users: QuerySet[TikTokUser],
+    query_start_date: date,
+    query_end_date: date,
+) -> None:
+    """Record API sync coverage for a set of users over a date range.
+
+    Creates a TikTokUserAPISync entry for each user/day combination,
+    skipping any that already exist.
+    """
+    user_ids = list(queried_users.values_list("id", flat=True))
+
+    synced_dates = [
+        query_start_date + timedelta(days=d)
+        for d in range((query_end_date - query_start_date).days + 1)
+    ]
+
+    TikTokUserAPISync.objects.bulk_create(
+        [
+            TikTokUserAPISync(user_id=user_id, synced_date=synced_date)
+            for synced_date in synced_dates
+            for user_id in user_ids
+        ],
+        ignore_conflicts=True,
+    )

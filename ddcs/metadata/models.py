@@ -119,6 +119,9 @@ class TikTokHashtag(BaseMetadataModel, APIMonitoredMixin):
         return f"{self.pk} (pk)"
 
 
+# API Progress trackers
+
+
 class ResearchAPIQueryTracker(models.Model):
     start_time = models.DateTimeField()
     end_time = models.DateTimeField(null=True)
@@ -150,3 +153,23 @@ class ResearchAPIQueryTracker(models.Model):
             f"{self.query_function} [{self.query_status}] @ "
             f"{self.start_time:%Y-%m-%d %H:%M}"
         )
+
+
+class TikTokUserAPISync(models.Model):
+    """Tracks which days of data have been fetched from the API per user.
+
+    One record per user/date combination; used to identify gaps in sync history.
+    """
+
+    user = models.ForeignKey(
+        TikTokUser, on_delete=models.CASCADE, related_name="api_syncs"
+    )
+    synced_date = models.DateField()  # the day the data is queried for
+    synced_at = models.DateTimeField(auto_now_add=True)
+    success = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ("user", "synced_date")
+
+    def __str__(self) -> str:
+        return f"{self.user} @ {self.synced_date}"

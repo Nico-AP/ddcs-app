@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
@@ -8,6 +8,7 @@ from ddcs.metadata.models import (
     TikTokHashtag,
     TikTokMusic,
     TikTokUser,
+    TikTokUserAPISync,
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import (
@@ -16,6 +17,7 @@ from ddcs.metadata.research_api.models import (
     APIVideoStatistics,
 )
 from ddcs.metadata.research_api.service import ResearchAPIService
+from ddcs.metadata.research_api.tasks import track_user_sync_coverage
 
 
 def make_api_payload(**overrides) -> dict:
@@ -323,3 +325,50 @@ class ResearchAPIServiceGetUserVideosTests(TestCase):
         )
         self.assertEqual(service.sync_stats["videos_created"], 2)
         self.assertEqual(service.sync_stats["users_created"], 2)
+
+
+class TrackUserSyncCoverageTest(TestCase):
+    def setUp(self):
+        self.user1 = TikTokUser.objects.create(name="user1")
+        self.user2 = TikTokUser.objects.create(name="user2")
+        self.start_date = date(2025, 6, 1)
+        self.end_date = date(2025, 6, 3)
+
+    def test_creates_sync_records_for_each_user_and_day(self):
+        users = TikTokUser.objects.filter(pk__in=[self.user1.pk, self.user2.pk])
+        track_user_sync_coverage(users, self.start_date, self.end_date)
+
+        self.assertEqual(TikTokUserAPISync.objects.count(), 6)
+
+    def test_correct_dates_are_recorded(self):
+        users = TikTokUser.objects.filter(pk=self.user1.pk)
+        track_user_sync_coverage(users, self.start_date, self.end_date)
+
+        synced_dates = set(
+            TikTokUserAPISync.objects.filter(user=self.user1).values_list(
+                "synced_date", flat=True
+            )
+        )
+        self.assertEqual(
+            synced_dates, {date(2025, 6, 1), date(2025, 6, 2), date(2025, 6, 3)}
+        )
+
+    def test_does_not_raise_on_duplicate_sync(self):
+        users = TikTokUser.objects.filter(pk=self.user1.pk)
+        track_user_sync_coverage(users, self.start_date, self.end_date)
+        # calling again should not raise due to ignore_conflicts=True
+        track_user_sync_coverage(users, self.start_date, self.end_date)
+
+        self.assertEqual(TikTokUserAPISync.objects.count(), 3)
+
+    def test_single_day_range(self):
+        users = TikTokUser.objects.filter(pk=self.user1.pk)
+        track_user_sync_coverage(users, self.start_date, self.start_date)
+
+        self.assertEqual(TikTokUserAPISync.objects.count(), 1)
+
+    def test_empty_queryset(self):
+        users = TikTokUser.objects.none()
+        track_user_sync_coverage(users, self.start_date, self.end_date)
+
+        self.assertEqual(TikTokUserAPISync.objects.count(), 0)

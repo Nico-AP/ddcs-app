@@ -6,6 +6,7 @@ from ddcs.metadata.models import (
     TikTokHashtag,
     TikTokMusic,
     TikTokUser,
+    TikTokUserAPISync,
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import (
@@ -76,6 +77,15 @@ class APIUserStatisticsInline(ReadOnlyInline):
     )
 
 
+class TikTokUserAPISyncInline(ReadOnlyInline):
+    model = TikTokUserAPISync
+    fields = (
+        "synced_date",
+        "synced_at",
+        "success",
+    )
+
+
 class APIMusicInfosInline(ReadOnlyInline):
     model = APIMusicInfos
     fields = ("created_at", "name")
@@ -115,7 +125,7 @@ class TikTokUserAdmin(admin.ModelAdmin):
     list_filter = ("added_by", "monitor_api")
     search_fields = ("name", "id_tiktok")
     readonly_fields = ("created_at", "updated_at", "api_last_monitored_at")
-    inlines = (APIUserInfosInline, APIUserStatisticsInline)
+    inlines = (APIUserInfosInline, APIUserStatisticsInline, TikTokUserAPISyncInline)
 
 
 @admin.register(TikTokMusic)
