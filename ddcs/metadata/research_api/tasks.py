@@ -25,9 +25,9 @@ def _run_query_task(  # noqa: PLR0913
     batch_size: int,
     query_start_date: str | None,
     query_end_date: str | None,
-    update_model: TikTokHashtag | TikTokUser,
+    update_model: type[TikTokHashtag] | type[TikTokUser],
     filter_field_name: str = "name",
-) -> None:
+) -> bool:
     """Shared logic for querying TikTok videos via the Research API.
 
     Fetches all items (users or hashtags) that are flagged for monitoring but
@@ -73,12 +73,12 @@ def _run_query_task(  # noqa: PLR0913
 
     if not items:
         logger.info("No items registered for monitoring (%s).", task_name)
-        return
+        return None
 
     if query_end_date:
         query_end_date = datetime.strptime(query_end_date, "%Y%m%d").replace(tzinfo=UTC)
     else:
-        query_end_date = timezone.now() - timedelta(days=4)
+        query_end_date = datetime.now(tz=UTC) - timedelta(days=4)
 
     query_start_date = (
         datetime.strptime(query_start_date, "%Y%m%d").replace(tzinfo=UTC)
@@ -99,11 +99,11 @@ def _run_query_task(  # noqa: PLR0913
     service = ResearchAPIService()
     service_method = getattr(service, service_method_name)
     total_batches = (len(items) + batch_size - 1) // batch_size
-    processed_batches = 0
     failed_batches = []
 
     for i in range(0, len(items), batch_size):
         batch = items[i : i + batch_size]
+        n_batches_processed = i + 1
         try:
             start_date = query_start_date.date()
             end_date = query_end_date.date()
@@ -121,11 +121,10 @@ def _run_query_task(  # noqa: PLR0913
             if update_model is TikTokUser:
                 track_user_sync_coverage(queried_objects, start_date, end_date)
 
-            processed_batches += 1
             logger.info(
                 "%s: batch %d/%d done (%d items). Cumulative videos: %d.",
                 task_name,
-                processed_batches,
+                n_batches_processed,
                 total_batches,
                 len(batch),
                 service.sync_stats["videos_retrieved"],
@@ -136,7 +135,7 @@ def _run_query_task(  # noqa: PLR0913
                 "%s hit soft time limit after %d/%d batches; "
                 "remaining items will be picked up on the next run.",
                 task_name,
-                processed_batches,
+                n_batches_processed,
                 total_batches,
             )
             update_query_tracker(
@@ -144,23 +143,17 @@ def _run_query_task(  # noqa: PLR0913
                 service.sync_stats,
                 ResearchAPIQueryTracker.Status.SOFT_TIME_LIMIT_EXCEEDED,
             )
-            return
+            return False
 
         # TODO: Handle query limit exceeded explicitly.
 
         except Exception as exc:
             msg = (
-                f"{task_name} failed after {processed_batches}/{total_batches} batches "
+                f"{task_name}, batch {n_batches_processed}/{total_batches} failed "
                 f"with {type(exc).__name__}: {exc}. Failed batch: {batch or 'unknown'}."
             )
-
             logger.exception(msg)
-            update_query_tracker(
-                tracker,
-                service.sync_stats,
-                ResearchAPIQueryTracker.Status.FAILED,
-                exception_details={"exception details": msg},
-            )
+            failed_batches.append({"batch": n_batches_processed, "error": msg})
 
     if failed_batches:
         logger.warning(
@@ -175,24 +168,26 @@ def _run_query_task(  # noqa: PLR0913
             ResearchAPIQueryTracker.Status.PARTIAL_FAILURE,
             exception_details={"failed batches": failed_batches},
         )
-    else:
-        logger.info(
-            "%s: Completed sync. Total videos retrieved: %d. "
-            "Created %d users, %d videos, %d hashtags, %d music entries. "
-            "Parameters: {batch_size: %d, query_end_date: %s, query_start_date: %s}",
-            task_name,
-            service.sync_stats["videos_retrieved"],
-            service.sync_stats["users_created"],
-            service.sync_stats["videos_created"],
-            service.sync_stats["hashtags_created"],
-            service.sync_stats["music_created"],
-            batch_size,
-            query_end_date,
-            query_start_date,
-        )
-        update_query_tracker(
-            tracker, service.sync_stats, ResearchAPIQueryTracker.Status.COMPLETED
-        )
+        return False
+    logger.info(
+        "%s: Completed sync. Total videos retrieved: %d (%d pages). "
+        "Created %d users, %d videos, %d hashtags, %d music entries. "
+        "Parameters: {batch_size: %d, query_end_date: %s, query_start_date: %s}",
+        task_name,
+        service.sync_stats["videos_retrieved"],
+        service.sync_stats["pages_retrieved"],
+        service.sync_stats["users_created"],
+        service.sync_stats["videos_created"],
+        service.sync_stats["hashtags_created"],
+        service.sync_stats["music_created"],
+        batch_size,
+        query_end_date,
+        query_start_date,
+    )
+    update_query_tracker(
+        tracker, service.sync_stats, ResearchAPIQueryTracker.Status.COMPLETED
+    )
+    return True
 
 
 @shared_task(
@@ -200,7 +195,7 @@ def _run_query_task(  # noqa: PLR0913
     acks_late=True,
     retry_backoff=True,
     retry_backoff_max=600,
-    max_retries=3,
+    max_retries=5,
     soft_time_limit=55 * 60,
     time_limit=60 * 60,
 )
@@ -210,7 +205,7 @@ def query_videos_by_user(
     query_start_date: str | None = None,
     query_end_date: str | None = None,
 ) -> None:
-    _run_query_task(
+    success = _run_query_task(
         "query_videos_by_user",
         TikTokUser.objects.filter(monitor_api=True),
         "get_user_videos",
@@ -219,6 +214,14 @@ def query_videos_by_user(
         query_end_date,
         TikTokUser,
     )
+    if not success:
+        raise self.retry(
+            kwargs={
+                "batch_size": max(1, batch_size // 2),
+                "query_start_date": query_start_date,
+                "query_end_date": query_end_date,
+            }
+        )
 
 
 @shared_task(
@@ -226,7 +229,7 @@ def query_videos_by_user(
     acks_late=True,
     retry_backoff=True,
     retry_backoff_max=600,
-    max_retries=3,
+    max_retries=5,
     soft_time_limit=55 * 60,
     time_limit=60 * 60,
 )
@@ -236,7 +239,7 @@ def query_videos_by_hashtag(
     query_start_date: str | None = None,
     query_end_date: str | None = None,
 ) -> None:
-    _run_query_task(
+    success = _run_query_task(
         "query_videos_by_hashtag",
         TikTokHashtag.objects.filter(monitor_api=True),
         "get_hashtag_videos",
@@ -245,6 +248,48 @@ def query_videos_by_hashtag(
         query_end_date,
         TikTokHashtag,
     )
+    if not success:
+        raise self.retry(
+            kwargs={
+                "batch_size": max(1, batch_size // 2),
+                "query_start_date": query_start_date,
+                "query_end_date": query_end_date,
+            }
+        )
+
+
+@shared_task(
+    bind=True,
+    acks_late=True,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    max_retries=5,
+    soft_time_limit=55 * 60,
+    time_limit=60 * 60,
+)
+def query_videos_by_keyword(
+    self,  # noqa: ANN001
+    batch_size: int = 50,
+    query_start_date: str | None = None,
+    query_end_date: str | None = None,
+) -> None:
+    success = _run_query_task(
+        "query_videos_by_keywords",
+        TikTokHashtag.objects.filter(monitor_api=True),
+        "get_videos_by_keywords",
+        batch_size,
+        query_start_date,
+        query_end_date,
+        TikTokHashtag,
+    )
+    if not success:
+        raise self.retry(
+            kwargs={
+                "batch_size": max(1, batch_size // 2),
+                "query_start_date": query_start_date,
+                "query_end_date": query_end_date,
+            }
+        )
 
 
 def register_query_tracker(

@@ -320,8 +320,8 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ddcs.metadata.research_api.tasks.query_videos_by_user",
         "schedule": crontab(hour=2, minute=0),
     },
-    "researchapi-query-videos-by-hashtag": {
-        "task": "ddcs.metadata.research_api.tasks.query_videos_by_hashtag",
+    "researchapi-query_videos_by_keyword": {
+        "task": "ddcs.metadata.research_api.tasks.query_videos_by_keyword",
         "schedule": crontab(hour=3, minute=0),
     },
 }
