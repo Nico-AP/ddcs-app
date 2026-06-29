@@ -301,22 +301,44 @@ class ResearchAPIServiceGetUserVideosTests(TestCase):
     """Verifies the public entry point wires the client through correctly."""
 
     def test_get_user_videos_iterates_client_and_persists(self):
-        payloads = [
-            make_api_payload(id=7100000000000000001, username="alice"),
-            make_api_payload(id=7100000000000000002, username="bob", music_id=None),
+        pages = [
+            {
+                "data": {
+                    "videos": [
+                        make_api_payload(id=7100000000000000001, username="alice")
+                    ]
+                }
+            },
+            {
+                "data": {
+                    "videos": [
+                        make_api_payload(
+                            id=7100000000000000002, username="bob", music_id=None
+                        )
+                    ]
+                }
+            },
         ]
+
+        expected_query = {
+            "and": [
+                {
+                    "operation": "IN",
+                    "field_name": "username",
+                    "field_values": ["alice", "bob"],
+                }
+            ]
+        }
 
         with patch(
             "ddcs.metadata.research_api.service.ResearchAPIClient"
         ) as client_cls:
-            client_cls.return_value.query_videos_by_username.return_value = iter(
-                payloads
-            )
+            client_cls.return_value.query_videos_pages.return_value = iter(pages)
             service = ResearchAPIService()
             service.get_user_videos(["alice", "bob"], start_date="x", end_date="y")
 
-            client_cls.return_value.query_videos_by_username.assert_called_once_with(
-                ["alice", "bob"], start_date="x", end_date="y"
+            client_cls.return_value.query_videos_pages.assert_called_once_with(
+                expected_query, start_date="x", end_date="y"
             )
 
         self.assertEqual(TikTokVideo.objects.count(), 2)
