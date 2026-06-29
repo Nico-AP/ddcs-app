@@ -1,4 +1,6 @@
 import csv
+import os
+import unittest
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -77,7 +79,12 @@ class FracInstantSkipTests(TestCase):
         metrics = compute_watch_history_metrics(self._watch_history([0, 0.5, 10]))
         self.assertEqual(metrics["frac_instant_skip"], 0.5)
 
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
     def test_included_in_behaviour_comparisons_when_reference_csv_present(self):
+        # CSV is not present in gh actions
         comparisons = compute_behaviour_comparisons(self._watch_history([0, 0.5, 10]))
         metrics = {row["metric"] for row in comparisons}
         self.assertIn("frac_instant_skip", metrics)

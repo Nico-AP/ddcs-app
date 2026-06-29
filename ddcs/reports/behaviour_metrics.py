@@ -202,6 +202,9 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
     }
 
 
+# TODO: Maybe revise; mixes computation/stats logic with matters purely
+#  related to presentation. Presentation-related parts (labels, value formatting)
+#  could be moved to plots for consistency.
 def compute_behaviour_comparisons(
     data: TikTokUserData,
 ) -> list[BehaviourComparisonRecord]:
