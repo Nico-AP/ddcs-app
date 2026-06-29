@@ -26,6 +26,12 @@
     color:            var(--color-cta-text);
     text-decoration:  none;
   }
+
+  .modal-footer {
+    button {
+      margin: 10px;
+    }
+  }
 }
 
 #uapp.ddm-portability {
