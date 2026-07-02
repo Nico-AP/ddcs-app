@@ -83,7 +83,7 @@ solidberlin
 solid_brandenburg
 linksjugendsolidbremen
 linksjugend.hessen
-linkjugend.rlp
+#linkjugend.rlp
 linksjugendsolidsachsen
 linksjugend_sh
 linksjugend_th
@@ -106,7 +106,7 @@ gruene_jugend
 gj_bayern
 gj.berlin
 gjbremen
-gruenejugend_hamburg
+#gruenejugend_hamburg
 gjhessen
 gruenejugend_mv
 gj_niedersachsen
@@ -136,7 +136,7 @@ generation_afd
 generation_nrw
 generationdeutschlandrlp
 generationdeutschlandsh
-buendnis_sahraw
+#buendnis_sahraw
 bsw_bayern
 bsw.berlin
 bsw.bremen
