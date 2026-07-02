@@ -343,7 +343,7 @@ class GetUserDataTests(TestCase):
 
 
 class PostProcessDonationTests(TestCase):
-    @patch("ddcs.datadonation.services.generate_report_statistics")
+    @patch("ddcs.datadonation.services.generate_user_report_statistics")
     @patch("ddcs.datadonation.services.register_donation_metadata")
     @patch("ddcs.datadonation.services.get_user_data")
     def test_runs_pipeline_in_order(

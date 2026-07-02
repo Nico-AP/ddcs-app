@@ -29,4 +29,9 @@ urlpatterns = [
         views.BehaviourProfileFilterView.as_view(),
         name="behaviour_profile",
     ),
+    path(
+        "report/public/dev/",
+        views.PublicPlotsDevView.as_view(),
+        name="public_plots_dev",
+    ),
 ]
