@@ -1,130 +1,236 @@
 import logging
-from datetime import UTC, date, datetime, timedelta
+from dataclasses import dataclass
+from datetime import date, timedelta
+from enum import Enum
 from typing import Any
 
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
-from django.db.models import QuerySet
+from django.conf import settings
+from django.db.models import Exists, OuterRef, QuerySet
 from django.utils import timezone
+from redis import Redis
+from tiktok_metadata_kit.research_api import ResearchAPIRateLimitExceededError
 
 from ddcs.metadata.models import (
     ResearchAPIQueryTracker,
+    SyncAttempt,
     TikTokHashtag,
     TikTokUser,
-    TikTokUserAPISync,
 )
 from ddcs.metadata.research_api.service import ResearchAPIService
 
 logger = logging.getLogger(__name__)
 
 
-def _run_query_task(  # noqa: PLR0913
-    task_name: str,
-    queryset: QuerySet,
-    service_method_name: str,
-    batch_size: int,
-    query_start_date: str | None,
-    query_end_date: str | None,
-    update_model: type[TikTokHashtag] | type[TikTokUser],
-    filter_field_name: str = "name",
-) -> bool:
-    """Shared logic for querying TikTok videos via the Research API.
+class _Retry(Enum):
+    """How the outer task should retry after a run finishes.
 
-    Fetches all items (users or hashtags) that are flagged for monitoring but
-    have not yet been queried today, then queries the Research API for their
-    videos in batches.
-
-    After each successful batch, the items in that batch are marked as monitored
-    so they won't be picked up again on the next run. If a batch fails, the error
-    is recorded and the task moves on to the next batch.
-
-    Once all batches are processed, the overall result is saved as one of:
-    - COMPLETED: all batches succeeded.
-    - PARTIAL_FAILURE: at least one batch failed, with details of which batches
-      and why stored for later inspection.
-    - SOFT_TIME_LIMIT_EXCEEDED: the worker ran out of time mid-run; any remaining
-      items will be picked up on the next scheduled run.
-
-    Args:
-        task_name: Human-readable name used in logs and the query tracker.
-        queryset: Pre-filtered queryset of items to monitor
-            (e.g. TikTokUser or TikTokHashtag).
-        service_method_name: Name of the ResearchAPIService method to call per batch.
-        batch_size: Number of items to include in each API request.
-        query_start_date: Start of the video date range as "YYYYMMDD".
-            Defaults to 4 days ago.
-        query_end_date: End of the video date range as "YYYYMMDD".
-            Defaults to 4 days ago.
-        update_model: The Django model to update after each successful batch.
-        filter_field_name: The field name used to filter and identify items.
-            Defaults to "name".
-
-    Note:
-        For the actual tasks, see `query_videos_by_user` and `query_videos_by_hashtag`
-        below.
+    - ``NONE``: no retry (success or nothing to do).
+    - ``HALVE_BATCH``: retry with ``batch_size // 2`` — used when smaller
+      batches help (isolate poison-pill items on partial failure, fit more
+      into the time budget on soft-time-limit).
+    - ``SAME_BATCH``: retry with the same batch size — used when the
+      failure is size-independent (rate limits).
     """
-    logger.info("Starting %s task.", task_name)
 
-    items = list(
-        queryset.exclude(api_last_monitored_at__date=timezone.now().date())
-        .order_by("-monitoring_priority_api", "api_last_monitored_at")
-        .values_list(filter_field_name, flat=True)
+    NONE = "none"
+    HALVE_BATCH = "halve_batch"
+    SAME_BATCH = "same_batch"
+
+
+@dataclass(frozen=True)
+class _RunResult:
+    """Outcome of a single ``_run_query_task`` invocation.
+
+    - ``retry``: how the outer task should schedule a retry, if at all.
+    - ``pages_consumed``: number of API result pages returned during this
+      run. Each page is billed as one Research API quota point, so this
+      is what the backfill task decrements from its budget.
+    """
+
+    retry: _Retry
+    pages_consumed: int
+
+
+@dataclass(frozen=True)
+class _SyncTargetConfig:
+    """Static per-sync_target config that the shared runner needs.
+
+    Two sync targets are supported: TikTok users (queried by username) and
+    TikTok hashtags used as keyword targets. Both write SyncAttempt rows
+    into the same table via the FK named in ``sync_attempt_field``.
+    """
+
+    task_name: str
+    model: type[TikTokUser] | type[TikTokHashtag]
+    sync_attempt_field: str  # "user" or "hashtag"
+    service_method_name: str
+
+
+_USER_SYNC_TARGET_CONFIG = _SyncTargetConfig(
+    task_name="daily_sync_users",
+    model=TikTokUser,
+    sync_attempt_field="user",
+    service_method_name="get_user_videos",
+)
+_KEYWORD_SYNC_TARGET_CONFIG = _SyncTargetConfig(
+    task_name="daily_sync_keywords",
+    model=TikTokHashtag,
+    sync_attempt_field="hashtag",
+    service_method_name="get_videos_by_keywords",
+)
+
+
+# Shared Celery config for the daily Research API query tasks.
+#
+# Retry sequence (base 60s, doubling, capped at 10 min, 3 retries):
+#     1, 2, 4 min  ≈ 7 min total window.
+# The primary task's job is transient-failure recovery within a single
+# scheduled run; the backfill task catches everything else, so the retry
+# window can stay short. `acks_late=True` means the broker redelivers on
+# worker crash.
+_QUERY_TASK_OPTIONS: dict[str, Any] = {
+    "bind": True,
+    "acks_late": True,
+    "retry_backoff": 60,
+    "retry_backoff_max": 600,
+    "retry_jitter": True,
+    "max_retries": 3,
+    "soft_time_limit": 55 * 60,
+    "time_limit": 60 * 60,
+}
+
+
+def _parse_target_date(target_date: str | None) -> date:
+    """Parse the task's ``target_date`` kwarg (ISO string) into a ``date``.
+
+    ``None`` defaults to ``today - 4 days`` — the standard daily-sync
+    target, since TikTok's API has ~4-day publication delay.
+    """
+    if target_date is None:
+        return timezone.localdate() - timedelta(days=4)
+    return date.fromisoformat(target_date)
+
+
+def _gap_items(sync_target: _SyncTargetConfig, target_date: date) -> QuerySet:
+    """Items still needing a successful sync for ``target_date``.
+
+    Uses the ``SyncAttempt`` table as the source of truth — any item
+    without a ``SUCCESS`` attempt for this date is included. Ordered by
+    monitoring priority so higher-priority items get quota first.
+    """
+    already_synced = SyncAttempt.objects.filter(
+        **{sync_target.sync_attempt_field: OuterRef("pk")},
+        target_date=target_date,
+        status=SyncAttempt.Status.SUCCESS,
     )
+    return (
+        sync_target.model.objects.filter(monitor_api=True)
+        .annotate(_is_synced=Exists(already_synced))
+        .filter(_is_synced=False)
+        .order_by("-monitoring_priority_api", "id")
+    )
+
+
+def _record_sync_attempts(  # noqa: PLR0913
+    sync_target: _SyncTargetConfig,
+    item_ids: list[int],
+    target_date: date,
+    status: SyncAttempt.Status,
+    tracker: ResearchAPIQueryTracker | None,
+    error_details: dict | None = None,
+) -> None:
+    """Insert one SyncAttempt per item, all with the same status/tracker."""
+    if not item_ids:
+        return
+
+    fk_field = f"{sync_target.sync_attempt_field}_id"
+    SyncAttempt.objects.bulk_create(
+        [
+            SyncAttempt(
+                **{fk_field: item_id},
+                target_date=target_date,
+                status=status,
+                error_details=error_details,
+                tracker=tracker,
+            )
+            for item_id in item_ids
+        ]
+    )
+
+
+def _run_query_task(
+    sync_target: _SyncTargetConfig,
+    target_date: date,
+    batch_size: int,
+    items: list[dict] | None = None,
+) -> _RunResult:
+    """Shared runner for the daily / backfill sync tasks.
+
+    Queries the API in batches for a set of monitored ``items`` on a
+    specific ``target_date``, and writes one ``SyncAttempt`` per (item,
+    target_date) with the outcome. The tracker holds run-level metadata;
+    the sync attempts hold per-item outcome.
+
+    If ``items`` is None, defaults to every monitored item missing a
+    successful ``SyncAttempt`` for ``target_date`` (the daily-sync case).
+    Callers that need to cap the item set (backfill) pass ``items``
+    explicitly.
+
+    Returns a :class:`_RunResult` bundling the retry decision and the
+    number of API pages consumed during the run — the latter is what
+    the backfill task decrements from its quota budget.
+    """
+    logger.info(
+        "Starting %s for target_date=%s.",
+        sync_target.task_name,
+        target_date.isoformat(),
+    )
+
+    if items is None:
+        items = list(_gap_items(sync_target, target_date).values("id", "name"))
 
     if not items:
-        logger.info("No items registered for monitoring (%s).", task_name)
-        return None
-
-    if query_end_date:
-        query_end_date = datetime.strptime(query_end_date, "%Y%m%d").replace(tzinfo=UTC)
-    else:
-        query_end_date = datetime.now(tz=UTC) - timedelta(days=4)
-
-    query_start_date = (
-        datetime.strptime(query_start_date, "%Y%m%d").replace(tzinfo=UTC)
-        if query_start_date
-        else query_end_date
-    )
+        logger.info(
+            "No gaps to fill for %s on %s.",
+            sync_target.task_name,
+            target_date.isoformat(),
+        )
+        return _RunResult(retry=_Retry.NONE, pages_consumed=0)
 
     tracker = register_query_tracker(
-        task_name,
+        sync_target.task_name,
         {
-            "start": str(query_start_date),
-            "end": str(query_end_date),
+            "target_date": target_date.isoformat(),
             "batch_size": batch_size,
-            "queried_objects": items,
+            "n_items": len(items),
         },
     )
 
     service = ResearchAPIService()
-    service_method = getattr(service, service_method_name)
+    service_method = getattr(service, sync_target.service_method_name)
+    # Snapshot page counter so we can report the delta consumed by this run —
+    # a fresh service always starts at 0 in real code; the delta pattern keeps
+    # test doubles (which share the counter across invocations) accurate too.
+    pages_before = service.sync_stats["pages_retrieved"]
     total_batches = (len(items) + batch_size - 1) // batch_size
-    failed_batches = []
+    failed_batches: list[dict] = []
 
-    for i in range(0, len(items), batch_size):
+    for batch_idx, i in enumerate(range(0, len(items), batch_size), start=1):
         batch = items[i : i + batch_size]
-        n_batches_processed = i + 1
+        batch_ids = [b["id"] for b in batch]
+        batch_names = [b["name"] for b in batch]
+
         try:
-            start_date = query_start_date.date()
-            end_date = query_end_date.date()
-            service_method(
-                batch,
-                end_date=end_date,
-                start_date=start_date,
+            service_method(batch_names, start_date=target_date, end_date=target_date)
+            _record_sync_attempts(
+                sync_target, batch_ids, target_date, SyncAttempt.Status.SUCCESS, tracker
             )
-
-            queried_objects = update_model.objects.filter(
-                **{f"{filter_field_name}__in": batch}
-            )
-            queried_objects.update(api_last_monitored_at=timezone.now())
-
-            if update_model is TikTokUser:
-                track_user_sync_coverage(queried_objects, start_date, end_date)
-
             logger.info(
                 "%s: batch %d/%d done (%d items). Cumulative videos: %d.",
-                task_name,
-                n_batches_processed,
+                sync_target.task_name,
+                batch_idx,
                 total_batches,
                 len(batch),
                 service.sync_stats["videos_retrieved"],
@@ -132,33 +238,68 @@ def _run_query_task(  # noqa: PLR0913
 
         except SoftTimeLimitExceeded:
             logger.warning(
-                "%s hit soft time limit after %d/%d batches; "
-                "remaining items will be picked up on the next run.",
-                task_name,
-                n_batches_processed,
+                "%s hit soft time limit after %d/%d batches.",
+                sync_target.task_name,
+                batch_idx,
                 total_batches,
+            )
+            _record_sync_attempts(
+                sync_target, batch_ids, target_date, SyncAttempt.Status.TIMEOUT, tracker
             )
             update_query_tracker(
                 tracker,
                 service.sync_stats,
                 ResearchAPIQueryTracker.Status.SOFT_TIME_LIMIT_EXCEEDED,
             )
-            return False
+            return _RunResult(
+                retry=_Retry.HALVE_BATCH,
+                pages_consumed=service.sync_stats["pages_retrieved"] - pages_before,
+            )
 
-        # TODO: Handle query limit exceeded explicitly.
+        except ResearchAPIRateLimitExceededError:
+            logger.warning(
+                "%s hit rate limit after %d/%d batches.",
+                sync_target.task_name,
+                batch_idx,
+                total_batches,
+            )
+            _record_sync_attempts(
+                sync_target,
+                batch_ids,
+                target_date,
+                SyncAttempt.Status.RATE_LIMITED,
+                tracker,
+            )
+            update_query_tracker(
+                tracker,
+                service.sync_stats,
+                ResearchAPIQueryTracker.Status.RATE_LIMIT_EXCEEDED,
+            )
+            return _RunResult(
+                retry=_Retry.SAME_BATCH,
+                pages_consumed=service.sync_stats["pages_retrieved"] - pages_before,
+            )
 
         except Exception as exc:
             msg = (
-                f"{task_name}, batch {n_batches_processed}/{total_batches} failed "
-                f"with {type(exc).__name__}: {exc}. Failed batch: {batch or 'unknown'}."
+                f"{sync_target.task_name}, batch {batch_idx}/{total_batches} failed "
+                f"with {type(exc).__name__}: {exc}."
             )
             logger.exception(msg)
-            failed_batches.append({"batch": n_batches_processed, "error": msg})
+            failed_batches.append({"batch": batch_idx, "error": msg})
+            _record_sync_attempts(
+                sync_target,
+                batch_ids,
+                target_date,
+                SyncAttempt.Status.API_ERROR,
+                tracker,
+                error_details={"type": type(exc).__name__, "message": str(exc)},
+            )
 
     if failed_batches:
         logger.warning(
             "%s completed with %d/%d failed batches.",
-            task_name,
+            sync_target.task_name,
             len(failed_batches),
             total_batches,
         )
@@ -168,128 +309,73 @@ def _run_query_task(  # noqa: PLR0913
             ResearchAPIQueryTracker.Status.PARTIAL_FAILURE,
             exception_details={"failed batches": failed_batches},
         )
-        return False
+        return _RunResult(
+            retry=_Retry.HALVE_BATCH,
+            pages_consumed=service.sync_stats["pages_retrieved"],
+        )
+
     logger.info(
-        "%s: Completed sync. Total videos retrieved: %d (%d pages). "
-        "Created %d users, %d videos, %d hashtags, %d music entries. "
-        "Parameters: {batch_size: %d, query_end_date: %s, query_start_date: %s}",
-        task_name,
+        "%s: Completed sync for %s. Retrieved %d videos on %d pages. "
+        "Created %d users, %d videos, %d hashtags, %d music entries.",
+        sync_target.task_name,
+        target_date.isoformat(),
         service.sync_stats["videos_retrieved"],
         service.sync_stats["pages_retrieved"],
         service.sync_stats["users_created"],
         service.sync_stats["videos_created"],
         service.sync_stats["hashtags_created"],
         service.sync_stats["music_created"],
-        batch_size,
-        query_end_date,
-        query_start_date,
     )
     update_query_tracker(
         tracker, service.sync_stats, ResearchAPIQueryTracker.Status.COMPLETED
     )
-    return True
+    return _RunResult(
+        retry=_Retry.NONE,
+        pages_consumed=service.sync_stats["pages_retrieved"],
+    )
 
 
-@shared_task(
-    bind=True,
-    acks_late=True,
-    retry_backoff=True,
-    retry_backoff_max=600,
-    max_retries=5,
-    soft_time_limit=55 * 60,
-    time_limit=60 * 60,
-)
-def query_videos_by_user(
+def _maybe_retry(
+    task: Any,  # noqa: ANN401
+    retry: _Retry,
+    batch_size: int,
+    target_date: str | None,
+) -> None:
+    """Re-enqueue ``task`` per ``retry`` strategy, or return without re-queuing.
+
+    Items with a successful SyncAttempt for ``target_date`` are excluded
+    on the next attempt via the queryset filter, so retries only touch
+    items that failed or didn't fit in the previous attempt.
+    """
+    if retry is _Retry.NONE:
+        return
+
+    next_batch_size = (
+        batch_size if retry is _Retry.SAME_BATCH else max(1, batch_size // 2)
+    )
+    raise task.retry(kwargs={"batch_size": next_batch_size, "target_date": target_date})
+
+
+@shared_task(**_QUERY_TASK_OPTIONS)
+def daily_sync_users(
     self,  # noqa: ANN001
+    target_date: str | None = None,
     batch_size: int = 20,
-    query_start_date: str | None = None,
-    query_end_date: str | None = None,
 ) -> None:
-    success = _run_query_task(
-        "query_videos_by_user",
-        TikTokUser.objects.filter(monitor_api=True),
-        "get_user_videos",
-        batch_size,
-        query_start_date,
-        query_end_date,
-        TikTokUser,
-    )
-    if not success:
-        raise self.retry(
-            kwargs={
-                "batch_size": max(1, batch_size // 2),
-                "query_start_date": query_start_date,
-                "query_end_date": query_end_date,
-            }
-        )
+    parsed = _parse_target_date(target_date)
+    result = _run_query_task(_USER_SYNC_TARGET_CONFIG, parsed, batch_size)
+    _maybe_retry(self, result.retry, batch_size, target_date or parsed.isoformat())
 
 
-@shared_task(
-    bind=True,
-    acks_late=True,
-    retry_backoff=True,
-    retry_backoff_max=600,
-    max_retries=5,
-    soft_time_limit=55 * 60,
-    time_limit=60 * 60,
-)
-def query_videos_by_hashtag(
+@shared_task(**_QUERY_TASK_OPTIONS)
+def daily_sync_keywords(
     self,  # noqa: ANN001
+    target_date: str | None = None,
     batch_size: int = 50,
-    query_start_date: str | None = None,
-    query_end_date: str | None = None,
 ) -> None:
-    success = _run_query_task(
-        "query_videos_by_hashtag",
-        TikTokHashtag.objects.filter(monitor_api=True),
-        "get_hashtag_videos",
-        batch_size,
-        query_start_date,
-        query_end_date,
-        TikTokHashtag,
-    )
-    if not success:
-        raise self.retry(
-            kwargs={
-                "batch_size": max(1, batch_size // 2),
-                "query_start_date": query_start_date,
-                "query_end_date": query_end_date,
-            }
-        )
-
-
-@shared_task(
-    bind=True,
-    acks_late=True,
-    retry_backoff=True,
-    retry_backoff_max=600,
-    max_retries=5,
-    soft_time_limit=55 * 60,
-    time_limit=60 * 60,
-)
-def query_videos_by_keyword(
-    self,  # noqa: ANN001
-    batch_size: int = 50,
-    query_start_date: str | None = None,
-    query_end_date: str | None = None,
-) -> None:
-    success = _run_query_task(
-        "query_videos_by_keywords",
-        TikTokHashtag.objects.filter(monitor_api=True),
-        "get_videos_by_keywords",
-        batch_size,
-        query_start_date,
-        query_end_date,
-        TikTokHashtag,
-    )
-    if not success:
-        raise self.retry(
-            kwargs={
-                "batch_size": max(1, batch_size // 2),
-                "query_start_date": query_start_date,
-                "query_end_date": query_end_date,
-            }
-        )
+    parsed = _parse_target_date(target_date)
+    result = _run_query_task(_KEYWORD_SYNC_TARGET_CONFIG, parsed, batch_size)
+    _maybe_retry(self, result.retry, batch_size, target_date or parsed.isoformat())
 
 
 def register_query_tracker(
@@ -312,32 +398,105 @@ def update_query_tracker(
     query_tracker.end_time = timezone.now()
     query_tracker.query_status = query_status
     query_tracker.query_result = sync_stats
-    query_tracker.exception_details = exception_details
+    query_tracker.query_exception_details = exception_details
     query_tracker.save()
 
 
-def track_user_sync_coverage(
-    queried_users: QuerySet[TikTokUser],
-    query_start_date: date,
-    query_end_date: date,
-) -> None:
-    """Record API sync coverage for a set of users over a date range.
+# ---------------------------------------------------------------------------
+# Backfill task
+# ---------------------------------------------------------------------------
 
-    Creates a TikTokUserAPISync entry for each user/day combination,
-    skipping any that already exist.
+_BACKFILL_LOCK_KEY = "ddcs:research_api:backfill_lock"
+# Order matters: users get first pick of the quota, then keywords.
+_BACKFILL_ORDER: list[tuple[_SyncTargetConfig, int]] = [
+    (_USER_SYNC_TARGET_CONFIG, 20),  # config, batch_size
+    (_KEYWORD_SYNC_TARGET_CONFIG, 50),
+]
+
+
+def _backfill_target_dates() -> list[date]:
+    """Dates the backfill task considers, most recent first.
+
+    Ranges from ``today - 4 days`` back to ``settings.API_MONITORING_START_DATE``
+    inclusive. Recent dates first so a quota-limited run at least closes
+    the freshest gaps before working backwards through history.
     """
-    user_ids = list(queried_users.values_list("id", flat=True))
+    start = settings.API_MONITORING_START_DATE
+    end = timezone.localdate() - timedelta(days=4)
+    if end < start:
+        return []
+    return [end - timedelta(days=i) for i in range((end - start).days + 1)]
 
-    synced_dates = [
-        query_start_date + timedelta(days=d)
-        for d in range((query_end_date - query_start_date).days + 1)
-    ]
 
-    TikTokUserAPISync.objects.bulk_create(
-        [
-            TikTokUserAPISync(user_id=user_id, synced_date=synced_date)
-            for synced_date in synced_dates
-            for user_id in user_ids
-        ],
-        ignore_conflicts=True,
-    )
+@shared_task(
+    bind=True,
+    acks_late=True,
+    max_retries=0,
+    soft_time_limit=110 * 60,
+    time_limit=120 * 60,
+)
+def backfill_missing_syncs(
+    self,  # noqa: ANN001
+) -> None:
+    """Close coverage gaps in :class:`SyncAttempt`, prioritising users first.
+
+    Iterates ``(sync_target, target_date)`` pairs in priority order — all
+    users across all backfill dates, then keywords — and for each pair
+    processes every remaining gap. Newer dates are processed first
+    within each sync_target.
+
+    There is no per-run page budget: after the daily sync has run,
+    whatever quota is left in the day is fair game and unused quota
+    doesn't carry over. Natural governors keep this safe:
+
+    * The Celery soft time limit caps wall-clock work per run.
+    * Hitting the API rate limit ends this run (see below); the next
+      scheduled run picks up where it left off.
+    * A Redis lock prevents overlapping invocations from stacking work.
+
+    On rate-limit, the whole task returns early instead of iterating to
+    the next ``(target, date)`` and re-experiencing the same limit.
+    The lock is held only for the duration of this run, so
+    the next scheduled run can proceed once the rate-limit window has
+    passed.
+    """
+    redis_client = Redis.from_url(settings.CELERY_BROKER_URL)
+    lock = redis_client.lock(_BACKFILL_LOCK_KEY, timeout=self.soft_time_limit + 60)
+    if not lock.acquire(blocking=False):
+        logger.info("backfill_missing_syncs: lock held; skipping this run.")
+        return
+
+    try:
+        for sync_target, batch_size in _BACKFILL_ORDER:
+            for target_date in _backfill_target_dates():
+                items = list(_gap_items(sync_target, target_date).values("id", "name"))
+                if not items:
+                    continue
+
+                logger.info(
+                    "backfill_missing_syncs: %s %s → %d items.",
+                    sync_target.task_name,
+                    target_date.isoformat(),
+                    len(items),
+                )
+
+                result = _run_query_task(
+                    sync_target, target_date, batch_size, items=items
+                )
+                if result.retry is _Retry.SAME_BATCH:
+                    # Rate-limited. Moving to the next (target, date) would
+                    # just hit the same limit again; bail out and let the
+                    # next scheduled run pick up.
+                    logger.info(
+                        "backfill_missing_syncs: hit rate limit; stopping this run."
+                    )
+                    return
+    finally:
+        try:
+            lock.release()
+        except Exception:  # noqa: BLE001
+            # Lock may have expired between acquire and release; not fatal.
+            logger.warning(
+                "backfill_missing_syncs: could not release lock cleanly.",
+                exc_info=True,
+            )

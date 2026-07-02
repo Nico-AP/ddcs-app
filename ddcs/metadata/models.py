@@ -22,16 +22,16 @@ class BaseMetadataModel(models.Model):
 
 
 class APIMonitoredMixin(models.Model):
-    """Contains fields to control whether/how an object is monitored through the api.
+    """Fields controlling whether/how an object is monitored via the Research API.
 
-    monitor_api controls whether it is monitored or not.
-    Objects with higher monitoring_priority are monitored first; lower priority
-        come later and may fall through if api limit is reached.
+    ``monitor_api`` toggles monitoring on/off. Items with higher
+    ``monitoring_priority_api`` are processed first; lower-priority items may
+    fall through when API quota runs out. Sync coverage per (item, date) is
+    tracked in :class:`SyncAttempt`.
     """
 
     monitor_api = models.BooleanField(default=False)
     monitoring_priority_api = models.IntegerField(default=0)
-    api_last_monitored_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         abstract = True
@@ -137,6 +137,7 @@ class ResearchAPIQueryTracker(models.Model):
         SOFT_TIME_LIMIT_EXCEEDED = "soft_time_limit_exceeded"
         FAILED = "failed"
         PARTIAL_FAILURE = "partial_failure"
+        RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
 
     query_status = models.CharField(
         max_length=32, choices=Status.choices, default=Status.STARTED
@@ -155,21 +156,71 @@ class ResearchAPIQueryTracker(models.Model):
         )
 
 
-class TikTokUserAPISync(models.Model):
-    """Tracks which days of data have been fetched from the API per user.
+class SyncAttempt(models.Model):
+    """Records one Research API sync attempt for an item on a specific day.
 
-    One record per user/date combination; used to identify gaps in sync history.
+    Exactly one of ``user`` or ``hashtag`` is set — that's how the target
+    sync_target is discriminated (users are queried by username; hashtags are
+    queried as keywords). Multiple rows may exist per (item, target_date):
+    every retry appends a new row so error frequency is auditable.
+
+    Used to plan backfills: an (item, target_date) still needs a sync if
+    it has no row with ``status=SUCCESS``.
     """
 
+    class Status(models.TextChoices):
+        SUCCESS = "success"
+        RATE_LIMITED = "rate_limited"
+        TIMEOUT = "timeout"
+        API_ERROR = "api_error"
+        UNKNOWN = "unknown"
+
     user = models.ForeignKey(
-        TikTokUser, on_delete=models.CASCADE, related_name="api_syncs"
+        TikTokUser,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sync_attempts",
     )
-    synced_date = models.DateField()  # the day the data is queried for
-    synced_at = models.DateTimeField(auto_now_add=True)
-    success = models.BooleanField(default=True)
+    hashtag = models.ForeignKey(
+        TikTokHashtag,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sync_attempts",
+        help_text="Target when the item was queried as a keyword.",
+    )
+    target_date = models.DateField(
+        help_text="The day the API was queried for (not when the attempt ran)."
+    )
+    status = models.CharField(max_length=16, choices=Status.choices)
+    error_details = models.JSONField(null=True, blank=True)
+
+    attempted_at = models.DateTimeField(auto_now_add=True)
+    tracker = models.ForeignKey(
+        "ResearchAPIQueryTracker",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sync_attempts",
+    )
 
     class Meta:
-        unique_together = ("user", "synced_date")
+        indexes = [
+            models.Index(fields=["user", "target_date"]),
+            models.Index(fields=["hashtag", "target_date"]),
+            models.Index(fields=["target_date", "status"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                name="syncattempt_has_exactly_one_target",
+                condition=(
+                    models.Q(user__isnull=False, hashtag__isnull=True)
+                    | models.Q(user__isnull=True, hashtag__isnull=False)
+                ),
+            ),
+        ]
 
     def __str__(self) -> str:
-        return f"{self.user} @ {self.synced_date}"
+        target = self.user or self.hashtag
+        return f"{target} @ {self.target_date} [{self.status}]"

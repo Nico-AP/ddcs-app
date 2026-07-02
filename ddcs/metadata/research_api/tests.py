@@ -1,14 +1,16 @@
-from datetime import UTC, date, datetime
-from unittest.mock import patch
+from datetime import UTC, date, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.test import TestCase, override_settings
+from tiktok_metadata_kit.research_api import ResearchAPIRateLimitExceededError
 
 from ddcs.metadata.models import (
     DataOrigins,
+    SyncAttempt,
     TikTokHashtag,
     TikTokMusic,
     TikTokUser,
-    TikTokUserAPISync,
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import (
@@ -17,7 +19,16 @@ from ddcs.metadata.research_api.models import (
     APIVideoStatistics,
 )
 from ddcs.metadata.research_api.service import ResearchAPIService
-from ddcs.metadata.research_api.tasks import track_user_sync_coverage
+from ddcs.metadata.research_api.tasks import (
+    _USER_SYNC_TARGET_CONFIG,
+    _backfill_target_dates,
+    _gap_items,
+    _Retry,
+    _run_query_task,
+    backfill_missing_syncs,
+    daily_sync_keywords,
+    daily_sync_users,
+)
 
 
 def make_api_payload(**overrides) -> dict:
@@ -349,48 +360,312 @@ class ResearchAPIServiceGetUserVideosTests(TestCase):
         self.assertEqual(service.sync_stats["users_created"], 2)
 
 
-class TrackUserSyncCoverageTest(TestCase):
+TARGET = date(2025, 6, 10)
+
+
+def _monitored_user(name: str, priority: int = 0) -> TikTokUser:
+    return TikTokUser.objects.create(
+        name=name, monitor_api=True, monitoring_priority_api=priority
+    )
+
+
+def _monitored_hashtag(name: str, priority: int = 0) -> TikTokHashtag:
+    return TikTokHashtag.objects.create(
+        name=name, monitor_api=True, monitoring_priority_api=priority
+    )
+
+
+def _configure_service_mock(cls_mock, pages_per_call: int = 0):
+    """Seed sync_stats with a real dict so tracker save doesn't choke on MagicMock.
+
+    ``pages_per_call`` optionally makes the mocked ``get_user_videos`` and
+    ``get_videos_by_keywords`` bump ``sync_stats["pages_retrieved"]`` by that
+    many on each call — useful for asserting quota-budget behavior.
+    """
+    stats = {
+        "users_created": 0,
+        "videos_created": 0,
+        "hashtags_created": 0,
+        "music_created": 0,
+        "videos_retrieved": 0,
+        "pages_retrieved": 0,
+    }
+    cls_mock.return_value.sync_stats = stats
+
+    if pages_per_call:
+
+        def _bump(*args, **kwargs):
+            stats["pages_retrieved"] += pages_per_call
+
+        cls_mock.return_value.get_user_videos.side_effect = _bump
+        cls_mock.return_value.get_videos_by_keywords.side_effect = _bump
+
+    return cls_mock
+
+
+class GapItemsTest(TestCase):
+    """Verifies which monitored items are considered gaps for a target_date."""
+
+    def test_excludes_items_with_successful_attempt_for_that_date(self):
+        u1 = _monitored_user("u1")
+        u2 = _monitored_user("u2")
+        SyncAttempt.objects.create(
+            user=u1, target_date=TARGET, status=SyncAttempt.Status.SUCCESS
+        )
+
+        gaps = list(
+            _gap_items(_USER_SYNC_TARGET_CONFIG, TARGET).values_list("id", flat=True)
+        )
+        self.assertEqual(gaps, [u2.id])
+
+    def test_success_on_different_date_still_counts_as_gap(self):
+        u = _monitored_user("u1")
+        SyncAttempt.objects.create(
+            user=u,
+            target_date=TARGET - timedelta(days=1),
+            status=SyncAttempt.Status.SUCCESS,
+        )
+
+        gaps = list(
+            _gap_items(_USER_SYNC_TARGET_CONFIG, TARGET).values_list("id", flat=True)
+        )
+        self.assertEqual(gaps, [u.id])
+
+    def test_failed_attempts_do_not_close_gap(self):
+        u = _monitored_user("u1")
+        SyncAttempt.objects.create(
+            user=u, target_date=TARGET, status=SyncAttempt.Status.API_ERROR
+        )
+
+        gaps = list(
+            _gap_items(_USER_SYNC_TARGET_CONFIG, TARGET).values_list("id", flat=True)
+        )
+        self.assertEqual(gaps, [u.id])
+
+    def test_ignores_unmonitored_items(self):
+        TikTokUser.objects.create(name="ghost", monitor_api=False)
+        u = _monitored_user("real")
+
+        gaps = list(
+            _gap_items(_USER_SYNC_TARGET_CONFIG, TARGET).values_list("id", flat=True)
+        )
+        self.assertEqual(gaps, [u.id])
+
+    def test_ordered_by_monitoring_priority_desc(self):
+        low = _monitored_user("low", priority=0)
+        high = _monitored_user("high", priority=10)
+        mid = _monitored_user("mid", priority=5)
+
+        ordered = list(
+            _gap_items(_USER_SYNC_TARGET_CONFIG, TARGET).values_list("id", flat=True)
+        )
+        self.assertEqual(ordered, [high.id, mid.id, low.id])
+
+
+class RunQueryTaskTest(TestCase):
+    """End-to-end for the shared runner, per outcome branch."""
+
     def setUp(self):
-        self.user1 = TikTokUser.objects.create(name="user1")
-        self.user2 = TikTokUser.objects.create(name="user2")
-        self.start_date = date(2025, 6, 1)
-        self.end_date = date(2025, 6, 3)
+        self.u1 = _monitored_user("u1")
+        self.u2 = _monitored_user("u2")
 
-    def test_creates_sync_records_for_each_user_and_day(self):
-        users = TikTokUser.objects.filter(pk__in=[self.user1.pk, self.user2.pk])
-        track_user_sync_coverage(users, self.start_date, self.end_date)
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_success_writes_success_syncattempts_and_returns_none(self, cls_mock):
+        _configure_service_mock(cls_mock)
+        result = _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=10)
 
-        self.assertEqual(TikTokUserAPISync.objects.count(), 6)
+        self.assertIs(result.retry, _Retry.NONE)
+        cls_mock.return_value.get_user_videos.assert_called_once()
+        attempts = SyncAttempt.objects.filter(target_date=TARGET)
+        self.assertEqual(attempts.count(), 2)
+        self.assertTrue(all(a.status == SyncAttempt.Status.SUCCESS for a in attempts))
+        self.assertTrue(all(a.tracker is not None for a in attempts))
 
-    def test_correct_dates_are_recorded(self):
-        users = TikTokUser.objects.filter(pk=self.user1.pk)
-        track_user_sync_coverage(users, self.start_date, self.end_date)
-
-        synced_dates = set(
-            TikTokUserAPISync.objects.filter(user=self.user1).values_list(
-                "synced_date", flat=True
-            )
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_rate_limit_writes_rate_limited_and_returns_same_batch(self, cls_mock):
+        _configure_service_mock(cls_mock)
+        cls_mock.return_value.get_user_videos.side_effect = (
+            ResearchAPIRateLimitExceededError("throttled")
         )
+
+        result = _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=10)
+
+        self.assertIs(result.retry, _Retry.SAME_BATCH)
+        attempts = SyncAttempt.objects.filter(target_date=TARGET)
+        self.assertEqual(attempts.count(), 2)
+        self.assertTrue(
+            all(a.status == SyncAttempt.Status.RATE_LIMITED for a in attempts)
+        )
+
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_soft_time_limit_writes_timeout_and_returns_halve_batch(self, cls_mock):
+        _configure_service_mock(cls_mock)
+        cls_mock.return_value.get_user_videos.side_effect = SoftTimeLimitExceeded()
+
+        result = _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=10)
+
+        self.assertIs(result.retry, _Retry.HALVE_BATCH)
         self.assertEqual(
-            synced_dates, {date(2025, 6, 1), date(2025, 6, 2), date(2025, 6, 3)}
+            SyncAttempt.objects.filter(
+                target_date=TARGET, status=SyncAttempt.Status.TIMEOUT
+            ).count(),
+            2,
         )
 
-    def test_does_not_raise_on_duplicate_sync(self):
-        users = TikTokUser.objects.filter(pk=self.user1.pk)
-        track_user_sync_coverage(users, self.start_date, self.end_date)
-        # calling again should not raise due to ignore_conflicts=True
-        track_user_sync_coverage(users, self.start_date, self.end_date)
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_partial_failure_writes_api_error_and_returns_halve_batch(self, cls_mock):
+        _configure_service_mock(cls_mock)
+        # batch_size=1 → two batches; second raises
+        cls_mock.return_value.get_user_videos.side_effect = [None, RuntimeError("boom")]
 
-        self.assertEqual(TikTokUserAPISync.objects.count(), 3)
+        result = _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=1)
 
-    def test_single_day_range(self):
-        users = TikTokUser.objects.filter(pk=self.user1.pk)
-        track_user_sync_coverage(users, self.start_date, self.start_date)
+        self.assertIs(result.retry, _Retry.HALVE_BATCH)
+        successes = SyncAttempt.objects.filter(
+            target_date=TARGET, status=SyncAttempt.Status.SUCCESS
+        )
+        errors = SyncAttempt.objects.filter(
+            target_date=TARGET, status=SyncAttempt.Status.API_ERROR
+        )
+        self.assertEqual(successes.count(), 1)
+        self.assertEqual(errors.count(), 1)
+        self.assertIn("boom", errors.first().error_details["message"])
 
-        self.assertEqual(TikTokUserAPISync.objects.count(), 1)
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_no_gaps_returns_none_without_calling_api(self, cls_mock):
+        _configure_service_mock(cls_mock)
+        SyncAttempt.objects.create(
+            user=self.u1, target_date=TARGET, status=SyncAttempt.Status.SUCCESS
+        )
+        SyncAttempt.objects.create(
+            user=self.u2, target_date=TARGET, status=SyncAttempt.Status.SUCCESS
+        )
 
-    def test_empty_queryset(self):
-        users = TikTokUser.objects.none()
-        track_user_sync_coverage(users, self.start_date, self.end_date)
+        result = _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=10)
 
-        self.assertEqual(TikTokUserAPISync.objects.count(), 0)
+        self.assertIs(result.retry, _Retry.NONE)
+        cls_mock.return_value.get_user_videos.assert_not_called()
+
+
+class DailySyncTasksTest(TestCase):
+    """The user- and keyword-facing daily task wrappers."""
+
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_daily_sync_users_writes_syncattempts_for_target_date(self, cls_mock):
+        _configure_service_mock(cls_mock)
+        _monitored_user("u1")
+
+        daily_sync_users(target_date="2025-06-10")
+
+        cls_mock.return_value.get_user_videos.assert_called_once()
+        self.assertEqual(
+            SyncAttempt.objects.filter(
+                user__name="u1",
+                target_date=date(2025, 6, 10),
+                status=SyncAttempt.Status.SUCCESS,
+            ).count(),
+            1,
+        )
+
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_daily_sync_keywords_uses_hashtag_fk_on_attempts(self, cls_mock):
+        _configure_service_mock(cls_mock)
+        _monitored_hashtag("k1")
+
+        daily_sync_keywords(target_date="2025-06-10")
+
+        cls_mock.return_value.get_videos_by_keywords.assert_called_once()
+        attempt = SyncAttempt.objects.get(hashtag__name="k1")
+        self.assertEqual(attempt.status, SyncAttempt.Status.SUCCESS)
+        self.assertIsNone(attempt.user_id)
+
+
+class BackfillTargetDatesTest(TestCase):
+    @override_settings(API_MONITORING_START_DATE=date(2025, 6, 1))
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    def test_range_from_today_minus_4_back_to_setting(self, tz_mock):
+        tz_mock.localdate.return_value = date(2025, 6, 10)
+
+        dates = _backfill_target_dates()
+
+        self.assertEqual(dates[0], date(2025, 6, 6))
+        self.assertEqual(dates[-1], date(2025, 6, 1))
+        self.assertEqual(len(dates), 6)
+
+    @override_settings(API_MONITORING_START_DATE=date(2030, 1, 1))
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    def test_returns_empty_when_start_is_after_horizon(self, tz_mock):
+        tz_mock.localdate.return_value = date(2025, 6, 10)
+
+        self.assertEqual(_backfill_target_dates(), [])
+
+
+@override_settings(API_MONITORING_START_DATE=date(2025, 6, 1))
+class BackfillMissingSyncsTest(TestCase):
+    """Verifies priorities, capping, and lock behavior of the backfill task."""
+
+    def _fake_lock(self, acquired: bool = True):  # noqa: FBT002
+        lock = MagicMock()
+        lock.acquire.return_value = acquired
+        return lock
+
+    def _fake_redis(self, lock):
+        redis_mock = MagicMock()
+        redis_mock.lock.return_value = lock
+        return redis_mock
+
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    @patch("ddcs.metadata.research_api.tasks.Redis")
+    def test_processes_users_before_keywords(self, redis_cls, svc_cls, tz_mock):
+        _configure_service_mock(svc_cls)
+        tz_mock.localdate.return_value = date(2025, 6, 5)  # single backfill date: 6/1
+        tz_mock.now.side_effect = lambda: datetime(2025, 6, 5, tzinfo=UTC)
+        redis_cls.from_url.return_value = self._fake_redis(self._fake_lock())
+        _monitored_user("u1")
+        _monitored_hashtag("k1")
+
+        backfill_missing_syncs()
+
+        call_order = [c[0] for c in svc_cls.return_value.mock_calls if c[0]]
+        # get_user_videos should be called before get_videos_by_keywords
+        first_user = call_order.index("get_user_videos")
+        first_keyword = call_order.index("get_videos_by_keywords")
+        self.assertLess(first_user, first_keyword)
+
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    @patch("ddcs.metadata.research_api.tasks.Redis")
+    def test_stops_when_lock_is_held(self, redis_cls, svc_cls, tz_mock):
+        tz_mock.localdate.return_value = date(2025, 6, 5)
+        redis_cls.from_url.return_value = self._fake_redis(
+            self._fake_lock(acquired=False)
+        )
+        _monitored_user("u1")
+
+        backfill_missing_syncs()
+
+        svc_cls.return_value.get_user_videos.assert_not_called()
+
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    @patch("ddcs.metadata.research_api.tasks.Redis")
+    def test_stops_on_rate_limit_without_processing_more_pairs(
+        self, redis_cls, svc_cls, tz_mock
+    ):
+        # First (target, date) hits a rate limit; the backfill should exit
+        # rather than iterate to the next pair and re-trip the same limit.
+        _configure_service_mock(svc_cls)
+        svc_cls.return_value.get_user_videos.side_effect = (
+            ResearchAPIRateLimitExceededError("throttled")
+        )
+        tz_mock.localdate.return_value = date(2025, 6, 5)
+        tz_mock.now.side_effect = lambda: datetime(2025, 6, 5, tzinfo=UTC)
+        redis_cls.from_url.return_value = self._fake_redis(self._fake_lock())
+        _monitored_user("u1")
+        _monitored_hashtag("k1")
+
+        backfill_missing_syncs()
+
+        svc_cls.return_value.get_user_videos.assert_called_once()
+        svc_cls.return_value.get_videos_by_keywords.assert_not_called()

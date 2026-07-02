@@ -81,46 +81,13 @@ class ResearchAPIService:
                 }
             ]
         }
-        pages_retrieved = 0
-        videos_retrieved = 0
-        for page in self.client.query_videos_pages(query, **kwargs):
-            pages_retrieved += 1
-            self.sync_stats["pages_retrieved"] += 1
-            for video in page.get("data", {}).get("videos", []):
-                self._process_api_response(video)
-                videos_retrieved += 1
-                self.sync_stats["videos_retrieved"] += 1
+        videos_retrieved, pages_retrieved = self._query_videos_pages(query, **kwargs)
 
         logger.info(
             "Query Videos by username; Usernames: %s; Retrieved %s videos on %s pages",
             usernames,
             videos_retrieved,
             pages_retrieved,
-        )
-
-    def get_hashtag_videos(self, hashtags: list[str], **kwargs) -> None:
-        """Retrieve videos associated with specific hashtags via Research API.
-
-        Queries the Research API for videos associated with the provided hashtags,
-        processes the results, and stores them in the database.
-
-        Args:
-            hashtags (list[str]): List of hashtags to retrieve videos for.
-            **kwargs: Additional parameters to pass to the API client
-                (cursor, search_id, etc.).
-
-        Returns:
-            None
-        """
-        # Query Research API
-        for data in self.client.query_videos_by_hashtag(hashtags, **kwargs):
-            self._process_api_response(data)
-            self.sync_stats["videos_retrieved"] += 1
-
-        logger.info(
-            "Query Videos by hashtag; Hashtags: %s; Retrieved %s videos",
-            hashtags,
-            self.sync_stats["videos_retrieved"],
         )
 
     def get_videos_by_keywords(self, keywords: list[str], **kwargs) -> None:
@@ -135,8 +102,18 @@ class ResearchAPIService:
             ]
         }
 
-        pages_retrieved = 0
+        videos_retrieved, pages_retrieved = self._query_videos_pages(query, **kwargs)
+
+        logger.info(
+            "Query Videos by keyword; Keywords: %s; Retrieved %s videos on %s pages",
+            keywords,
+            videos_retrieved,
+            pages_retrieved,
+        )
+
+    def _query_videos_pages(self, query: dict[str, Any], **kwargs) -> tuple[int, int]:
         videos_retrieved = 0
+        pages_retrieved = 0
         for page in self.client.query_videos_pages(query, **kwargs):
             pages_retrieved += 1
             self.sync_stats["pages_retrieved"] += 1
@@ -145,12 +122,7 @@ class ResearchAPIService:
                 videos_retrieved += 1
                 self.sync_stats["videos_retrieved"] += 1
 
-        logger.info(
-            "Query Videos by keyword; Keywords: %s; Retrieved %s videos on %s pages",
-            keywords,
-            videos_retrieved,
-            pages_retrieved,
-        )
+        return videos_retrieved, pages_retrieved
 
     def _process_api_response(self, data: dict) -> None:
         data = self._sanitize(data)

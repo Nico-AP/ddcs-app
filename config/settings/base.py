@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 
 import json
 import ssl
+from datetime import date
 from pathlib import Path
 
 import structlog
@@ -316,15 +317,33 @@ CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # Beat schedule prepopulates the DB on first run. After that, the DB takes
 # precedence — edit via Django admin or delete the entry to reset to these values.
 CELERY_BEAT_SCHEDULE = {
-    "researchapi-query-videos-by-username": {
-        "task": "ddcs.metadata.research_api.tasks.query_videos_by_user",
+    "researchapi-daily-sync-users": {
+        "task": "ddcs.metadata.research_api.tasks.daily_sync_users",
         "schedule": crontab(hour=2, minute=0),
     },
-    "researchapi-query_videos_by_keyword": {
-        "task": "ddcs.metadata.research_api.tasks.query_videos_by_keyword",
+    "researchapi-daily-sync-keywords": {
+        "task": "ddcs.metadata.research_api.tasks.daily_sync_keywords",
         "schedule": crontab(hour=3, minute=0),
     },
+    "researchapi-backfill-missing-syncs": {
+        "task": "ddcs.metadata.research_api.tasks.backfill_missing_syncs",
+        "schedule": crontab(hour="10,16", minute=0),
+    },
 }
+
+# Prevent double-execution of celery tasks
+CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 7200}
+
+
+# TikTok Research API
+# ------------------------------------------------------------------------------
+TIKTOK_RESEARCH_API_KEY = env.str("TIKTOK_RESEARCH_API_KEY", "")
+TIKTOK_RESEARCH_API_SECRET = env.str("TIKTOK_RESEARCH_API_SECRET", "")
+
+# Earliest date the backfill task will look for coverage gaps.
+API_MONITORING_START_DATE: date = env.date(
+    "API_MONITORING_START_DATE", default=date(2026, 5, 1)
+)
 
 
 # Logging
@@ -461,11 +480,6 @@ LOGGING = {
 AUTH_TOKEN_SECRET = env.str("AUTH_TOKEN_SECRET")  # Authlib config
 TIKTOK_CLIENT_ID = env.str("TIKTOK_CLIENT_ID", "")
 TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET", "")
-
-# TikTok Research API
-# ------------------------------------------------------------------------------
-TIKTOK_RESEARCH_API_KEY = env.str("TIKTOK_RESEARCH_API_KEY", "")
-TIKTOK_RESEARCH_API_SECRET = env.str("TIKTOK_RESEARCH_API_SECRET", "")
 
 # DDM and related settings
 # ------------------------------------------------------------------------------

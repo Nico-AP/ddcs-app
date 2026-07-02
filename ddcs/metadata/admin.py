@@ -9,10 +9,10 @@ from import_export.resources import ModelResource
 from ddcs.metadata.models import (
     DataOrigins,
     ResearchAPIQueryTracker,
+    SyncAttempt,
     TikTokHashtag,
     TikTokMusic,
     TikTokUser,
-    TikTokUserAPISync,
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import (
@@ -120,12 +120,14 @@ class APIUserStatisticsInline(ReadOnlyInline):
     )
 
 
-class TikTokUserAPISyncInline(ReadOnlyInline):
-    model = TikTokUserAPISync
+class SyncAttemptUserInline(ReadOnlyInline):
+    model = SyncAttempt
+    fk_name = "user"
     fields = (
-        "synced_date",
-        "synced_at",
-        "success",
+        "target_date",
+        "attempted_at",
+        "status",
+        "tracker",
     )
 
 
@@ -164,13 +166,12 @@ class TikTokUserAdmin(admin.ModelAdmin):
         "id_tiktok",
         "monitor_api",
         "monitoring_priority_api",
-        "api_last_monitored_at",
         "added_by",
     )
     list_filter = ("added_by", "monitor_api")
     search_fields = ("name", "id_tiktok")
-    readonly_fields = ("created_at", "updated_at", "api_last_monitored_at")
-    inlines = (APIUserInfosInline, APIUserStatisticsInline, TikTokUserAPISyncInline)
+    readonly_fields = ("created_at", "updated_at")
+    inlines = (APIUserInfosInline, APIUserStatisticsInline, SyncAttemptUserInline)
 
 
 @admin.register(TikTokMusic)
@@ -180,6 +181,17 @@ class TikTokMusicAdmin(admin.ModelAdmin):
     search_fields = ("id_tiktok",)
     readonly_fields = ("created_at", "updated_at")
     inlines = (APIMusicInfosInline,)
+
+
+class SyncAttemptHashtagInline(ReadOnlyInline):
+    model = SyncAttempt
+    fk_name = "hashtag"
+    fields = (
+        "target_date",
+        "attempted_at",
+        "status",
+        "tracker",
+    )
 
 
 @admin.register(TikTokHashtag)
@@ -193,8 +205,8 @@ class TikTokHashtagAdmin(admin.ModelAdmin):
     )
     list_filter = ("added_by", "monitor_api")
     search_fields = ("name", "id_tiktok")
-    readonly_fields = ("created_at", "updated_at", "api_last_monitored_at")
-    inlines = (APIHashtagInfosInline,)
+    readonly_fields = ("created_at", "updated_at")
+    inlines = (APIHashtagInfosInline, SyncAttemptHashtagInline)
 
 
 @admin.register(ResearchAPIQueryTracker)
