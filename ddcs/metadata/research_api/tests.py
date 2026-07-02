@@ -7,6 +7,7 @@ from tiktok_metadata_kit.research_api import ResearchAPIRateLimitExceededError
 
 from ddcs.metadata.models import (
     DataOrigins,
+    ResearchAPIQueryTracker,
     SyncAttempt,
     TikTokHashtag,
     TikTokMusic,
@@ -530,6 +531,31 @@ class RunQueryTaskTest(TestCase):
         self.assertEqual(successes.count(), 1)
         self.assertEqual(errors.count(), 1)
         self.assertIn("boom", errors.first().error_details["message"])
+
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_rate_limit_after_earlier_failure_preserves_failed_batches_on_tracker(
+        self, cls_mock
+    ):
+        # Batch 1 fails with a generic exception (goes into failed_batches).
+        # Batch 2 hits the rate limit — the early-exit path must still write
+        # the accumulated failed_batches to tracker.query_exception_details.
+        _configure_service_mock(cls_mock)
+        cls_mock.return_value.get_user_videos.side_effect = [
+            RuntimeError("first-batch boom"),
+            ResearchAPIRateLimitExceededError("throttled"),
+        ]
+
+        _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=1)
+
+        tracker = ResearchAPIQueryTracker.objects.latest("start_time")
+        self.assertEqual(
+            tracker.query_status,
+            ResearchAPIQueryTracker.Status.RATE_LIMIT_EXCEEDED,
+        )
+        self.assertIsNotNone(tracker.query_exception_details)
+        failed = tracker.query_exception_details["failed batches"]
+        self.assertEqual(len(failed), 1)
+        self.assertIn("first-batch boom", failed[0]["error"])
 
     @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
     def test_no_gaps_returns_none_without_calling_api(self, cls_mock):

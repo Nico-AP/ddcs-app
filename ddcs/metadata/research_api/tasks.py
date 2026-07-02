@@ -250,6 +250,9 @@ def _run_query_task(
                 tracker,
                 service.sync_stats,
                 ResearchAPIQueryTracker.Status.SOFT_TIME_LIMIT_EXCEEDED,
+                exception_details=(
+                    {"failed batches": failed_batches} if failed_batches else None
+                ),
             )
             return _RunResult(
                 retry=_Retry.HALVE_BATCH,
@@ -274,6 +277,9 @@ def _run_query_task(
                 tracker,
                 service.sync_stats,
                 ResearchAPIQueryTracker.Status.RATE_LIMIT_EXCEEDED,
+                exception_details=(
+                    {"failed batches": failed_batches} if failed_batches else None
+                ),
             )
             return _RunResult(
                 retry=_Retry.SAME_BATCH,
