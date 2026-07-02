@@ -229,3 +229,77 @@ class ResearchAPIQueryTrackerAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
         return [field.name for field in self.model._meta.fields]  # noqa: SLF001
+
+
+class SyncAttemptKindFilter(admin.SimpleListFilter):
+    """Which of the two possible targets (user vs keyword) the attempt is for."""
+
+    title = "target kind"
+    parameter_name = "kind"
+
+    def lookups(self, request: HttpRequest, model_admin) -> list[tuple[str, str]]:  # noqa: ANN001
+        return [("user", "User"), ("keyword", "Keyword")]
+
+    def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
+        if self.value() == "user":
+            return queryset.filter(user__isnull=False)
+        if self.value() == "keyword":
+            return queryset.filter(hashtag__isnull=False)
+        return queryset
+
+
+class SyncAttemptSuccessFilter(admin.SimpleListFilter):
+    """One-click filter for success vs any failure — the common diagnostic axis."""
+
+    title = "outcome"
+    parameter_name = "outcome"
+
+    def lookups(self, request: HttpRequest, model_admin) -> list[tuple[str, str]]:  # noqa: ANN001
+        return [("success", "Success"), ("failure", "Any failure")]
+
+    def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
+        if self.value() == "success":
+            return queryset.filter(status=SyncAttempt.Status.SUCCESS)
+        if self.value() == "failure":
+            return queryset.exclude(status=SyncAttempt.Status.SUCCESS)
+        return queryset
+
+
+@admin.register(SyncAttempt)
+class SyncAttemptAdmin(admin.ModelAdmin):
+    list_display = (
+        "target_date",
+        "attempted_at",
+        "target",
+        "status",
+        "error_type",
+        "tracker",
+    )
+    list_filter = (
+        SyncAttemptSuccessFilter,
+        "status",
+        SyncAttemptKindFilter,
+    )
+    date_hierarchy = "target_date"
+    search_fields = ("user__name", "hashtag__name")
+    ordering = ("-attempted_at",)
+    list_select_related = ("user", "hashtag", "tracker")
+
+    @admin.display(description="Target", ordering="user__name")
+    def target(self, obj: SyncAttempt) -> str:
+        return str(obj.user or obj.hashtag)
+
+    @admin.display(description="Error type")
+    def error_type(self, obj: SyncAttempt) -> str:
+        if not obj.error_details:
+            return ""
+        return obj.error_details.get("type", "")
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
+        return False
+
+    def get_readonly_fields(self, request: HttpRequest, obj=None) -> list[str]:  # noqa: ANN001
+        return [field.name for field in self.model._meta.fields]  # noqa: SLF001
