@@ -16,11 +16,17 @@ from ddcs.core.types import TikTokUserData
 from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
 from ddcs.reports.config import (
     N_TOP_VIDEOS,
+    NO_PARTY_KEY,
     PARTIES_ORDER,
     REPORT_FIRST_DATE_TO_INCLUDE,
 )
 from ddcs.reports.models import ParticipantReportStatistics
-from ddcs.reports.types import DailyPartyCountRecord, PartyCountRecord, TopVideoRecord
+from ddcs.reports.types import (
+    DailyAccountPostCountRecord,
+    DailyPartyCountRecord,
+    PartyCountRecord,
+    TopVideoRecord,
+)
 
 # Mirrors what the real pipeline emits: every entry in PARTIES_ORDER,
 # including NO_PARTY_KEY for non-party political (and neutral) videos.
@@ -77,6 +83,35 @@ def _synthetic_daily_party_counts(days: int = 30) -> list[DailyPartyCountRecord]
         }
         for i in range(days)
         for party in SYNTHETIC_PARTIES
+    ]
+
+
+# One synthetic account per party, for the public (cross-account) plots.
+SYNTHETIC_POST_PARTIES = [party for party in PARTIES_ORDER if party != NO_PARTY_KEY]
+SYNTHETIC_POST_USERNAMES = {
+    party: f"{party.lower().replace('/', '_')}_official"
+    for party in SYNTHETIC_POST_PARTIES
+}
+
+
+def get_synthetic_post_data(days: int = 30) -> list[DailyAccountPostCountRecord]:
+    """Generate synthetic (account, date) post-count records, for dev
+    inspection of the public plots (``plots/public_plots.py``) without a
+    real database of monitored accounts.
+
+    Mirrors what ``get_post_data`` emits: one entry per (account, date),
+    with occasional ``None`` counts standing in for unsynced days.
+    """
+    start = datetime.now(tz=UTC).date() - timedelta(days=days)
+    return [
+        {
+            "username": SYNTHETIC_POST_USERNAMES[party],
+            "party": party,
+            "date": (start + timedelta(days=i)).isoformat(),
+            "count": choices([None, 0, randint(1, 6)], weights=[1, 3, 6], k=1)[0],
+        }
+        for party in SYNTHETIC_POST_PARTIES
+        for i in range(days)
     ]
 
 

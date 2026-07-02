@@ -12,6 +12,20 @@ class DailyPartyCountRecord(TypedDict):
     count: int
 
 
+class DailyAccountPostCountRecord(TypedDict):
+    """One (account, date) entry in the public report's base dataset.
+
+    ``count`` is ``None`` when the account had no successful sync for that
+    date (see ``SyncAttempt``), i.e. coverage is unknown rather than a
+    confirmed zero posts.
+    """
+
+    username: str
+    party: str
+    date: str
+    count: int | None
+
+
 class TopVideoRecord(TypedDict):
     video_id: int
     username: str

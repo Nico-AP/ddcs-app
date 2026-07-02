@@ -2,12 +2,18 @@ import logging
 from datetime import date, timedelta
 from typing import Any
 
-import plotly.graph_objects as go
-from django.conf import settings
-from django.templatetags.static import static
-from plotly.graph_objs import Figure
+from plotly import graph_objects as go
 
-from ddcs.reports.config import NO_PARTY_KEY, PARTIES_ORDER, PLOTLY_JS_STATIC_PATH
+from ddcs.reports.config import NO_PARTY_KEY, PARTIES_ORDER
+from ddcs.reports.plots.utils import (
+    _RADAR_AXIS_LABEL_FONT_SIZE,
+    PARTY_COLOR_OTHER,
+    PARTY_COLORS,
+    PLOT_CONFIG,
+    PLOT_FONT_FAMILY,
+    create_plot_html,
+    hex_to_rgba,
+)
 from ddcs.reports.types import (
     BehaviourComparisonRecord,
     DailyPartyCountRecord,
@@ -15,79 +21,6 @@ from ddcs.reports.types import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-_PARTY_COLOR_OTHER = "#9f9f9f"
-PARTY_COLORS = {
-    "SPD": "#e4454f",  # "#e3000f",
-    "CDU/CSU": "#454545",  # "#000000",
-    "Grüne": "#76ae63",  # "#46962b",
-    "B90/Grüne": "#76ae63",  # "#46962b",
-    "FDP": "#f8eb45",  # "#ffed00",
-    "AfD": "#45b4e2",  # "#009ee0",
-    "Linke": "#ca6697",  # "#be3075",
-    "Sonstige": _PARTY_COLOR_OTHER,  # "#808080",
-    "BSW": "#8e5973",  # "#691d42",
-    "Keine Partei": "#d4c5aa",
-}
-PLOT_FONT_FAMILY = "Rubik, Arial, sans-serif"
-_RADAR_AXIS_LABEL_FONT_SIZE = 16
-
-# Interactive: toolbar hidden but hover/tooltips enabled.
-PLOT_CONFIG = {
-    "responsive": True,
-    "displayModeBar": False,
-    "scrollZoom": False,
-    "doubleClick": False,
-    "showAxisDragHandles": False,
-    "showAxisRangeEntryBoxes": False,
-}
-
-# Static: all interaction disabled including hover.
-STATIC_PLOT_CONFIG = {
-    "responsive": True,
-    "displayModeBar": False,
-    "staticPlot": True,  # disables all interactions
-}
-
-# === Helper functions ===
-
-
-def _create_plot_html(
-    fig: Figure,
-    config: dict | None = None,
-    *,
-    include_plotlyjs: bool = False,
-) -> str | None:
-    """Helper function to standardize plot HTML generation.
-
-    Plotly.js is loaded once on report pages (see ``reports/base.html``);
-    inline figures should not embed another copy.
-    """
-    plotly_js: bool | str = False
-    if include_plotlyjs:
-        plotly_js_path = static(PLOTLY_JS_STATIC_PATH)
-        if settings.DEBUG:
-            import time  # noqa: PLC0415
-
-            version = int(time.time())
-            plotly_js_path = f"{plotly_js_path}?v={version}"
-        plotly_js = plotly_js_path
-
-    return fig.to_html(
-        full_html=False,
-        include_plotlyjs=plotly_js,
-        config=config or STATIC_PLOT_CONFIG,
-    )
-
-
-def _hex_to_rgba(hex_color: str, alpha: float = 0.9) -> str:
-    hex_color = hex_color.lstrip("#")
-    r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
-    return f"rgba({r}, {g}, {b}, {alpha})"
-
-
-# === Behaviour profile radar ===
 
 
 def _radar_hover_value_display(metric: str, value_display: str) -> str:
@@ -176,7 +109,7 @@ def get_behaviour_profile_radar(
             name="Du",
             marker={"size": 9, "color": "#e4454f"},
             line={"color": "#e4454f", "width": 3.5},
-            fillcolor=_hex_to_rgba("#e4454f", 0.22),
+            fillcolor=hex_to_rgba("#e4454f", 0.22),
             fill="toself",
             customdata=user_hover,
             hovertemplate=(
@@ -224,10 +157,7 @@ def get_behaviour_profile_radar(
         margin={"l": 72, "r": 72, "t": 48, "b": 88},
     )
 
-    return {"html": _create_plot_html(fig, config=PLOT_CONFIG)}
-
-
-# === Party Distribution Plot - User ===
+    return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
 
 
 def get_party_distribution_plot_user(
@@ -261,7 +191,7 @@ def get_party_distribution_plot_user(
             texttemplate="%{text}",
             marker={
                 "colors": [
-                    _hex_to_rgba(PARTY_COLORS.get(party, _PARTY_COLOR_OTHER))
+                    hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER))
                     for party in labels
                 ]
             },
@@ -279,10 +209,7 @@ def get_party_distribution_plot_user(
         hovermode=False,
     )
 
-    return {"html": _create_plot_html(fig)}
-
-
-# === Temporal Party Distribution Plot - User ===
+    return {"html": create_plot_html(fig)}
 
 
 def get_temporal_party_distribution_plot_user(
@@ -324,7 +251,7 @@ def get_temporal_party_distribution_plot_user(
                 mode="lines",
                 line={"width": 0},
                 stackgroup="one",
-                fillcolor=_hex_to_rgba(PARTY_COLORS.get(party, _PARTY_COLOR_OTHER)),
+                fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",
@@ -386,4 +313,4 @@ def get_temporal_party_distribution_plot_user(
         title_font={"size": 20},
     )
 
-    return {"html": _create_plot_html(fig, config=PLOT_CONFIG)}
+    return {"html": create_plot_html(fig, config=PLOT_CONFIG)}

@@ -19,14 +19,21 @@ from ddcs.reports.config import (
     HASHTAGS_TO_EXCLUDE,
     REPORT_FIRST_DATE_TO_INCLUDE,
 )
-from ddcs.reports.factories import get_synthetic_report_statistics
+from ddcs.reports.factories import (
+    get_synthetic_post_data,
+    get_synthetic_report_statistics,
+)
 from ddcs.reports.models import ParticipantReportStatistics
-from ddcs.reports.plots import (
+from ddcs.reports.plots.public_plots import (
+    get_party_distribution_all_accounts,
+    get_temporal_party_distribution_all_accounts,
+)
+from ddcs.reports.plots.user_plots import (
     get_behaviour_profile_radar,
     get_party_distribution_plot_user,
     get_temporal_party_distribution_plot_user,
 )
-from ddcs.reports.services import generate_report_statistics
+from ddcs.reports.services import generate_user_report_statistics
 from ddcs.reports.wordclouds import get_wordcloud
 
 
@@ -72,7 +79,7 @@ class GetReportView(TemplateView):
             return statistics
         # No statistics found; compute from donated data.
         data = get_user_data(self.participant)
-        return generate_report_statistics(self.participant, data)
+        return generate_user_report_statistics(self.participant, data)
 
     def get_top_videos_table_stats(self) -> list[dict]:
         return [
@@ -137,3 +144,23 @@ class GetSyntheticReportView(GetReportView):
 
     def _get_behaviour_comparisons(self) -> list[dict]:
         return self.statistics.behaviour_comparisons
+
+
+class PublicPlotsDevView(TemplateView):
+    """Dev-only view for inspecting the public (cross-account) plot styling
+    with synthetic data, without needing a real database of monitored
+    accounts. Not linked from production navigation.
+    """
+
+    template_name = "reports/public_plots_dev.html"
+
+    def get_context_data(self, **kwargs) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        records = get_synthetic_post_data()
+        context["party_distribution_all_accounts"] = (
+            get_party_distribution_all_accounts(records)
+        )
+        context["temporal_party_distribution_all_accounts"] = (
+            get_temporal_party_distribution_all_accounts(records)
+        )
+        return context
