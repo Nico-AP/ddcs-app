@@ -349,7 +349,7 @@ API_MONITORING_START_DATE: date = env.date(
 # but we have our own halving-batch retry logic and the periodic
 # backfill task, so a single retry is enough for genuine transient blips.
 TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES: int = env.int(
-    "TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES", default=1
+    "TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES", default=0
 )
 
 
