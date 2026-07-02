@@ -46,6 +46,13 @@ class ResearchAPIService:
             api_key=settings.TIKTOK_RESEARCH_API_KEY,
             api_secret=settings.TIKTOK_RESEARCH_API_SECRET,
         )
+        # Cap the client's retry chain. Its default (5 retries with
+        # exponential backoff up to 30s per sleep) can burn ~30s of
+        # wall-clock time per persistently-failing batch, which was
+        # observed to inflate daily-sync runtime by ~20 min. Our tasks
+        # already cover recovery via the halving-batch retry inside
+        # `_run_query_task` and the periodic `backfill_missing_syncs`.
+        self.client.MAX_RETRIES = settings.TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES
 
         # Track how many objects are created
         self.sync_stats = {

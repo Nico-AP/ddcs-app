@@ -345,6 +345,13 @@ API_MONITORING_START_DATE: date = env.date(
     "API_MONITORING_START_DATE", default=date(2026, 5, 1)
 )
 
+# Client-level retry cap for the Research API. The client defaults to 5,
+# but we have our own halving-batch retry logic and the periodic
+# backfill task, so a single retry is enough for genuine transient blips.
+TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES: int = env.int(
+    "TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES", default=1
+)
+
 
 # Logging
 # ------------------------------------------------------------------------------
