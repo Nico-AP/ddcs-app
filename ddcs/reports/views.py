@@ -15,10 +15,7 @@ from django.http import Http404, HttpRequest
 from django.views.generic import TemplateView
 
 from ddcs.datadonation.services import get_user_data
-from ddcs.reports.config import (
-    HASHTAGS_TO_EXCLUDE,
-    REPORT_FIRST_DATE_TO_INCLUDE,
-)
+from ddcs.reports.config import REPORT_FIRST_DATE_TO_INCLUDE
 from ddcs.reports.factories import get_synthetic_report_statistics
 from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.plots import (
@@ -37,10 +34,6 @@ class MainReportView(TemplateView):
         context = super().get_context_data(**kwargs)
         context["participant_id"] = self.kwargs["participant_id"]
         return context
-
-
-def _filter_hashtags(hashtags: list[str]) -> list[str]:
-    return [tag for tag in hashtags if tag.lower() not in HASHTAGS_TO_EXCLUDE]
 
 
 class GetReportView(TemplateView):
@@ -75,13 +68,7 @@ class GetReportView(TemplateView):
         return generate_report_statistics(self.participant, data)
 
     def get_top_videos_table_stats(self) -> list[dict]:
-        return [
-            {
-                **video,
-                "filtered_hashtags": _filter_hashtags(video.get("hashtags") or []),
-            }
-            for video in self.statistics.top_videos
-        ]
+        return list(self.statistics.top_videos)
 
     def get_context_data(self, **kwargs) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)

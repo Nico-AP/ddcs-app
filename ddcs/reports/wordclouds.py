@@ -1,9 +1,10 @@
+import re
 import unicodedata
 from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
-from wordcloud import WordCloud
+from wordcloud import STOPWORDS, WordCloud
 
 from ddcs.reports.config import HASHTAGS_TO_EXCLUDE
 
@@ -22,6 +23,259 @@ WORDCLOUD_CONFIG = {
 RGB_ORANGE = (255, 191, 0)
 RGB_TURQUOISE = (0, 191, 150)
 
+GERMAN_STOPWORDS = frozenset(
+    [
+        "aber",
+        "alle",
+        "allem",
+        "allen",
+        "aller",
+        "alles",
+        "als",
+        "also",
+        "am",
+        "an",
+        "ander",
+        "andere",
+        "anderem",
+        "anderen",
+        "anderer",
+        "anderes",
+        "anderm",
+        "andern",
+        "anderr",
+        "anders",
+        "auch",
+        "auf",
+        "aus",
+        "bei",
+        "bin",
+        "bis",
+        "bist",
+        "da",
+        "damit",
+        "dann",
+        "das",
+        "dasselbe",
+        "dazu",
+        "daß",
+        "dein",
+        "deine",
+        "deinem",
+        "deinen",
+        "deiner",
+        "deines",
+        "dem",
+        "demselben",
+        "den",
+        "denn",
+        "denselben",
+        "der",
+        "derer",
+        "derselbe",
+        "derselben",
+        "des",
+        "desselben",
+        "dessen",
+        "dich",
+        "die",
+        "dies",
+        "diese",
+        "dieselbe",
+        "dieselben",
+        "diesem",
+        "diesen",
+        "dieser",
+        "dieses",
+        "dir",
+        "doch",
+        "dort",
+        "du",
+        "dürft",
+        "dürfen",
+        "durfte",
+        "durften",
+        "ein",
+        "eine",
+        "einem",
+        "einen",
+        "einer",
+        "eines",
+        "einig",
+        "einige",
+        "einigem",
+        "einigen",
+        "einiger",
+        "einiges",
+        "einmal",
+        "er",
+        "es",
+        "etwas",
+        "euch",
+        "euer",
+        "eure",
+        "eurem",
+        "euren",
+        "eurer",
+        "eures",
+        "für",
+        "gegen",
+        "gewesen",
+        "hab",
+        "habe",
+        "haben",
+        "habt",
+        "hast",
+        "hat",
+        "hatte",
+        "hatten",
+        "hattest",
+        "hattet",
+        "hier",
+        "hin",
+        "hinter",
+        "ich",
+        "ihm",
+        "ihn",
+        "ihnen",
+        "ihr",
+        "ihre",
+        "ihrem",
+        "ihren",
+        "ihrer",
+        "ihres",
+        "im",
+        "in",
+        "indem",
+        "ins",
+        "ist",
+        "jede",
+        "jedem",
+        "jeden",
+        "jeder",
+        "jedes",
+        "jene",
+        "jenem",
+        "jenen",
+        "jener",
+        "jenes",
+        "jetzt",
+        "kann",
+        "kannst",
+        "kein",
+        "keine",
+        "keinem",
+        "keinen",
+        "keiner",
+        "keines",
+        "können",
+        "könnt",
+        "konnte",
+        "konnten",
+        "mag",
+        "magst",
+        "mich",
+        "mir",
+        "mit",
+        "muss",
+        "musst",
+        "müssen",
+        "müsst",
+        "nach",
+        "nicht",
+        "nichts",
+        "noch",
+        "nun",
+        "nur",
+        "ob",
+        "oder",
+        "ohne",
+        "schon",
+        "seid",
+        "sein",
+        "seine",
+        "seinem",
+        "seinen",
+        "seiner",
+        "seines",
+        "selbst",
+        "sich",
+        "sie",
+        "sind",
+        "so",
+        "solche",
+        "solchem",
+        "solchen",
+        "solcher",
+        "solches",
+        "soll",
+        "sollen",
+        "sollst",
+        "sollt",
+        "sollte",
+        "sollten",
+        "sondern",
+        "sonst",
+        "um",
+        "und",
+        "uns",
+        "unse",
+        "unsem",
+        "unsen",
+        "unser",
+        "unsere",
+        "unses",
+        "unter",
+        "vom",
+        "von",
+        "vor",
+        "während",
+        "war",
+        "waren",
+        "warst",
+        "warum",
+        "was",
+        "weg",
+        "weil",
+        "weiter",
+        "welche",
+        "welchem",
+        "welchen",
+        "welcher",
+        "welches",
+        "wenn",
+        "werde",
+        "werden",
+        "werdet",
+        "wie",
+        "wieder",
+        "will",
+        "willst",
+        "wir",
+        "wird",
+        "wirst",
+        "wo",
+        "wollen",
+        "wollt",
+        "wollte",
+        "wollten",
+        "würde",
+        "würden",
+        "zu",
+        "zum",
+        "zur",
+        "zwar",
+        "zwischen",
+    ]
+)
+
+REPORT_STOPWORDS = (
+    STOPWORDS | GERMAN_STOPWORDS | {w.lower() for w in HASHTAGS_TO_EXCLUDE}
+)
+
+_TOKEN_PATTERN = re.compile(WORDCLOUD_CONFIG["regexp"], re.UNICODE)
+_MIN_TOKEN_LENGTH = 2
+
 
 def _remove_emojis(tag: str) -> str:
     """Drop emoji and other symbols/punctuation,
@@ -35,16 +289,18 @@ def _remove_emojis(tag: str) -> str:
     ).lower()
 
 
-def _build_hashtag_frequencies(hashtags: list[str]) -> Counter:
-    """Build a frequency counter, filtering common tags and emoji-only tags."""
-    all_hashtags = []
-    for hashtag in hashtags:
-        if hashtag.lower() in HASHTAGS_TO_EXCLUDE:
+def _build_description_frequencies(descriptions: list[str]) -> Counter:
+    """Tokenize video descriptions and count word frequencies."""
+    counter: Counter = Counter()
+    for text in descriptions:
+        if not text:
             continue
-        cleaned = _remove_emojis(hashtag)
-        if cleaned:
-            all_hashtags.append(cleaned)
-    return Counter(all_hashtags)
+        for word in _TOKEN_PATTERN.findall(text.lower()):
+            cleaned = _remove_emojis(word)
+            if len(cleaned) < _MIN_TOKEN_LENGTH or cleaned in REPORT_STOPWORDS:
+                continue
+            counter[cleaned] += 1
+    return counter
 
 
 def _make_color_func(
@@ -76,6 +332,7 @@ def _create_wordcloud(frequencies: Counter, color_rgb: tuple[int, int, int]) -> 
 
     cloud = WordCloud(
         **WORDCLOUD_CONFIG,
+        stopwords=REPORT_STOPWORDS,
         color_func=_make_color_func(frequencies, *color_rgb),
     ).generate_from_frequencies(frequencies)
 
@@ -86,11 +343,11 @@ def _create_wordcloud(frequencies: Counter, color_rgb: tuple[int, int, int]) -> 
     }
 
 
-def get_wordcloud(hashtags: list[str], *, is_party_account: bool) -> dict:
-    """Build a hashtag wordcloud for one of the two report sections.
+def get_wordcloud(descriptions: list[str], *, is_party_account: bool) -> dict:
+    """Build a description wordcloud for one of the two report sections.
 
     ``is_party_account=True`` colours the cloud orange (party-aligned videos);
     ``False`` colours it turquoise (non-party political videos).
     """
     color = RGB_ORANGE if is_party_account else RGB_TURQUOISE
-    return _create_wordcloud(_build_hashtag_frequencies(hashtags), color)
+    return _create_wordcloud(_build_description_frequencies(descriptions), color)

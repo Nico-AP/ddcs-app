@@ -1,8 +1,10 @@
+import re
 from collections import Counter
 from collections.abc import Iterable
 from datetime import datetime
 
 from ddm.participation.models import Participant
+from django.db.models import Prefetch
 
 from ddcs.core.types import (
     FollowedAccountRecord,
@@ -11,6 +13,7 @@ from ddcs.core.types import (
     WatchHistoryRecord,
 )
 from ddcs.metadata.models import TikTokVideo
+from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
 from ddcs.reports.config import (
     N_TOP_VIDEOS,
@@ -26,6 +29,8 @@ from ddcs.reports.types import (
     TopVideoRecord,
 )
 from ddcs.reports.utils import load_account_party_mapping
+
+_LINK_USERNAME_RE = re.compile(r"tiktok\.com/@([^/]+)/", re.IGNORECASE)
 
 
 def _get_video_id_list(
@@ -50,6 +55,45 @@ def _get_username_list(data: list[FollowedAccountRecord]) -> list[str]:
     ]
 
 
+def _extract_username_from_link(link: str) -> str | None:
+    if not link:
+        return None
+    match = _LINK_USERNAME_RE.search(link)
+    return match.group(1) if match else None
+
+
+def _party_videos_from_watch_history(
+    watch_history: list[WatchHistoryRecord],
+    account_party_mapping: dict[str, str],
+) -> tuple[dict[int, str], dict[int, str]]:
+    """Map watched video IDs to party/username when the link is a party account."""
+    party_map: dict[int, str] = {}
+    username_map: dict[int, str] = {}
+    for record in watch_history or []:
+        date = record.get("date")
+        video_id = record.get("video_id")
+        if not isinstance(date, datetime) or date < REPORT_FIRST_DATE_TO_INCLUDE:
+            continue
+        if video_id is None:
+            continue
+        username = _extract_username_from_link(record.get("link") or "")
+        if username and username in account_party_mapping:
+            party_map[video_id] = account_party_mapping[username]
+            username_map[video_id] = username
+    return party_map, username_map
+
+
+def _merge_political_video_metadata(
+    party_map: dict[int, str],
+    username_map: dict[int, str],
+    extra_party_map: dict[int, str],
+    extra_username_map: dict[int, str],
+) -> None:
+    for video_id, party in extra_party_map.items():
+        party_map[video_id] = party
+        username_map[video_id] = extra_username_map[video_id]
+
+
 def _build_political_video_metadata(
     party_account_videos: Iterable,
     non_party_political_videos: Iterable,
@@ -60,7 +104,7 @@ def _build_political_video_metadata(
 
     Party-account videos map to the party from ``user_party_map``.
     Non-party political videos (matched via a monitored hashtag) map to
-    ``NO_PARTY_KEY``; their hashtags feed the non-party wordcloud.
+    ``NO_PARTY_KEY``; their descriptions feed the non-party wordcloud.
     """
     party_map: dict[int, str] = {}
     username_map: dict[int, str] = {}
@@ -126,28 +170,40 @@ def _compute_daily_party_counts(
     ]
 
 
-def _get_hashtags_by_video(video_ids: list[int]) -> dict[int, list[str]]:
-    """Return a map of video id_tiktok -> list of hashtag names
-    for the given video IDs.
-    """
+def _first_non_empty_description(video: TikTokVideo) -> str:
+    for info in video.api_infos.all():
+        if info.description and info.description.strip():
+            return info.description.strip()
+    return ""
+
+
+def _get_descriptions_by_video(video_ids: list[int]) -> dict[int, str]:
+    """Return a map of video id_tiktok -> description text for the given IDs."""
+    if not video_ids:
+        return {}
+
     videos = TikTokVideo.objects.filter(id_tiktok__in=video_ids).prefetch_related(
-        "hashtags"
+        Prefetch(
+            "api_infos",
+            queryset=APIVideoInfos.objects.order_by("-updated_at"),
+        ),
     )
 
-    return {
-        video.id_tiktok: list(video.hashtags.values_list("name", flat=True))
-        for video in videos
-    }
+    return {video.id_tiktok: _first_non_empty_description(video) for video in videos}
 
 
 def _get_top_videos(
     seen_pol_video_ids: list[int],
     video_party_map: dict[int, str],
     username_by_video: dict[int, str],
-    hashtags_by_video: dict[int, list[str]],
+    descriptions_by_video: dict[int, str],
     n: int = N_TOP_VIDEOS,
 ) -> list[TopVideoRecord]:
-    """Build top N political videos by appearance count in watch history."""
+    """Build top N political videos by appearance count in watch history.
+
+    Political videos are those with a monitored political keyword and/or from an
+    official party account (metadata DB or watch-history link).
+    """
     counts = Counter(seen_pol_video_ids)
     return [
         {
@@ -155,7 +211,7 @@ def _get_top_videos(
             "username": username_by_video.get(video_id, ""),
             "view_count": count,
             "party": video_party_map.get(video_id),
-            "hashtags": hashtags_by_video.get(video_id, []),
+            "description": descriptions_by_video.get(video_id, ""),
         }
         for video_id, count in counts.most_common(n)
     ]
@@ -170,15 +226,21 @@ def compute_report_statistics(data: TikTokUserData) -> ReportStatistics:
     # Political content
     account_party_mapping = load_account_party_mapping()
     political_usernames = list(account_party_mapping.keys())
+    seen_video_id_set = set(seen_video_ids)
 
-    party_account_videos = list(
-        TikTokVideo.objects.filter(user__name__in=political_usernames).select_related(
-            "user"
-        )
+    link_party_map, link_username_map = _party_videos_from_watch_history(
+        data.watch_history or [], account_party_mapping
     )
-    # TODO: May need to optimize this query when we notice a slow-down.
-    non_party_political_videos = list(
-        TikTokVideo.objects.filter(hashtags__monitor_api=True)
+
+    party_account_videos = TikTokVideo.objects.filter(
+        id_tiktok__in=seen_video_id_set,
+        user__name__in=political_usernames,
+    ).select_related("user")
+    non_party_political_videos = (
+        TikTokVideo.objects.filter(
+            id_tiktok__in=seen_video_id_set,
+            hashtags__monitor_api=True,
+        )
         .exclude(user__name__in=political_usernames)
         .select_related("user")
         .distinct()
@@ -187,9 +249,10 @@ def compute_report_statistics(data: TikTokUserData) -> ReportStatistics:
     video_party_map, video_username_map = _build_political_video_metadata(
         party_account_videos, non_party_political_videos, account_party_mapping
     )
-    political_video_id_set = {v.id_tiktok for v in party_account_videos} | {
-        v.id_tiktok for v in non_party_political_videos
-    }
+    _merge_political_video_metadata(
+        video_party_map, video_username_map, link_party_map, link_username_map
+    )
+    political_video_id_set = set(video_party_map.keys())
     political_username_set = set(political_usernames)
 
     # Generate data used by report
@@ -201,21 +264,23 @@ def compute_report_statistics(data: TikTokUserData) -> ReportStatistics:
     daily_party_counts = _compute_daily_party_counts(
         data.watch_history or [], video_party_map
     )
-    hashtags_by_pol_video = _get_hashtags_by_video(seen_pol_video_ids)
+    descriptions_by_pol_video = _get_descriptions_by_video(seen_pol_video_ids)
     top_videos = _get_top_videos(
         seen_pol_video_ids,
         video_party_map,
         video_username_map,
-        hashtags_by_pol_video,
+        descriptions_by_pol_video,
     )
 
     party_hashtags: list[str] = []
     non_party_hashtags: list[str] = []
-    for video_id, hashtag_list in hashtags_by_pol_video.items():
+    for video_id, description in descriptions_by_pol_video.items():
+        if not description:
+            continue
         if video_party_map.get(video_id) == NO_PARTY_KEY:
-            non_party_hashtags.extend(hashtag_list)
+            non_party_hashtags.append(description)
         else:
-            party_hashtags.extend(hashtag_list)
+            party_hashtags.append(description)
 
     return {
         "videos_seen_count_total": len(seen_video_ids),
@@ -224,7 +289,7 @@ def compute_report_statistics(data: TikTokUserData) -> ReportStatistics:
         "followed_pol_users": followed_pol_users,
         "party_counts": party_counts,
         "daily_party_counts": daily_party_counts,
-        "hashtags_by_pol_video": hashtags_by_pol_video,
+        "hashtags_by_pol_video": descriptions_by_pol_video,
         "top_videos": top_videos,
         "party_hashtags": party_hashtags,
         "non_party_hashtags": non_party_hashtags,

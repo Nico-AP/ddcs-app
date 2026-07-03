@@ -17,7 +17,7 @@ class TopVideoRecord(TypedDict):
     username: str
     party: str | None
     view_count: int
-    hashtags: list[str]
+    description: str
 
 
 class BehaviourComparisonRecord(TypedDict):
@@ -52,7 +52,7 @@ class ReportStatistics(TypedDict):
 
     party_counts: list[PartyCountRecord]
     daily_party_counts: list[DailyPartyCountRecord]
-    hashtags_by_pol_video: dict[int, list[str]]
+    hashtags_by_pol_video: dict[int, str]
     top_videos: list[TopVideoRecord]
 
     party_hashtags: list[str]

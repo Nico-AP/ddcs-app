@@ -36,30 +36,15 @@ SYNTHETIC_USERNAMES = [
     "bsw_official",
 ]
 
-SYNTHETIC_HASHTAGS = [
-    "politik",
-    "bundestagswahl",
-    "demokratie",
-    "deutschland",
-    "wahl2025",
-    "bundestag",
-    "wahlkampf",
-    "news",
-    "regierung",
-    "jungealternative",
-    "jungeliberale",
-    "jungeunion",
-    "jusos",
-    "katringoertingeckardt",
-    "keinechancedercdu",
-    "koalition",
-    "kubicki",
-    "larsklingbeil",
-    "lauterbach",
-    "linke",
-    "linkesindzecke",
-    "linkewohnkngssitutuation",
-    "linksfraktion",
+SYNTHETIC_DESCRIPTIONS = [
+    "Wichtige Politik Nachrichten aus dem Bundestag",
+    "Bundestagswahl 2025 - Demokratie stärken",
+    "Wahlkampf Update von der Regierung",
+    "Junge Wählerinnen und Wähler auf TikTok",
+    "Koalitionsverhandlungen und aktuelle Debatten",
+    "News zur Bundestagswahl und Demokratie",
+    "Diskussion über Wirtschaft und Klimaschutz",
+    "Statement zur aktuellen Regierungspolitik",
 ]
 
 
@@ -80,10 +65,8 @@ def _synthetic_daily_party_counts(days: int = 30) -> list[DailyPartyCountRecord]
     ]
 
 
-def _synthetic_hashtags_by_video(video_ids: list[int]) -> dict[int, list[str]]:
-    return {
-        video_id: choices(SYNTHETIC_HASHTAGS, k=randint(0, 5)) for video_id in video_ids
-    }
+def _synthetic_descriptions_by_video(video_ids: list[int]) -> dict[int, str]:
+    return {video_id: choices(SYNTHETIC_DESCRIPTIONS)[0] for video_id in video_ids}
 
 
 def _synthetic_top_videos(
@@ -97,14 +80,14 @@ def _synthetic_top_videos(
             "username": choices(SYNTHETIC_USERNAMES)[0],
             "party": choices(SYNTHETIC_PARTIES)[0],
             "view_count": randint(1, 20),
-            "hashtags": choices(SYNTHETIC_HASHTAGS, k=randint(0, 5)),
+            "description": choices(SYNTHETIC_DESCRIPTIONS)[0],
         }
         for video_id in shuffled[:n]
     ]
 
 
-def _synthetic_hashtag_list() -> list[str]:
-    return choices(SYNTHETIC_HASHTAGS, k=randint(150, 500))
+def _synthetic_description_list() -> list[str]:
+    return choices(SYNTHETIC_DESCRIPTIONS, k=randint(20, 60))
 
 
 def _synthetic_behaviour_comparisons() -> list[dict]:
@@ -147,9 +130,9 @@ def get_synthetic_report_statistics(
         followed_pol_users=followed_pol_users,
         party_counts=_synthetic_party_counts(),
         daily_party_counts=_synthetic_daily_party_counts(),
-        hashtags_by_pol_video=_synthetic_hashtags_by_video(seen_pol_video_ids),
+        hashtags_by_pol_video=_synthetic_descriptions_by_video(seen_pol_video_ids),
         top_videos=_synthetic_top_videos(seen_pol_video_ids),
-        party_hashtags=_synthetic_hashtag_list(),
-        non_party_hashtags=_synthetic_hashtag_list(),
+        party_hashtags=_synthetic_description_list(),
+        non_party_hashtags=_synthetic_description_list(),
         behaviour_comparisons=_synthetic_behaviour_comparisons(),
     )

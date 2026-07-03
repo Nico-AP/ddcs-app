@@ -6,7 +6,7 @@
       <tr>
         <th>Account</th>
         <th>Views</th>
-        <th>Hashtags</th>
+        <th>Beschreibung</th>
         <th>Link</th>
       </tr>
       </thead>
@@ -19,12 +19,12 @@
           <td class="views-cell">
             {{ video.view_count|floatformat:0 }}
           </td>
-          <td class="hashtags-cell">
-            {% for tag in video.filtered_hashtags %}
-              <span class="hashtag">#{{ tag }}</span>
-            {% empty %}
+          <td class="description-cell">
+            {% if video.description %}
+              {{ video.description|truncatechars:120 }}
+            {% else %}
               —
-            {% endfor %}
+            {% endif %}
           </td>
           <td class="link-cell">
             <a href="https://www.tiktok.com/share/video/{{ video.video_id }}"
@@ -39,8 +39,8 @@
       </tbody>
     </table>
     <div class="description text-center fs-6 text-secondary">
-      Hier berücksichtigen wir alle Videos die einen politischen Hashtag
-      enthalten.
+      Hier berücksichtigen wir alle Videos mit politischem Schlagwort oder von
+      offiziellen Partei-Accounts in deinem Feed.
     </div>
   </div>
 </div>
