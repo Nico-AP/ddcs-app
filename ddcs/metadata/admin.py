@@ -209,17 +209,38 @@ class TikTokHashtagAdmin(admin.ModelAdmin):
     inlines = (APIHashtagInfosInline, SyncAttemptHashtagInline)
 
 
+class TrackerOriginFilter(admin.SimpleListFilter):
+    """Whether the tracker's run came from a scheduled daily task or the backfill."""
+
+    title = "origin"
+    parameter_name = "origin"
+
+    def lookups(self, request: HttpRequest, model_admin) -> list[tuple[str, str]]:  # noqa: ANN001
+        return [("daily", "Daily"), ("backfill", "Backfill")]
+
+    def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
+        value = self.value()
+        if value in {"daily", "backfill"}:
+            return queryset.filter(query_parameters__origin=value)
+        return queryset
+
+
 @admin.register(ResearchAPIQueryTracker)
 class ResearchAPIQueryTrackerAdmin(admin.ModelAdmin):
     list_display = (
         "start_time",
         "end_time",
         "query_function",
+        "origin",
         "query_parameters",
         "query_result",
         "query_status",
     )
-    list_filter = ("query_function", "query_status")
+    list_filter = ("query_function", "query_status", TrackerOriginFilter)
+
+    @admin.display(description="Origin")
+    def origin(self, obj: ResearchAPIQueryTracker) -> str:
+        return (obj.query_parameters or {}).get("origin", "—")
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
