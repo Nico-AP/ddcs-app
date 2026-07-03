@@ -7,6 +7,7 @@ from django.utils import timezone
 
 from ddcs.metadata.models import SyncAttempt, TikTokVideo
 from ddcs.reports.config import (
+    PARTIES_ORDER,
     PUBLIC_POST_DATA_END_LAG_DAYS,
     PUBLIC_POST_DATA_START_DATE,
 )
@@ -39,9 +40,15 @@ def _recode_party(party: str) -> str:
         "csu": "CDU/CSU",
         "grüne": "B90/GRÜNE",
         "b90": "B90/GRÜNE",
+        "link": "Linke",
     }
     stripped = party.strip()
-    return party_recodes.get(stripped.lower(), stripped)
+    recoded_party = party_recodes.get(stripped.lower(), stripped)
+
+    if recoded_party not in PARTIES_ORDER:
+        recoded_party = "Sonstige"
+
+    return recoded_party
 
 
 def _compute_post_data() -> list[DailyAccountPostCountRecord]:
