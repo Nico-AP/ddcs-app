@@ -2,7 +2,6 @@ import logging
 from datetime import datetime, timedelta
 
 from authlib.integrations.django_client import OAuthError
-from ddm.participation.views import DataDonationView
 from django.http import HttpRequest, HttpResponseRedirect
 from django.shortcuts import redirect
 from django.urls import reverse
@@ -12,8 +11,16 @@ from django.views.generic import TemplateView
 
 from ddcs.datadonation.portability.models import TikTokConnection
 from ddcs.datadonation.portability.oauth import oauth
+from ddcs.datadonation.views import DonationViewDDM
 
 logger = logging.getLogger(__name__)
+
+
+API_PARTICIPATION_FLOW_STEPS = [
+    "datadonation:portability_donation",
+    "datadonation:questionnaire",
+    "datadonation:debriefing",
+]
 
 
 class TikTokConnectionView(TemplateView):
@@ -89,8 +96,11 @@ class CheckDataAvailabilityView(View):
         pass
 
 
-class PortabilityDonationView(DataDonationView):
+class PortabilityDonationView(DonationViewDDM):
     template_name = "datadonation/portability/donation.html"
+
+    steps = API_PARTICIPATION_FLOW_STEPS
+    step_name = "datadonation:portability_donation"
 
 
 class PortabilityExceptionView(TemplateView):
