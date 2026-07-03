@@ -36,7 +36,7 @@ Each run:
    have a `SyncAttempt.status=SUCCESS` row for the target date.
 2. Orders by `monitoring_priority_api` descending — high-priority items
    get quota first.
-3. Batches (users: 20 per batch, keywords: 50 per batch), queries the
+3. Batches (users: 200 per batch, keywords: 50 per batch), queries the
    Research API, and writes one `SyncAttempt` row per (item, date) with
    the outcome (`success`, `rate_limited`, `timeout`, `api_error`).
 4. On partial failure or soft-time-limit, Celery-level retries fire
@@ -162,7 +162,7 @@ enqueue for a worker.
 | kwarg          | Type          | Default              | Meaning                                             |
 |----------------|---------------|----------------------|-----------------------------------------------------|
 | `target_date`  | `str \| None` | `today − 4 days`     | ISO date (`"YYYY-MM-DD"`) to sync.                  |
-| `batch_size`   | `int`         | 20 (users), 50 (kw)  | Items per API request. Halved on retry.             |
+| `batch_size`   | `int`         | 200 (users), 50 (kw) | Items per API request. Halved on retry.             |
 | `max_retries`  | `int \| None` | `3` (from decorator) | Override the Celery-level retry cap for this run.   |
 
 The `max_retries` override propagates: it's forwarded into each retry's
