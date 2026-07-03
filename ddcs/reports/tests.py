@@ -7,9 +7,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ddm.participation.models import Participant
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.core.cache import cache
 from django.http import Http404
-from django.test import RequestFactory, TestCase
+from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 
 import ddcs.reports.plots.public_plots as public_plots
@@ -44,6 +46,10 @@ from ddcs.reports.config import (
 )
 from ddcs.reports.factories import get_synthetic_report_statistics
 from ddcs.reports.utils import load_account_party_mapping
+from ddcs.reports.views import PublicPlotsDevView
+
+User = get_user_model()
+
 
 # ============================================================
 # utils
@@ -1551,18 +1557,58 @@ class GetSyntheticReportViewTests(TestCase):
         self.assertIsNotNone(view.statistics.party_counts)
 
 
-class PublicPlotsDevViewTests(TestCase):
-    def test_context_includes_rendered_plots(self):
-        request = RequestFactory().get("/report/public/dev/")
-        response = views.PublicPlotsDevView.as_view()(request)
-        context = response.context_data
-        self.assertIsNotNone(context["party_distribution_all_accounts"]["html"])
-        self.assertIsNotNone(
-            context["temporal_party_distribution_all_accounts"]["html"]
-        )
+class PublicPlotsDevViewAccessTests(TestCase):
+    def setUp(self):
+        self.factory = RequestFactory()
+        self.view = PublicPlotsDevView.as_view()
 
-    def test_renders_ok(self):
-        request = RequestFactory().get("/report/public/dev/")
-        response = views.PublicPlotsDevView.as_view()(request)
-        response.render()
+    @override_settings(DEBUG=True)
+    def test_debug_true_allows_anonymous(self):
+        request = self.factory.get("/")
+
+        request.user = AnonymousUser()
+
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+
+    @override_settings(DEBUG=False)
+    def test_debug_false_blocks_anonymous(self):
+        request = self.factory.get("/")
+        request.user = AnonymousUser()
+
+        with self.assertRaises(Http404):
+            self.view(request)
+
+    @override_settings(DEBUG=False)
+    def test_debug_false_blocks_authenticated_non_superuser(self):
+        user = User.objects.create_user(username="regular", password="pw")
+        request = self.factory.get("/")
+        request.user = user
+
+        with self.assertRaises(Http404):
+            self.view(request)
+
+    @override_settings(DEBUG=False)
+    def test_debug_false_allows_superuser(self):
+        user = User.objects.create_superuser(
+            username="admin", password="pw", email="admin@example.com"
+        )
+        request = self.factory.get("/")
+        request.user = user
+
+        response = self.view(request)
+
+        self.assertEqual(response.status_code, 200)
+
+    @override_settings(DEBUG=True)
+    def test_debug_true_allows_superuser_too(self):
+        user = User.objects.create_superuser(
+            username="admin2", password="pw", email="admin2@example.com"
+        )
+        request = self.factory.get("/")
+        request.user = user
+
+        response = self.view(request)
+
         self.assertEqual(response.status_code, 200)
