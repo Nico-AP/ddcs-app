@@ -377,7 +377,7 @@ def _maybe_retry(
 def daily_sync_users(
     self,  # noqa: ANN001
     target_date: str | None = None,
-    batch_size: int = 20,
+    batch_size: int = 200,
     max_retries: int | None = None,
 ) -> None:
     if max_retries is not None:

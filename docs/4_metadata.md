@@ -187,7 +187,7 @@ and manual-trigger runbook; this section is a summary.
   each pull one day of data — `today − 4 days` by default. They
   process every monitored item that doesn't yet have a `SUCCESS`
   `SyncAttempt` for that date, ordered by
-  `-monitoring_priority_api`. Batches (users: 20, keywords: 50) are
+  `-monitoring_priority_api`. Batches (users: 200, keywords: 50) are
   queried against the Research API; each batch writes one
   `SyncAttempt` per (item, date) with the outcome. Retries fire at
   the Celery task level (3 attempts over ~7 min) with halving
