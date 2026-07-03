@@ -173,13 +173,14 @@ def _record_sync_attempts(  # noqa: PLR0913
     )
 
 
-def _run_query_task(
+def _run_query_task(  # noqa: PLR0913
     sync_target: _SyncTargetConfig,
     target_date: date,
     batch_size: int,
     items: list[dict] | None = None,
     *,
     force_resync: bool = False,
+    origin: str = "daily",
 ) -> _RunResult:
     """Shared runner for the daily / backfill sync tasks.
 
@@ -224,6 +225,7 @@ def _run_query_task(
             "target_date": target_date.isoformat(),
             "batch_size": batch_size,
             "n_items": len(items),
+            "origin": origin,
         },
     )
 
@@ -469,7 +471,7 @@ def update_query_tracker(
 _BACKFILL_LOCK_KEY = "ddcs:research_api:backfill_lock"
 # Order matters: users get first pick of the quota, then keywords.
 _BACKFILL_ORDER: list[tuple[_SyncTargetConfig, int]] = [
-    (_USER_SYNC_TARGET_CONFIG, 20),  # config, batch_size
+    (_USER_SYNC_TARGET_CONFIG, 200),  # config, batch_size
     (_KEYWORD_SYNC_TARGET_CONFIG, 50),
 ]
 
@@ -541,7 +543,11 @@ def backfill_missing_syncs(
                 )
 
                 result = _run_query_task(
-                    sync_target, target_date, batch_size, items=items
+                    sync_target,
+                    target_date,
+                    batch_size,
+                    items=items,
+                    origin="backfill",
                 )
                 if result.retry is _Retry.SAME_BATCH:
                     # Rate-limited. Moving to the next (target, date) would

@@ -11,6 +11,7 @@ session/auth check is required.
 from typing import Any
 
 from ddm.participation.models import Participant
+from django.conf import settings
 from django.http import Http404, HttpRequest
 from django.views.generic import TemplateView
 
@@ -146,7 +147,16 @@ class GetSyntheticReportView(GetReportView):
         return self.statistics.behaviour_comparisons
 
 
-class PublicPlotsDevView(TemplateView):
+class DebugOrSuperuserMixin:
+    def dispatch(self, request: HttpRequest, *args, **kwargs):  # noqa: ANN201
+        if not settings.DEBUG and not (
+            request.user.is_authenticated and request.user.is_superuser
+        ):
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+
+class PublicPlotsDevView(DebugOrSuperuserMixin, TemplateView):
     """Dev-only view for inspecting the public (cross-account) plot styling
     with synthetic data, without needing a real database of monitored
     accounts. Not linked from production navigation.
