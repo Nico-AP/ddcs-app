@@ -1,0 +1,39 @@
+<div id="publicPlotCarousel{{ value.anchor_id }}" class="carousel public-plot-carousel card text-bg-light">
+  {% if temporal_party_distribution_plot.html or party_distribution_plot.html %}
+
+    <div class="carousel-indicators">
+      <button type="button" data-bs-target="#publicPlotCarousel{{ value.anchor_id }}" data-bs-slide-to="0" class="active" aria-current="true" aria-label="Parteiaktivität über die Zeit"></button>
+      <button type="button" data-bs-target="#publicPlotCarousel{{ value.anchor_id }}" data-bs-slide-to="1" aria-label="Parteiaktivität kumuliert"></button>
+    </div>
+    <div class="carousel-inner">
+
+      <div class="carousel-item active">
+        <div class="carousel-slide-title text-bold">So viel posten die Parteien über die Zeit gesehen...</div>
+        <div>{{ temporal_party_distribution_plot.html|safe }}</div>
+      </div>
+
+      <div class="carousel-item">
+        <div class="carousel-slide-title">...und so viel insgesamt seit dem 1. Juni 2026</div>
+        <div>{{ party_distribution_plot.html|safe }}</div>
+      </div>
+
+    </div>
+
+    <button class="carousel-control-prev" type="button" data-bs-target="#publicPlotCarousel{{ value.anchor_id }}" data-bs-slide="prev">
+      <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+      <span class="visually-hidden">Previous</span>
+    </button>
+
+    <button class="carousel-control-next" type="button" data-bs-target="#publicPlotCarousel{{ value.anchor_id }}" data-bs-slide="next">
+      <span class="carousel-control-next-icon" aria-hidden="true"></span>
+      <span class="visually-hidden">Next</span>
+    </button>
+
+  {% else %}
+    <div class="carousel-inner">
+      <div class="carousel-item active">
+        <div>Es tut uns leid, die Grafik kann aktuell nicht angezeigt werden</div>
+      </div>
+    </div>
+  {% endif %}
+</div>

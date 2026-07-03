@@ -5,13 +5,16 @@ from plotly.graph_objs import Figure
 from ddcs.reports.config import PLOTLY_JS_STATIC_PATH
 
 PARTY_COLOR_OTHER = "#9f9f9f"
+
+# TODO: Clean this up
 PARTY_COLORS = {
     "SPD": "#e4454f",  # "#e3000f",
     "CDU/CSU": "#454545",  # "#000000",
     "CDU": "#454545",  # "#000000",
     "CSU": "#454545",  # "#000000",
-    "Grüne": "#76ae63",  # "#46962b",
-    "B90/Grüne": "#76ae63",  # "#46962b",
+    "Grüne": "#83b672",  # "#46962b",
+    "B90/Grüne": "#83b672",  # "#46962b",
+    "B90/GRÜNE": "#83b672",  # "#46962b",
     "FDP": "#f8eb45",  # "#ffed00",
     "AfD": "#45b4e2",  # "#009ee0",
     "Linke": "#ca6697",  # "#be3075",

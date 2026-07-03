@@ -18,9 +18,6 @@ PUBLIC_POST_DATA_END_LAG_DAYS = 4
 PARTIES_ORDER = [
     "SPD",
     "CDU/CSU",
-    "CDU",
-    "CSU",
-    "Grüne",
     "B90/GRÜNE",
     "FDP",
     "AfD",

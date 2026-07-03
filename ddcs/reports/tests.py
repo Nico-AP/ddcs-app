@@ -12,6 +12,7 @@ from django.http import Http404
 from django.test import RequestFactory, TestCase
 from django.utils import timezone
 
+import ddcs.reports.metrics.account_metrics
 import ddcs.reports.plots.public_plots
 import ddcs.reports.plots.user_plots
 import ddcs.reports.plots.utils
@@ -245,11 +246,11 @@ class ComputePartyCountsTests(TestCase):
         # Input order intentionally reversed vs PARTIES_ORDER.
         result = services._compute_party_counts(
             seen_video_ids=[1, 2, 3, 4, 99],
-            video_party_map={1: "AfD", 2: "SPD", 3: "CDU/CSU", 4: "Grüne"},
+            video_party_map={1: "AfD", 2: "SPD", 3: "CDU/CSU", 4: "B90/GRÜNE"},
         )
         self.assertEqual(
             [r["party"] for r in result],
-            ["SPD", "CDU/CSU", "Grüne", "AfD", NO_PARTY_KEY],
+            ["SPD", "CDU/CSU", "B90/GRÜNE", "AfD", NO_PARTY_KEY],
         )
 
     def test_unknown_party_sorts_after_known_alphabetically(self):
@@ -675,12 +676,10 @@ class HexToRgbaTests(TestCase):
 
 class PostDataDateRangeTests(TestCase):
     def test_range_starts_at_configured_start_date_and_ends_with_lag(self):
-        start, end = ddcs.reports.plots.public_plots._post_data_date_range()
-        self.assertEqual(
-            start, ddcs.reports.plots.public_plots.PUBLIC_POST_DATA_START_DATE
-        )
+        start, end = ddcs.reports.metrics.account_metrics._post_data_date_range()
+        self.assertEqual(start, ddcs.reports.config.PUBLIC_POST_DATA_START_DATE)
         expected_end = timezone.now().date() - timedelta(
-            days=ddcs.reports.plots.public_plots.PUBLIC_POST_DATA_END_LAG_DAYS
+            days=ddcs.reports.config.PUBLIC_POST_DATA_END_LAG_DAYS
         )
         self.assertEqual(end, expected_end)
 
@@ -693,14 +692,14 @@ class ComputePostDataTests(TestCase):
 
     def _patch_mapping(self, mapping: dict[str, str]):
         return patch.object(
-            ddcs.reports.plots.public_plots,
+            ddcs.reports.metrics.account_metrics,
             "load_account_party_mapping",
             return_value=mapping,
         )
 
     def _patch_range(self, start: date, end: date):
         return patch.object(
-            ddcs.reports.plots.public_plots,
+            ddcs.reports.metrics.account_metrics,
             "_post_data_date_range",
             return_value=(start, end),
         )
@@ -721,7 +720,7 @@ class ComputePostDataTests(TestCase):
             inferred_create_time=moment + timedelta(hours=2),
         )
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.plots.public_plots._compute_post_data()
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
         self.assertEqual(
             records,
             [{"username": "alice", "party": "SPD", "date": "2026-06-01", "count": 2}],
@@ -733,13 +732,13 @@ class ComputePostDataTests(TestCase):
             user=self.alice, target_date=day, status=SyncAttempt.Status.SUCCESS
         )
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.plots.public_plots._compute_post_data()
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
         self.assertEqual(records[0]["count"], 0)
 
     def test_zero_posts_without_successful_sync_is_none(self):
         day = date(2026, 6, 1)
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.plots.public_plots._compute_post_data()
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
         self.assertIsNone(records[0]["count"])
 
     def test_failed_sync_attempt_does_not_count_as_synced(self):
@@ -748,14 +747,14 @@ class ComputePostDataTests(TestCase):
             user=self.alice, target_date=day, status=SyncAttempt.Status.RATE_LIMITED
         )
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.plots.public_plots._compute_post_data()
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
         self.assertIsNone(records[0]["count"])
 
     def test_builds_one_record_per_account_per_date_in_range(self):
         start, end = date(2026, 6, 1), date(2026, 6, 3)
         mapping = {"alice": "SPD", "bob": "CDU/CSU"}
         with self._patch_mapping(mapping), self._patch_range(start, end):
-            records = ddcs.reports.plots.public_plots._compute_post_data()
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
         self.assertEqual(len(records), len(mapping) * 3)
         self.assertEqual({r["username"] for r in records}, set(mapping))
 
@@ -767,23 +766,25 @@ class GetPostDataCacheTests(TestCase):
 
     def test_caches_result_between_calls(self):
         with patch.object(
-            ddcs.reports.plots.public_plots,
+            ddcs.reports.metrics.account_metrics,
             "_compute_post_data",
             return_value=[{"username": "alice"}],
         ) as mock_compute:
-            first = ddcs.reports.plots.public_plots.get_post_data()
-            second = ddcs.reports.plots.public_plots.get_post_data()
+            first = ddcs.reports.metrics.account_metrics.get_post_data()
+            second = ddcs.reports.metrics.account_metrics.get_post_data()
         mock_compute.assert_called_once()
         self.assertEqual(first, second)
 
     def test_force_refresh_recomputes(self):
         with patch.object(
-            ddcs.reports.plots.public_plots,
+            ddcs.reports.metrics.account_metrics,
             "_compute_post_data",
             side_effect=[["v1"], ["v2"]],
         ) as mock_compute:
-            first = ddcs.reports.plots.public_plots.get_post_data()
-            second = ddcs.reports.plots.public_plots.get_post_data(force_refresh=True)
+            first = ddcs.reports.metrics.account_metrics.get_post_data()
+            second = ddcs.reports.metrics.account_metrics.get_post_data(
+                force_refresh=True
+            )
         self.assertEqual(mock_compute.call_count, 2)
         self.assertEqual(first, ["v1"])
         self.assertEqual(second, ["v2"])
@@ -796,11 +797,11 @@ class AggregatePartyCountsTests(TestCase):
             {"username": "b", "party": "SPD", "date": "2026-06-02", "count": 3},
             {"username": "c", "party": "CDU/CSU", "date": "2026-06-01", "count": None},
         ]
-        result = ddcs.reports.plots.public_plots._aggregate_party_counts(records)
+        result = ddcs.reports.metrics.account_metrics.aggregate_party_counts(records)
         self.assertEqual({r["party"]: r["count"] for r in result}, {"SPD": 5})
 
     def test_returns_empty_list_for_no_records(self):
-        result = ddcs.reports.plots.public_plots._aggregate_party_counts([])
+        result = ddcs.reports.metrics.account_metrics.aggregate_party_counts([])
         self.assertEqual(result, [])
 
 
@@ -812,7 +813,9 @@ class AggregateDailyPartyCountsTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 5},
             {"username": "c", "party": "CDU/CSU", "date": "2026-06-01", "count": None},
         ]
-        result = ddcs.reports.plots.public_plots._aggregate_daily_party_counts(records)
+        result = ddcs.reports.metrics.account_metrics.aggregate_daily_party_counts(
+            records
+        )
         self.assertEqual(
             result,
             [
@@ -826,7 +829,9 @@ class AggregateDailyPartyCountsTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-02", "count": 1},
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 1},
         ]
-        result = ddcs.reports.plots.public_plots._aggregate_daily_party_counts(records)
+        result = ddcs.reports.metrics.account_metrics.aggregate_daily_party_counts(
+            records
+        )
         dates = [r["date"] for r in result]
         self.assertEqual(dates, sorted(dates))
 

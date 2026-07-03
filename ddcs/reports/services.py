@@ -161,6 +161,7 @@ def _get_top_videos(
     ]
 
 
+# TODO: Rename to compute_user_report_metrics and move to metrics sub-package
 def compute_user_report_statistics(data: TikTokUserData) -> ReportStatistics:
     # User activities
     seen_video_ids = _get_video_id_list(data.watch_history)
