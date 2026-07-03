@@ -124,11 +124,16 @@ shell at `/report/<participant_id>/` loads, HTMX fetches
 
 Independent of any donation:
 
-- Celery beat runs the Research API tasks
-  ([`query_videos_by_user`, `query_videos_by_hashtag`](../ddcs/metadata/research_api/tasks.py))
-  on schedule. They pull new videos for monitored users and hashtags.
-- A management command imports newly approved users and hashtags into the
-  monitored set (see [4_metadata.md](4_metadata.md#populating-the-registry)).
+- Celery beat runs the Research API tasks — `daily_sync_users`,
+  `daily_sync_keywords`, and `backfill_missing_syncs` — from
+  [`research_api/tasks.py`](../ddcs/metadata/research_api/tasks.py).
+  The daily tasks pull one day of data for `today − 4 days`; the
+  backfill task closes gaps in historical coverage. See
+  [7_research_api_sync.md](7_research_api_sync.md) for the strategy
+  and runbook.
+- The `sync_monitored_items` management command reconciles the CSV
+  files in `ddcs/metadata/fixtures/` with the DB — see
+  [4_metadata.md](4_metadata.md#populating-the-registry).
 
 The reports app reads from the registry but does not write to it; the
 metadata app writes to the registry but does not read from donations beyond
@@ -138,14 +143,14 @@ what `register_donation_metadata` puts there.
 
 A few realistic failure modes and what happens today:
 
-| Stage                              | Failure                                      | Outcome                                                                                                                                                                 |
-|------------------------------------|----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| ZIP upload                         | Malformed export                             | DDM rejects the upload; participant sees an error and can retry.                                                                                                        |
-| `get_user_data`                    | Un-parseable date(s)                         | Skipped; summary logged. Other records still processed.                                                                                                                 |
-| `register_donation_metadata`       | Race on duplicate `TikTokVideo`/`TikTokUser` | Handled by `update_or_create`/upsert pattern.                                                                                                                           |
-| Research API sync                  | Day skipped (task fails or beat down)        | The participant's report computed during the gap may underrepresent political content from that window. See known TODO in [4_metadata.md](4_metadata.md#the-sync-task). |
-| `generate_report_statistics`       | Empty metadata DB                            | Statistics are valid but show 0 political exposure. Participant still sees a (boring) report.                                                                           |
-| `GetReportView`                    | Unknown `participant_id`                     | `Http404`. (No "specific error view" yet — TODO in the view.)                                                                                                           |
+| Stage                              | Failure                                      | Outcome                                                                                                                                                                                                                                         |
+|------------------------------------|----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ZIP upload                         | Malformed export                             | DDM rejects the upload; participant sees an error and can retry.                                                                                                                                                                                |
+| `get_user_data`                    | Un-parseable date(s)                         | Skipped; summary logged. Other records still processed.                                                                                                                                                                                         |
+| `register_donation_metadata`       | Race on duplicate `TikTokVideo`/`TikTokUser` | Handled by `update_or_create`/upsert pattern.                                                                                                                                                                                                   |
+| Research API sync                  | Day skipped (task fails or beat down)        | Backfill task closes the gap on its next run (10:00 / 16:00); persistent failure surfaces as `SyncAttempt` rows with a non-`success` status. Reports run during the gap window may under-count political content until the backfill catches up. |
+| `generate_report_statistics`       | Empty metadata DB                            | Statistics are valid but show 0 political exposure. Participant still sees a (boring) report.                                                                                                                                                   |
+| `GetReportView`                    | Unknown `participant_id`                     | `Http404`. (No "specific error view" yet — TODO in the view.)                                                                                                                                                                                   |
 
 ## Where to make changes
 
