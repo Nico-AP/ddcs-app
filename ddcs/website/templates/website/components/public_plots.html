@@ -1,0 +1,29 @@
+{% load static %}
+
+<section id="{{ value.anchor_id }}" class="container pt-5 pb-5 border-bottom">
+  <div class="container align-items-center justify-content-center mt-5 mb-5">
+
+  {% if value.text_above %}
+    <div class="row justify-content-center text-center">
+      <div class="col-12 text-hero-lead">
+        <h2>{{ value.text_above }}</h2>
+      </div>
+    </div>
+  {% endif %}
+
+    <div class="row justify-content-center text-center pt-4 pb-4 ps-2 pe-2">
+      <div class="col-12 text-hero-lead">
+        {% include "website/components/public_plot_carousel.html" %}
+      </div>
+    </div>
+
+    {% if value.text_below %}
+    <div class="row justify-content-center text-center">
+      <div class="col-12 text-hero-lead">
+        <b>{{ value.text_below }}</b>
+      </div>
+    </div>
+  {% endif %}
+
+  </div>
+</section>

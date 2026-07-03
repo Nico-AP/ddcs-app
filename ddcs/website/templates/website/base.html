@@ -34,7 +34,9 @@
     <meta name="twitter:image" content="{% block twitter_image %}{% static 'core/img/twitter-image.jpg' %}{% endblock twitter_image %}" />
   {% endblock head_seo_tags %}
 
-  {% block extra_head %}{% endblock extra_head %}
+  {% block extra_head %}
+    <script src="{% static 'reports/js/plotly-3.6.0.min.js' %}"></script>
+  {% endblock extra_head %}
 
   {% block analytics_head %}
     {% if ANALYTICS_SCRIPT_SRC and ANALYTICS_WEBSITE_ID %}
@@ -62,7 +64,7 @@
 
 {# JavaScript #}
 {% block js %}
-<script src="{% static 'core/js/bootstrap_5-3-8/bootstrap.bundle.min.js' %}"></script>
+  <script src="{% static 'core/js/bootstrap_5-3-8/bootstrap.bundle.min.js' %}"></script>
 {% endblock js %}
 
 {% block extra_js %}{% endblock extra_js %}
