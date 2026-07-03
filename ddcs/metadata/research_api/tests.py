@@ -452,6 +452,26 @@ class GapItemsTest(TestCase):
         )
         self.assertEqual(gaps, [u.id])
 
+    def test_force_resync_bypasses_success_filter(self):
+        u1 = _monitored_user("u1")
+        u2 = _monitored_user("u2")
+        SyncAttempt.objects.create(
+            user=u1, target_date=TARGET, status=SyncAttempt.Status.SUCCESS
+        )
+
+        # Normal filter: u1 already synced, only u2 is a gap.
+        normal = list(
+            _gap_items(_USER_SYNC_TARGET_CONFIG, TARGET).values_list("id", flat=True)
+        )
+        forced = list(
+            _gap_items(_USER_SYNC_TARGET_CONFIG, TARGET, force_resync=True).values_list(
+                "id", flat=True
+            )
+        )
+
+        self.assertEqual(normal, [u2.id])
+        self.assertEqual(set(forced), {u1.id, u2.id})
+
     def test_ordered_by_monitoring_priority_desc(self):
         low = _monitored_user("low", priority=0)
         high = _monitored_user("high", priority=10)

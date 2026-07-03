@@ -113,21 +113,34 @@ def _parse_target_date(target_date: str | None) -> date:
     return date.fromisoformat(target_date)
 
 
-def _gap_items(sync_target: _SyncTargetConfig, target_date: date) -> QuerySet:
+def _gap_items(
+    sync_target: _SyncTargetConfig,
+    target_date: date,
+    *,
+    force_resync: bool = False,
+) -> QuerySet:
     """Items still needing a successful sync for ``target_date``.
 
     Uses the ``SyncAttempt`` table as the source of truth — any item
     without a ``SUCCESS`` attempt for this date is included. Ordered by
     monitoring priority so higher-priority items get quota first.
+
+    If ``force_resync`` is True, the ``SyncAttempt``-based filter is
+    bypassed and every monitored item is returned. Used to re-query
+    items we've already synced successfully — e.g. when we suspect the
+    previous response was incomplete.
     """
+    base = sync_target.model.objects.filter(monitor_api=True)
+    if force_resync:
+        return base.order_by("-monitoring_priority_api", "id")
+
     already_synced = SyncAttempt.objects.filter(
         **{sync_target.sync_attempt_field: OuterRef("pk")},
         target_date=target_date,
         status=SyncAttempt.Status.SUCCESS,
     )
     return (
-        sync_target.model.objects.filter(monitor_api=True)
-        .annotate(_is_synced=Exists(already_synced))
+        base.annotate(_is_synced=Exists(already_synced))
         .filter(_is_synced=False)
         .order_by("-monitoring_priority_api", "id")
     )
@@ -165,6 +178,8 @@ def _run_query_task(
     target_date: date,
     batch_size: int,
     items: list[dict] | None = None,
+    *,
+    force_resync: bool = False,
 ) -> _RunResult:
     """Shared runner for the daily / backfill sync tasks.
 
@@ -189,7 +204,11 @@ def _run_query_task(
     )
 
     if items is None:
-        items = list(_gap_items(sync_target, target_date).values("id", "name"))
+        items = list(
+            _gap_items(sync_target, target_date, force_resync=force_resync).values(
+                "id", "name"
+            )
+        )
 
     if not items:
         logger.info(
@@ -379,11 +398,14 @@ def daily_sync_users(
     target_date: str | None = None,
     batch_size: int = 200,
     max_retries: int | None = None,
+    force_resync: bool = False,  # noqa: FBT002
 ) -> None:
     if max_retries is not None:
         self.max_retries = max_retries
     parsed = _parse_target_date(target_date)
-    result = _run_query_task(_USER_SYNC_TARGET_CONFIG, parsed, batch_size)
+    result = _run_query_task(
+        _USER_SYNC_TARGET_CONFIG, parsed, batch_size, force_resync=force_resync
+    )
     _maybe_retry(
         self,
         result.retry,
@@ -399,11 +421,14 @@ def daily_sync_keywords(
     target_date: str | None = None,
     batch_size: int = 50,
     max_retries: int | None = None,
+    force_resync: bool = False,  # noqa: FBT002
 ) -> None:
     if max_retries is not None:
         self.max_retries = max_retries
     parsed = _parse_target_date(target_date)
-    result = _run_query_task(_KEYWORD_SYNC_TARGET_CONFIG, parsed, batch_size)
+    result = _run_query_task(
+        _KEYWORD_SYNC_TARGET_CONFIG, parsed, batch_size, force_resync=force_resync
+    )
     _maybe_retry(
         self,
         result.retry,
