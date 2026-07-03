@@ -40,7 +40,7 @@ def _recode_party(party: str) -> str:
         "csu": "CDU/CSU",
         "grüne": "B90/GRÜNE",
         "b90": "B90/GRÜNE",
-        "link": "Linke",
+        "linke": "Linke",
     }
     stripped = party.strip()
     recoded_party = party_recodes.get(stripped.lower(), stripped)
