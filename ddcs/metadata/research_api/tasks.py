@@ -346,12 +346,17 @@ def _maybe_retry(
     retry: _Retry,
     batch_size: int,
     target_date: str | None,
+    max_retries: int | None = None,
 ) -> None:
     """Re-enqueue ``task`` per ``retry`` strategy, or return without re-queuing.
 
     Items with a successful SyncAttempt for ``target_date`` are excluded
     on the next attempt via the queryset filter, so retries only touch
     items that failed or didn't fit in the previous attempt.
+
+    If ``max_retries`` is passed, it is forwarded in the retry kwargs so
+    the next attempt re-applies the override at task start (and so on
+    down the chain).
     """
     if retry is _Retry.NONE:
         return
@@ -359,7 +364,13 @@ def _maybe_retry(
     next_batch_size = (
         batch_size if retry is _Retry.SAME_BATCH else max(1, batch_size // 2)
     )
-    raise task.retry(kwargs={"batch_size": next_batch_size, "target_date": target_date})
+    kwargs: dict[str, Any] = {
+        "batch_size": next_batch_size,
+        "target_date": target_date,
+    }
+    if max_retries is not None:
+        kwargs["max_retries"] = max_retries
+    raise task.retry(kwargs=kwargs)
 
 
 @shared_task(**_QUERY_TASK_OPTIONS)
@@ -367,10 +378,19 @@ def daily_sync_users(
     self,  # noqa: ANN001
     target_date: str | None = None,
     batch_size: int = 20,
+    max_retries: int | None = None,
 ) -> None:
+    if max_retries is not None:
+        self.max_retries = max_retries
     parsed = _parse_target_date(target_date)
     result = _run_query_task(_USER_SYNC_TARGET_CONFIG, parsed, batch_size)
-    _maybe_retry(self, result.retry, batch_size, target_date or parsed.isoformat())
+    _maybe_retry(
+        self,
+        result.retry,
+        batch_size,
+        target_date or parsed.isoformat(),
+        max_retries=max_retries,
+    )
 
 
 @shared_task(**_QUERY_TASK_OPTIONS)
@@ -378,10 +398,19 @@ def daily_sync_keywords(
     self,  # noqa: ANN001
     target_date: str | None = None,
     batch_size: int = 50,
+    max_retries: int | None = None,
 ) -> None:
+    if max_retries is not None:
+        self.max_retries = max_retries
     parsed = _parse_target_date(target_date)
     result = _run_query_task(_KEYWORD_SYNC_TARGET_CONFIG, parsed, batch_size)
-    _maybe_retry(self, result.retry, batch_size, target_date or parsed.isoformat())
+    _maybe_retry(
+        self,
+        result.retry,
+        batch_size,
+        target_date or parsed.isoformat(),
+        max_retries=max_retries,
+    )
 
 
 def register_query_tracker(

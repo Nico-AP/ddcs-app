@@ -87,7 +87,7 @@ it is **not** updated when a later subsystem encounters the same object.
 | Value          | Set by                                                  | Status        |
 |----------------|---------------------------------------------------------|---------------|
 | `RESEARCH_API` | `ResearchAPIService`                                    | active        |
-| `IMPORT`       | `import_users_to_monitor`, `import_hashtags_to_monitor` | active        |
+| `IMPORT`       | `sync_monitored_items`                                  | active        |
 | `DONATION`     | data donation pipeline                                  | not yet wired |
 | `SCRAPER`      | scraper service                                         | not yet wired |
 
@@ -127,26 +127,38 @@ the admin is not intended.
 
 ## Populating the registry
 
-Initial users and hashtags to monitor are loaded from newline-delimited text
-files via management commands:
+The monitored-item lists are declared in two CSV files committed to the
+repository:
+
+- [`ddcs/metadata/fixtures/monitored_users.csv`](../ddcs/metadata/fixtures/monitored_users.csv)
+- [`ddcs/metadata/fixtures/monitored_keywords.csv`](../ddcs/metadata/fixtures/monitored_keywords.csv)
+
+Each row is `name` or `name,priority`. Blank lines and `#`-prefixed
+lines are ignored — use a `#` prefix to temporarily disable an item
+without losing its history. Git history of these files is the audit
+trail.
+
+The deployment playbook in ddcs-infra syncs changes in these files
+automatically with the DB.
+
+To sync the CSV state manually into the DB, use the `sync_monitored_items`
+management command:
 
 ```bash
-python manage.py import_users_to_monitor    [--file PATH] [--priority N]
-python manage.py import_hashtags_to_monitor [--file PATH] [--priority N]
+python manage.py sync_monitored_items                   # dry-run: prints plan, writes nothing
+python manage.py sync_monitored_items --apply           # commits the plan
+python manage.py sync_monitored_items --skip-keywords   # limit to one kind
 ```
 
-- Default input paths are `ddcs/metadata/fixtures/tiktok_users_to_monitor.txt`
-  and `ddcs/metadata/fixtures/hashtags_to_monitor.txt`.
-- The file format is one name per line. Blank lines and (for the users file)
-  `#`-prefixed comment lines are ignored. Hashtag lines may carry a leading `#`,
-  which is stripped.
-- For each name, the command calls `update_or_create`:
-  - **New rows** are created with `monitor_api=True`,
-    `monitoring_priority_api=<--priority>`, `added_by=IMPORT`.
-  - **Existing rows** have `monitor_api=True` re-asserted, but `priority` and
-    `added_by` are **preserved**. This means re-running an import will not
-    bump priorities — change them in the admin or by a targeted migration.
-- The command reports `created` vs `updated` counts on stdout.
+Semantics:
+
+- Names in the file but not in the DB are **created** with
+  `monitor_api=True`, `monitoring_priority_api=<from file>` (default `0`),
+  `added_by=IMPORT`.
+- Names in the DB with `monitor_api=True` but missing from the file
+  have `monitor_api` flipped to **`False`** — never hard-deleted, so
+  historical `SyncAttempt` rows stay linked.
+- Priority changes in the file are applied to already-monitored rows.
 
 
 ## Research API: Monitoring & sync
@@ -159,31 +171,52 @@ python manage.py import_hashtags_to_monitor [--file PATH] [--priority N]
 |---------------------------|---------------------------------------------------------------------------------------------------------|
 | `monitor_api`             | Master switch — only objects with `True` are picked up by the sync task.                                |
 | `monitoring_priority_api` | Higher values are queried first; lower-priority objects may be dropped when the API quota is exhausted. |
-| `api_last_monitored_at`   | Timestamp of the last successful sync; used to skip objects already synced today.                       |
 
-### The sync task
+Coverage per `(item, target_date)` is tracked in `SyncAttempt`. 
+"Was this item synced for date D?" is answered by `SyncAttempt.filter(<item>, target_date=D,
+status=SUCCESS).exists()`.
 
-[`research_api/tasks.py`](../ddcs/metadata/research_api/tasks.py) defines
-`query_videos_by_user` and `query_videos_by_hashtag` – the Celery tasks that pulls new videos for monitored users/hashtags:
+### The sync tasks
 
-1. Selects `TikTokUser`/`TikTokHashtag` rows where `monitor_api=True` and
-   `api_last_monitored_at__date != today`, ordered by
-   `(-monitoring_priority_api, api_last_monitored_at)`.
-2. Batches them (default 50 per batch) and calls
-   `ResearchAPIService.get_user_videos` per batch.
-3. Updates `api_last_monitored_at` for each user/hashtag once their batch completes.
-4. Logs sync stats (`users_created`, `videos_created`, `hashtags_created`,
-   `music_created`) at the end.
+[`research_api/tasks.py`](../ddcs/metadata/research_api/tasks.py)
+defines three Celery tasks. See
+[7_research_api_sync.md](7_research_api_sync.md) for the full strategy
+and manual-trigger runbook; this section is a summary.
 
-**Query window:** each run asks for videos posted 4 days before the day it runs. 
-If the task fails on one day, content posted during the gap will be missed.
+- **`daily_sync_users`** (02:00) and **`daily_sync_keywords`** (03:00)
+  each pull one day of data — `today − 4 days` by default. They
+  process every monitored item that doesn't yet have a `SUCCESS`
+  `SyncAttempt` for that date, ordered by
+  `-monitoring_priority_api`. Batches (users: 20, keywords: 50) are
+  queried against the Research API; each batch writes one
+  `SyncAttempt` per (item, date) with the outcome. Retries fire at
+  the Celery task level (3 attempts over ~7 min) with halving
+  batch size on partial failure and preserved batch size on rate
+  limit.
 
-=> TODO: Implement a mitigation strategy.
+- **`backfill_missing_syncs`** (10:00, 16:00) walks all target dates
+  from `settings.API_MONITORING_START_DATE` up to `today − 4 days`,
+  newest first. Users are processed before keywords. It uses a Redis
+  lock (so overlapping runs are prevented and can't double-spend quota), 
+  and bails early on rate-limit rather than iterating into the same limit again.
+
+**Query window:** the daily tasks target `today − 4 days` because
+TikTok's publication data becomes stable around then. A failed daily
+run leaves gap rows that the backfill task closes on the next
+scheduled invocation.
 
 ### Schedule
 
-The Celery beat schedule is configured in [`config/celery.py`](../config/celery.py).
-`query_videos_by_user` and `query_videos_by_hashtag` will be automatically added 
-to scheduled tasks. IMPORTANT: Any time new code is pushed to the server, 
-the schedule defined in this setting will override any adjustments made through the
-admin interface.
+The bootstrap beat schedule lives in
+[`config/settings/base.py`](../config/settings/base.py) under
+`CELERY_BEAT_SCHEDULE`. Beat uses `DatabaseScheduler`
+(`django_celery_beat`) — the settings dict only populates the DB on
+first start; after that the DB rows are authoritative and can be
+edited via the Django admin under **Periodic Tasks**.
+
+**IMPORTANT:** if you edit the bootstrap dict after beat has already
+run once, your changes are ignored until you delete the existing
+`PeriodicTask` rows from the DB. Adjust the schedule in the admin
+instead. See
+[7_research_api_sync.md](7_research_api_sync.md#manually-triggering-a-task)
+for step-by-step guidance.
