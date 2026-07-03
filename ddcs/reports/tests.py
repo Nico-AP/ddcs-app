@@ -25,6 +25,7 @@ from ddcs.metadata.models import (
     TikTokUser,
     TikTokVideo,
 )
+from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.reports import factories, services, views, wordclouds
 from ddcs.reports.behaviour_metrics import (
     apply_reference_demographic_filter,
@@ -1130,18 +1131,20 @@ class ComputePostDataTests(TestCase):
     def test_counts_videos_posted_on_each_date(self):
         day = date(2026, 6, 1)
         moment = datetime(2026, 6, 1, 10, tzinfo=UTC)
-        TikTokVideo.objects.create(
+        v1 = TikTokVideo.objects.create(
             id_tiktok=1,
             user=self.alice,
             added_by=DataOrigins.DONATION,
             inferred_create_time=moment,
         )
-        TikTokVideo.objects.create(
+        v2 = TikTokVideo.objects.create(
             id_tiktok=2,
             user=self.alice,
             added_by=DataOrigins.DONATION,
             inferred_create_time=moment + timedelta(hours=2),
         )
+        APIVideoInfos.objects.create(video=v1, create_time=moment)
+        APIVideoInfos.objects.create(video=v2, create_time=moment + timedelta(hours=2))
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
             records = ddcs.reports.metrics.account_metrics._compute_post_data()
         self.assertEqual(
