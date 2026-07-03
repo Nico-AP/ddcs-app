@@ -164,11 +164,19 @@ enqueue for a worker.
 | `target_date`  | `str \| None` | `today − 4 days`     | ISO date (`"YYYY-MM-DD"`) to sync.                  |
 | `batch_size`   | `int`         | 200 (users), 50 (kw) | Items per API request. Halved on retry.             |
 | `max_retries`  | `int \| None` | `3` (from decorator) | Override the Celery-level retry cap for this run.   |
+| `force_resync` | `bool`        | `False`              | If True, re-query items that already have a SUCCESS SyncAttempt for `target_date`. |
 
 The `max_retries` override propagates: it's forwarded into each retry's
 kwargs, so the whole chain uses the overridden value. Useful when you
-want the halving retry to bottom out at `batch_size=1` — starting at
-20, `max_retries=4` gives the sequence 20 → 10 → 5 → 2 → 1.
+want the halving retry to bottom out at `batch_size=1`.
+
+`force_resync=True` applies only to the initial run. Retries fall back
+to the normal filter (items without a SUCCESS attempt), so subsequent
+attempts only touch items that failed in the initial forced run — you
+don't pay quota to re-query items that succeeded on the forced pass.
+Use when you suspect a previous "successful" sync returned an
+incomplete set (e.g., after an API incident) and want fresh data on
+top.
 
 Example admin **Keyword arguments** JSON:
 
@@ -180,6 +188,9 @@ Example admin **Keyword arguments** JSON:
 ```
 ```json
 {"target_date": "2026-06-28", "max_retries": 4}
+```
+```json
+{"target_date": "2026-06-28", "force_resync": true}
 ```
 
 ### `backfill_missing_syncs`
