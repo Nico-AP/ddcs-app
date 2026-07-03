@@ -40,7 +40,7 @@ def _recode_party(party: str) -> str:
         "csu": "CDU/CSU",
         "grüne": "B90/GRÜNE",
         "b90": "B90/GRÜNE",
-        "link": "Linke",
+        "linke": "Linke",
     }
     stripped = party.strip()
     recoded_party = party_recodes.get(stripped.lower(), stripped)
@@ -64,17 +64,19 @@ def _compute_post_data() -> list[DailyAccountPostCountRecord]:
     usernames = list(account_party_map.keys())
     start, end = _post_data_date_range()
 
+    # `APIVideoInfos.create_time` is the authoritative API-reported
+    # publication timestamp.
     video_counts = {
         (row["user__name"], row["post_date"].isoformat()): row["count"]
         for row in (
             TikTokVideo.objects.filter(
                 user__name__in=usernames,
-                inferred_create_time__date__gte=start,
-                inferred_create_time__date__lte=end,
+                api_infos__create_time__date__gte=start,
+                api_infos__create_time__date__lte=end,
             )
-            .annotate(post_date=TruncDate("inferred_create_time"))
+            .annotate(post_date=TruncDate("api_infos__create_time"))
             .values("user__name", "post_date")
-            .annotate(count=Count("id_tiktok"))
+            .annotate(count=Count("id_tiktok", distinct=True))
         )
     }
 
