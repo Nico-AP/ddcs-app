@@ -14,7 +14,7 @@ from ddcs.datadonation.config import (
     WATCH_HISTORY_BP_NAME,
 )
 from ddcs.metadata.services import register_donation_metadata
-from ddcs.reports.services import generate_report_statistics
+from ddcs.reports.services import generate_user_report_statistics
 
 logger = logging.getLogger(__name__)
 
@@ -203,4 +203,4 @@ def get_user_data(participant: Participant) -> TikTokUserData:
 def post_process_donation(participant: Participant) -> None:
     user_data = get_user_data(participant)
     register_donation_metadata(user_data)
-    generate_report_statistics(participant, user_data)
+    generate_user_report_statistics(participant, user_data)

@@ -19,4 +19,9 @@ urlpatterns = [
         views.GetReportView.as_view(),
         name="get_report",
     ),
+    path(
+        "report/public/dev/",
+        views.PublicPlotsDevView.as_view(),
+        name="public_plots_dev",
+    ),
 ]

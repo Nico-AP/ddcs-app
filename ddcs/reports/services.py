@@ -161,7 +161,8 @@ def _get_top_videos(
     ]
 
 
-def compute_report_statistics(data: TikTokUserData) -> ReportStatistics:
+# TODO: Rename to compute_user_report_metrics and move to metrics sub-package
+def compute_user_report_statistics(data: TikTokUserData) -> ReportStatistics:
     # User activities
     seen_video_ids = _get_video_id_list(data.watch_history)
     liked_video_ids = _get_video_id_list(data.liked_videos)
@@ -234,10 +235,10 @@ def compute_report_statistics(data: TikTokUserData) -> ReportStatistics:
     }
 
 
-def generate_report_statistics(
+def generate_user_report_statistics(
     participant: Participant, data: TikTokUserData
 ) -> ParticipantReportStatistics:
-    statistics = compute_report_statistics(data)
+    statistics = compute_user_report_statistics(data)
 
     return ParticipantReportStatistics.objects.create(
         participant=participant, **statistics

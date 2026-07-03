@@ -1,3 +1,6 @@
+from typing import Any
+
+from django.conf import settings
 from django.db import models
 from wagtail import blocks
 from wagtail.admin.panels import FieldPanel
@@ -5,6 +8,30 @@ from wagtail.contrib.settings.models import BaseSiteSetting
 from wagtail.contrib.settings.registry import register_setting
 from wagtail.fields import StreamField
 from wagtail.models import Page
+
+from ddcs.reports.factories import get_synthetic_post_data
+from ddcs.reports.metrics.account_metrics import get_post_data
+from ddcs.reports.plots.public_plots import (
+    get_party_distribution_all_accounts,
+    get_temporal_party_distribution_all_accounts,
+)
+
+
+def _add_public_plots_to_context(context: dict[str, Any]) -> dict[str, Any]:
+    """Add public plots to context.
+
+    Adds:
+
+    - context["party_distribution_plot"]
+    - context["temporal_party_distribution_plot"]
+    """
+    records = get_synthetic_post_data() if settings.DEBUG else get_post_data()
+
+    context["party_distribution_plot"] = get_party_distribution_all_accounts(records)
+    context["temporal_party_distribution_plot"] = (
+        get_temporal_party_distribution_all_accounts(records)
+    )
+    return context
 
 
 class UrlTargetChoiceBlock(blocks.ChoiceBlock):
@@ -24,7 +51,11 @@ class HeroBlock(blocks.StructBlock):
 
     subtitle = blocks.CharBlock()
     intro = blocks.RichTextBlock()
+    intro_bottom = blocks.RichTextBlock(required=False)
 
+    include_public_plots = blocks.BooleanBlock(default=False, required=False)
+
+    # Call to action section
     show_cta_button = blocks.BooleanBlock(required=False)
     cta_button_label = blocks.CharBlock(required=False)
     cta_button_link = blocks.URLBlock(required=False)
@@ -37,6 +68,12 @@ class HeroBlock(blocks.StructBlock):
     class Meta:
         template = "website/components/hero.html"
         icon = "pick"
+
+    def get_context(self, value, parent_context=None) -> dict[str, Any]:  # noqa: ANN001
+        context = super().get_context(value, parent_context=parent_context)
+        if value.get("include_public_plots"):
+            context = _add_public_plots_to_context(context)
+        return context
 
 
 class LogoBannerBlock(blocks.StructBlock):
@@ -216,6 +253,35 @@ class PageNavAnchorBlock(blocks.StructBlock):
         icon = "link"
 
 
+class PublicPlotsBlock(blocks.StructBlock):
+    anchor_id = blocks.CharBlock(
+        required=False,
+        help_text=(
+            "Html ID used to link section "
+            "(e.g. 'about' is accessible as: dfdw.de#about)"
+        ),
+    )
+    text_above = blocks.CharBlock(
+        required=False,
+        default="So oft posten die Parteien im Vorfeld der Wahlen auf TikTok:",
+    )
+    text_below = blocks.CharBlock(
+        required=False,
+        default=(
+            "Hilf uns zu verstehen, welche Inhalte "
+            "die Bevölkerung tatsächlich erreichen!"
+        ),
+    )
+
+    class Meta:
+        template = "website/components/public_plots.html"
+        icon = "image"
+
+    def get_context(self, value, parent_context=None) -> dict[str, Any]:  # noqa: ANN001
+        context = super().get_context(value, parent_context=parent_context)
+        return _add_public_plots_to_context(context)
+
+
 class SitePage(Page):
     template = "website/site_page.html"
 
@@ -227,6 +293,7 @@ class SitePage(Page):
             ("card_section", CardSectionBlock()),
             ("logo_banner", LogoBannerBlock()),
             ("regular_page", RegularPageBlock()),
+            ("public_plots", PublicPlotsBlock()),
         ],
         blank=True,
         use_json_field=True,

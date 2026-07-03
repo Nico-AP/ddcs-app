@@ -2,17 +2,29 @@ import csv
 import os
 import unittest
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ddm.participation.models import Participant
+from django.core.cache import cache
 from django.http import Http404
 from django.test import RequestFactory, TestCase
+from django.utils import timezone
 
+import ddcs.reports.metrics.account_metrics
+import ddcs.reports.plots.public_plots
+import ddcs.reports.plots.user_plots
+import ddcs.reports.plots.utils
 from ddcs.core.types import TikTokUserData
-from ddcs.metadata.models import DataOrigins, TikTokHashtag, TikTokUser, TikTokVideo
-from ddcs.reports import factories, plots, services, views, wordclouds
+from ddcs.metadata.models import (
+    DataOrigins,
+    SyncAttempt,
+    TikTokHashtag,
+    TikTokUser,
+    TikTokVideo,
+)
+from ddcs.reports import factories, services, views, wordclouds
 from ddcs.reports.behaviour_metrics import (
     compute_behaviour_comparisons,
     compute_watch_history_metrics,
@@ -234,11 +246,11 @@ class ComputePartyCountsTests(TestCase):
         # Input order intentionally reversed vs PARTIES_ORDER.
         result = services._compute_party_counts(
             seen_video_ids=[1, 2, 3, 4, 99],
-            video_party_map={1: "AfD", 2: "SPD", 3: "CDU/CSU", 4: "Grüne"},
+            video_party_map={1: "AfD", 2: "SPD", 3: "CDU/CSU", 4: "B90/GRÜNE"},
         )
         self.assertEqual(
             [r["party"] for r in result],
-            ["SPD", "CDU/CSU", "Grüne", "AfD", NO_PARTY_KEY],
+            ["SPD", "CDU/CSU", "B90/GRÜNE", "AfD", NO_PARTY_KEY],
         )
 
     def test_unknown_party_sorts_after_known_alphabetically(self):
@@ -427,7 +439,7 @@ class ComputeReportStatisticsTests(TestCase):
             liked_videos=[{"date": cutoff, "video_id": 2}],
         )
         with self._patch_csv():
-            result = services.compute_report_statistics(data)
+            result = services.compute_user_report_statistics(data)
 
         # v1, v2 and v4 are political; v3 is not.
         self.assertEqual(set(result["seen_pol_video_ids"]), {1, 2, 4})
@@ -447,7 +459,7 @@ class ComputeReportStatisticsTests(TestCase):
             watch_history=[{"date": cutoff, "video_id": 4}],
         )
         with self._patch_csv():
-            result = services.compute_report_statistics(data)
+            result = services.compute_user_report_statistics(data)
 
         # v4 (party-account + monitored hashtag) — counts once, as SPD.
         self.assertEqual(result["seen_pol_video_ids"], [4])
@@ -466,7 +478,7 @@ class ComputeReportStatisticsTests(TestCase):
             ],
         )
         with self._patch_csv():
-            result = services.compute_report_statistics(data)
+            result = services.compute_user_report_statistics(data)
 
         by_id = {v["video_id"]: v for v in result["top_videos"]}
         self.assertEqual(by_id[2]["username"], "stranger")
@@ -476,7 +488,7 @@ class ComputeReportStatisticsTests(TestCase):
 
     def test_handles_completely_empty_user_data(self):
         with self._patch_csv():
-            result = services.compute_report_statistics(TikTokUserData())
+            result = services.compute_user_report_statistics(TikTokUserData())
         self.assertEqual(result["videos_seen_count_total"], 0)
         self.assertEqual(result["seen_pol_video_ids"], [])
         self.assertEqual(result["liked_pol_video_ids"], [])
@@ -486,7 +498,7 @@ class ComputeReportStatisticsTests(TestCase):
 
 
 class GenerateReportStatisticsTests(TestCase):
-    @patch.object(services, "compute_report_statistics")
+    @patch.object(services, "compute_user_report_statistics")
     def test_persists_statistics_to_db(self, mock_compute):
         mock_compute.return_value = {
             "videos_seen_count_total": 5,
@@ -507,7 +519,9 @@ class GenerateReportStatisticsTests(TestCase):
             services.ParticipantReportStatistics.objects, "create"
         ) as mock_create:
             mock_create.return_value = MagicMock()
-            result = services.generate_report_statistics(participant, TikTokUserData())
+            result = services.generate_user_report_statistics(
+                participant, TikTokUserData()
+            )
 
         mock_compute.assert_called_once()
         mock_create.assert_called_once()
@@ -550,6 +564,21 @@ class SyntheticFactoriesTests(TestCase):
         result = factories._synthetic_hashtags_by_video([1, 2, 3])
         self.assertEqual(set(result), {1, 2, 3})
 
+    def test_post_data_has_one_record_per_account_per_day(self):
+        days = 7
+        result = factories.get_synthetic_post_data(days=days)
+        self.assertEqual(len(result), days * len(factories.SYNTHETIC_POST_PARTIES))
+        self.assertEqual(
+            {r["party"] for r in result}, set(factories.SYNTHETIC_POST_PARTIES)
+        )
+        unique_dates = {r["date"] for r in result}
+        self.assertEqual(len(unique_dates), days)
+
+    def test_post_data_counts_are_none_zero_or_positive(self):
+        result = factories.get_synthetic_post_data(days=30)
+        counts = {r["count"] for r in result}
+        self.assertTrue(all(c is None or c >= 0 for c in counts))
+
     def test_get_synthetic_report_statistics_builds_unsaved_instance(self):
         # Bypass the unsaved Participant instance assignment to the FK by
         # constructing the model after the factory builds its kwargs.
@@ -581,16 +610,19 @@ class SyntheticFactoriesTests(TestCase):
 
 class PartyDistributionPlotTests(TestCase):
     def test_returns_none_html_when_only_no_party_data(self):
-        result = plots.get_party_distribution_plot_user(
+        result = ddcs.reports.plots.user_plots.get_party_distribution_plot_user(
             [{"party": NO_PARTY_KEY, "count": 5}]
         )
         self.assertEqual(result, {"html": None})
 
     def test_returns_none_html_when_empty(self):
-        self.assertEqual(plots.get_party_distribution_plot_user([]), {"html": None})
+        self.assertEqual(
+            ddcs.reports.plots.user_plots.get_party_distribution_plot_user([]),
+            {"html": None},
+        )
 
     def test_returns_html_when_party_data_present(self):
-        result = plots.get_party_distribution_plot_user(
+        result = ddcs.reports.plots.user_plots.get_party_distribution_plot_user(
             [{"party": "SPD", "count": 5}, {"party": "CDU/CSU", "count": 3}]
         )
         self.assertIsNotNone(result["html"])
@@ -600,31 +632,278 @@ class PartyDistributionPlotTests(TestCase):
 class TemporalPartyDistributionPlotTests(TestCase):
     def test_returns_none_html_when_empty(self):
         self.assertEqual(
-            plots.get_temporal_party_distribution_plot_user([]), {"html": None}
+            ddcs.reports.plots.user_plots.get_temporal_party_distribution_plot_user([]),
+            {"html": None},
         )
 
     def test_returns_none_html_when_only_no_party_records(self):
-        result = plots.get_temporal_party_distribution_plot_user(
-            [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
+        result = (
+            ddcs.reports.plots.user_plots.get_temporal_party_distribution_plot_user(
+                [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
+            )
         )
         self.assertEqual(result, {"html": None})
 
     def test_returns_html_when_party_records_present(self):
-        result = plots.get_temporal_party_distribution_plot_user(
-            [
-                {"date": "2026-05-08", "party": "SPD", "count": 2},
-                {"date": "2026-05-09", "party": "SPD", "count": 1},
-            ]
+        result = (
+            ddcs.reports.plots.user_plots.get_temporal_party_distribution_plot_user(
+                [
+                    {"date": "2026-05-08", "party": "SPD", "count": 2},
+                    {"date": "2026-05-09", "party": "SPD", "count": 1},
+                ]
+            )
         )
         self.assertIsNotNone(result["html"])
 
 
 class HexToRgbaTests(TestCase):
     def test_converts_with_default_alpha(self):
-        self.assertEqual(plots._hex_to_rgba("#ff8000"), "rgba(255, 128, 0, 0.9)")
+        self.assertEqual(
+            ddcs.reports.plots.utils.hex_to_rgba("#ff8000"), "rgba(255, 128, 0, 0.9)"
+        )
 
     def test_accepts_hex_without_hash(self):
-        self.assertEqual(plots._hex_to_rgba("000000", alpha=0.5), "rgba(0, 0, 0, 0.5)")
+        self.assertEqual(
+            ddcs.reports.plots.utils.hex_to_rgba("000000", alpha=0.5),
+            "rgba(0, 0, 0, 0.5)",
+        )
+
+
+# ------------------------------------------------------------
+# plots.public_plots
+# ------------------------------------------------------------
+
+
+class PostDataDateRangeTests(TestCase):
+    def test_range_starts_at_configured_start_date_and_ends_with_lag(self):
+        start, end = ddcs.reports.metrics.account_metrics._post_data_date_range()
+        self.assertEqual(start, ddcs.reports.config.PUBLIC_POST_DATA_START_DATE)
+        expected_end = timezone.now().date() - timedelta(
+            days=ddcs.reports.config.PUBLIC_POST_DATA_END_LAG_DAYS
+        )
+        self.assertEqual(end, expected_end)
+
+
+class ComputePostDataTests(TestCase):
+    def setUp(self):
+        self.alice = TikTokUser.objects.create(
+            name="alice", added_by=DataOrigins.DONATION
+        )
+
+    def _patch_mapping(self, mapping: dict[str, str]):
+        return patch.object(
+            ddcs.reports.metrics.account_metrics,
+            "load_account_party_mapping",
+            return_value=mapping,
+        )
+
+    def _patch_range(self, start: date, end: date):
+        return patch.object(
+            ddcs.reports.metrics.account_metrics,
+            "_post_data_date_range",
+            return_value=(start, end),
+        )
+
+    def test_counts_videos_posted_on_each_date(self):
+        day = date(2026, 6, 1)
+        moment = datetime(2026, 6, 1, 10, tzinfo=UTC)
+        TikTokVideo.objects.create(
+            id_tiktok=1,
+            user=self.alice,
+            added_by=DataOrigins.DONATION,
+            inferred_create_time=moment,
+        )
+        TikTokVideo.objects.create(
+            id_tiktok=2,
+            user=self.alice,
+            added_by=DataOrigins.DONATION,
+            inferred_create_time=moment + timedelta(hours=2),
+        )
+        with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+        self.assertEqual(
+            records,
+            [{"username": "alice", "party": "SPD", "date": "2026-06-01", "count": 2}],
+        )
+
+    def test_zero_posts_with_successful_sync_is_zero_not_none(self):
+        day = date(2026, 6, 1)
+        SyncAttempt.objects.create(
+            user=self.alice, target_date=day, status=SyncAttempt.Status.SUCCESS
+        )
+        with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+        self.assertEqual(records[0]["count"], 0)
+
+    def test_zero_posts_without_successful_sync_is_none(self):
+        day = date(2026, 6, 1)
+        with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+        self.assertIsNone(records[0]["count"])
+
+    def test_failed_sync_attempt_does_not_count_as_synced(self):
+        day = date(2026, 6, 1)
+        SyncAttempt.objects.create(
+            user=self.alice, target_date=day, status=SyncAttempt.Status.RATE_LIMITED
+        )
+        with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+        self.assertIsNone(records[0]["count"])
+
+    def test_builds_one_record_per_account_per_date_in_range(self):
+        start, end = date(2026, 6, 1), date(2026, 6, 3)
+        mapping = {"alice": "SPD", "bob": "CDU/CSU"}
+        with self._patch_mapping(mapping), self._patch_range(start, end):
+            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+        self.assertEqual(len(records), len(mapping) * 3)
+        self.assertEqual({r["username"] for r in records}, set(mapping))
+
+
+class GetPostDataCacheTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
+    def test_caches_result_between_calls(self):
+        with patch.object(
+            ddcs.reports.metrics.account_metrics,
+            "_compute_post_data",
+            return_value=[{"username": "alice"}],
+        ) as mock_compute:
+            first = ddcs.reports.metrics.account_metrics.get_post_data()
+            second = ddcs.reports.metrics.account_metrics.get_post_data()
+        mock_compute.assert_called_once()
+        self.assertEqual(first, second)
+
+    def test_force_refresh_recomputes(self):
+        with patch.object(
+            ddcs.reports.metrics.account_metrics,
+            "_compute_post_data",
+            side_effect=[["v1"], ["v2"]],
+        ) as mock_compute:
+            first = ddcs.reports.metrics.account_metrics.get_post_data()
+            second = ddcs.reports.metrics.account_metrics.get_post_data(
+                force_refresh=True
+            )
+        self.assertEqual(mock_compute.call_count, 2)
+        self.assertEqual(first, ["v1"])
+        self.assertEqual(second, ["v2"])
+
+
+class AggregatePartyCountsTests(TestCase):
+    def test_sums_counts_per_party_ignoring_none(self):
+        records = [
+            {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 2},
+            {"username": "b", "party": "SPD", "date": "2026-06-02", "count": 3},
+            {"username": "c", "party": "CDU/CSU", "date": "2026-06-01", "count": None},
+        ]
+        result = ddcs.reports.metrics.account_metrics.aggregate_party_counts(records)
+        self.assertEqual({r["party"]: r["count"] for r in result}, {"SPD": 5})
+
+    def test_returns_empty_list_for_no_records(self):
+        result = ddcs.reports.metrics.account_metrics.aggregate_party_counts([])
+        self.assertEqual(result, [])
+
+
+class AggregateDailyPartyCountsTests(TestCase):
+    def test_sums_per_day_and_party_ignoring_none(self):
+        records = [
+            {"username": "a", "party": "SPD", "date": "2026-06-02", "count": 1},
+            {"username": "b", "party": "SPD", "date": "2026-06-02", "count": 2},
+            {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 5},
+            {"username": "c", "party": "CDU/CSU", "date": "2026-06-01", "count": None},
+        ]
+        result = ddcs.reports.metrics.account_metrics.aggregate_daily_party_counts(
+            records
+        )
+        self.assertEqual(
+            result,
+            [
+                {"date": "2026-06-01", "party": "SPD", "count": 5},
+                {"date": "2026-06-02", "party": "SPD", "count": 3},
+            ],
+        )
+
+    def test_sorted_by_date(self):
+        records = [
+            {"username": "a", "party": "SPD", "date": "2026-06-02", "count": 1},
+            {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 1},
+        ]
+        result = ddcs.reports.metrics.account_metrics.aggregate_daily_party_counts(
+            records
+        )
+        dates = [r["date"] for r in result]
+        self.assertEqual(dates, sorted(dates))
+
+
+class PartyDistributionAllAccountsPlotTests(TestCase):
+    def test_returns_none_html_when_empty(self):
+        result = ddcs.reports.plots.public_plots.get_party_distribution_all_accounts([])
+        self.assertEqual(result, {"html": None})
+
+    def test_returns_none_html_when_all_counts_are_none(self):
+        records = [
+            {"username": "a", "party": "SPD", "date": "2026-06-01", "count": None}
+        ]
+        result = ddcs.reports.plots.public_plots.get_party_distribution_all_accounts(
+            records
+        )
+        self.assertEqual(result, {"html": None})
+
+    def test_returns_html_and_top_party_data(self):
+        records = [
+            {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 5},
+            {"username": "b", "party": "CDU/CSU", "date": "2026-06-01", "count": 2},
+        ]
+        result = ddcs.reports.plots.public_plots.get_party_distribution_all_accounts(
+            records
+        )
+        self.assertIsNotNone(result["html"])
+        expected = {"party": "SPD", "value": 5, "color": "#e4454f"}
+        self.assertEqual(result["data"], expected)
+
+    def test_falls_back_to_default_color_for_unlisted_party(self):
+        records = [
+            {
+                "username": "a",
+                "party": "Sonstige Partei",
+                "date": "2026-06-01",
+                "count": 1,
+            }
+        ]
+        result = ddcs.reports.plots.public_plots.get_party_distribution_all_accounts(
+            records
+        )
+        self.assertEqual(
+            result["data"]["color"], ddcs.reports.plots.utils.PARTY_COLOR_OTHER
+        )
+
+
+class TemporalPartyDistributionAllAccountsPlotTests(TestCase):
+    def test_returns_none_html_when_empty(self):
+        result = ddcs.reports.plots.public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
+            []
+        )
+        self.assertEqual(result, {"html": None})
+
+    def test_returns_none_html_when_all_counts_are_none(self):
+        records = [
+            {"username": "a", "party": "SPD", "date": "2026-06-01", "count": None}
+        ]
+        result = ddcs.reports.plots.public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
+            records
+        )
+        self.assertEqual(result, {"html": None})
+
+    def test_returns_html_when_counts_present(self):
+        records = [
+            {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 2},
+            {"username": "a", "party": "SPD", "date": "2026-06-02", "count": 1},
+        ]
+        result = ddcs.reports.plots.public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
+            records
+        )
+        self.assertIsNotNone(result["html"])
 
 
 # ============================================================
@@ -841,3 +1120,20 @@ class GetSyntheticReportViewTests(TestCase):
         view.setup(request)
         self.assertIsNotNone(view.statistics.seen_pol_video_ids)
         self.assertIsNotNone(view.statistics.party_counts)
+
+
+class PublicPlotsDevViewTests(TestCase):
+    def test_context_includes_rendered_plots(self):
+        request = RequestFactory().get("/report/public/dev/")
+        response = views.PublicPlotsDevView.as_view()(request)
+        context = response.context_data
+        self.assertIsNotNone(context["party_distribution_all_accounts"]["html"])
+        self.assertIsNotNone(
+            context["temporal_party_distribution_all_accounts"]["html"]
+        )
+
+    def test_renders_ok(self):
+        request = RequestFactory().get("/report/public/dev/")
+        response = views.PublicPlotsDevView.as_view()(request)
+        response.render()
+        self.assertEqual(response.status_code, 200)

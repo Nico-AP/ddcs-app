@@ -329,6 +329,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ddcs.metadata.research_api.tasks.backfill_missing_syncs",
         "schedule": crontab(hour="10,16", minute=0),
     },
+    "reports-update-account-metrics": {
+        "task": "ddcs.reports.tasks.recompute_account_metrics",
+        "schedule": crontab(hour=5, minute=30),
+    },
 }
 
 # Prevent double-execution of celery tasks

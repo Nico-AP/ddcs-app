@@ -1,0 +1,48 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>Public Plots — Dev Preview</title>
+  <script src="{% static 'reports/js/plotly-3.6.0.min.js' %}"></script>
+  <style>
+    body {
+      font-family: Rubik, Arial, sans-serif;
+      margin: 2rem;
+      background: #fff;
+    }
+    h1 {
+      text-align: center;
+    }
+    h2 {
+      text-align: center;
+      margin-top: 3rem;
+    }
+    .visualization-container {
+      max-width: 900px;
+      margin: 1rem auto 3rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Public Plots — Styling Preview (synthetic data)</h1>
+
+  <h2>Party distribution (treemap)</h2>
+  <div class="visualization-container">
+    {% if party_distribution_all_accounts.html %}
+      {{ party_distribution_all_accounts.html|safe }}
+    {% else %}
+      <p>No data.</p>
+    {% endif %}
+  </div>
+
+  <h2>Temporal party distribution</h2>
+  <div class="visualization-container">
+    {% if temporal_party_distribution_all_accounts.html %}
+      {{ temporal_party_distribution_all_accounts.html|safe }}
+    {% else %}
+      <p>No data.</p>
+    {% endif %}
+  </div>
+</body>
+</html>

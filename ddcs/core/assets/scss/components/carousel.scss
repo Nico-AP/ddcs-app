@@ -8,3 +8,50 @@
   padding-left: 5%;
   padding-right: 5%;
 }
+
+.public-plot-carousel {
+  padding-top: 30px;
+  padding-bottom: 40px;
+
+  .carousel-inner {
+    padding-left: 7%;
+    padding-right: 7%;
+
+    /* Adjust to the tallest slide */
+    display: grid;
+    grid-template-columns: 100%;
+    grid-template-rows: auto;
+  }
+
+  .carousel-item {
+    grid-area: 1 / 1 / 2 / 2;
+    display: block !important; /* Override Bootstrap's display: none */
+    visibility: hidden;
+    opacity: 0;
+    transition: opacity 0.6s ease-in-out, visibility 0.6s ease-in-out;
+  }
+
+  .carousel-item.active {
+    visibility: visible;
+    opacity: 1;
+  }
+
+  .carousel-control-prev,
+  .carousel-control-next {
+    filter: invert(40%);
+  }
+
+  .carousel-indicators {
+    bottom: -10px;
+  }
+
+  .carousel-indicators [data-bs-target] {
+    background-color: lightgrey;
+  }
+
+  .carousel-slide-title {
+    padding-bottom: 20px;
+    font-size: 20px;
+  }
+
+}
