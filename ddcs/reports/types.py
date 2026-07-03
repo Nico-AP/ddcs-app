@@ -34,6 +34,10 @@ class BehaviourComparisonRecord(TypedDict):
     reference_median_display: str
     reference_p25: float
     reference_p75: float
+    reference_min: float
+    reference_max: float
+    reference_min_display: str
+    reference_max_display: str
     radar_user: float
     radar_mean: float
     is_fraction: bool

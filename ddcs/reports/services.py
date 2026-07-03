@@ -293,7 +293,9 @@ def compute_report_statistics(data: TikTokUserData) -> ReportStatistics:
         "top_videos": top_videos,
         "party_hashtags": party_hashtags,
         "non_party_hashtags": non_party_hashtags,
-        "behaviour_comparisons": compute_behaviour_comparisons(data),
+        "behaviour_comparisons": compute_behaviour_comparisons(
+            data, frozenset(political_video_id_set)
+        ),
         # TODO: behaviour comparison compute seems to slow down computation
         #  noticeably; need to make report statistics computation async.
     }

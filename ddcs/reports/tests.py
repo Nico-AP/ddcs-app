@@ -15,8 +15,13 @@ from ddcs.metadata.models import DataOrigins, TikTokHashtag, TikTokUser, TikTokV
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.reports import factories, plots, services, views, wordclouds
 from ddcs.reports.behaviour_metrics import (
+    apply_reference_demographic_filter,
     compute_behaviour_comparisons,
+    compute_engagement_metrics,
     compute_watch_history_metrics,
+    normalize_age_group,
+    normalize_gender_filter,
+    reference_group_size,
 )
 from ddcs.reports.config import (
     ACCOUNT_PARTY_MAPPING_CSV_PATH,
@@ -86,9 +91,159 @@ class FracInstantSkipTests(TestCase):
     )
     def test_included_in_behaviour_comparisons_when_reference_csv_present(self):
         # CSV is not present in gh actions
-        comparisons = compute_behaviour_comparisons(self._watch_history([0, 0.5, 10]))
+        comparisons = compute_behaviour_comparisons(
+            self._watch_history([0, 0.5, 10]), frozenset()
+        )
         metrics = {row["metric"] for row in comparisons}
         self.assertIn("frac_instant_skip", metrics)
+
+
+class WatchSessionTests(TestCase):
+    def _watch_history(self, offsets_sec: list[float]) -> TikTokUserData:
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        return TikTokUserData(
+            watch_history=[
+                {
+                    "date": base + timedelta(seconds=offset),
+                    "link": f"https://www.tiktok.com/@user/video/{i}",
+                    "video_id": i,
+                }
+                for i, offset in enumerate(offsets_sec)
+            ]
+        )
+
+    def test_single_session_duration_and_video_count(self):
+        metrics = compute_watch_history_metrics(self._watch_history([0, 30, 60]))
+        self.assertEqual(metrics["avg_session_length_sec"], 60.0)
+        self.assertEqual(metrics["avg_videos_per_session"], 3.0)
+
+    def test_ninety_second_break_starts_new_session(self):
+        metrics = compute_watch_history_metrics(self._watch_history([0, 50, 200]))
+        self.assertEqual(metrics["avg_session_length_sec"], 25.0)
+        self.assertEqual(metrics["avg_videos_per_session"], 1.5)
+
+
+class PoliticalEngagementTests(TestCase):
+    def test_fraction_counts_likes_shares_saves_and_comments(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        data = TikTokUserData(
+            watch_history=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/1",
+                    "video_id": 1,
+                }
+            ],
+            liked_videos=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/10",
+                    "video_id": 10,
+                },
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/20",
+                    "video_id": 20,
+                },
+            ],
+            shared_videos=[
+                {
+                    "date": base,
+                    "sharedcontent": "https://www.tiktok.com/@user/video/10",
+                    "video_id": 10,
+                },
+            ],
+            video_bookmarks=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/30",
+                    "video_id": 30,
+                },
+            ],
+            comments=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/20",
+                    "video_id": 20,
+                },
+            ],
+        )
+        metrics = compute_engagement_metrics(data, frozenset({10, 20}))
+        self.assertEqual(metrics["frac_political_engagement"], 0.8)
+
+    def test_returns_empty_when_no_engagements(self):
+        data = TikTokUserData(
+            watch_history=[
+                {
+                    "date": REPORT_FIRST_DATE_TO_INCLUDE,
+                    "link": "https://www.tiktok.com/@user/video/1",
+                    "video_id": 1,
+                }
+            ]
+        )
+        self.assertEqual(
+            compute_engagement_metrics(data, frozenset({1})),
+            {},
+        )
+
+
+class ReferenceDemographicFilterTests(TestCase):
+    def _sample_comparison(self, value: float = 0.42, mean: float = 0.3) -> dict:
+        return {
+            "metric": "frac_instant_skip",
+            "label": "Anteil Instant-Skips",
+            "radar_label": "Anteil Instant-Skips",
+            "value": value,
+            "value_display": f"{value * 100:.1f} %",
+            "percentile": 72.0,
+            "reference_mean": mean,
+            "reference_mean_display": f"{mean * 100:.1f} %",
+            "reference_mean_percentile": 50.0,
+            "reference_median": mean,
+            "reference_median_display": f"{mean * 100:.1f} %",
+            "reference_p25": 0.2,
+            "reference_p75": 0.4,
+            "reference_min": 0.05,
+            "reference_max": 0.75,
+            "reference_min_display": "5.0 %",
+            "reference_max_display": "75.0 %",
+            "radar_user": 72.0,
+            "radar_mean": 50.0,
+            "is_fraction": True,
+        }
+
+    def test_normalizes_invalid_filter_values(self):
+        self.assertEqual(normalize_age_group("invalid"), "all")
+        self.assertEqual(normalize_gender_filter("invalid"), "any")
+
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_female_filter_changes_reference_mean(self):
+        comparisons = [self._sample_comparison()]
+        filtered = apply_reference_demographic_filter(
+            comparisons,
+            age_group="all",
+            gender="female",
+        )
+        self.assertEqual(filtered[0]["value"], comparisons[0]["value"])
+        self.assertNotEqual(
+            filtered[0]["reference_mean"],
+            comparisons[0]["reference_mean"],
+        )
+
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_reference_group_size_respects_filters(self):
+        self.assertGreater(reference_group_size("all", "any"), 0)
+        self.assertGreater(reference_group_size("under30", "female"), 0)
+        self.assertLess(
+            reference_group_size("under30", "female"),
+            reference_group_size("all", "any"),
+        )
 
 
 # ============================================================
@@ -696,10 +851,155 @@ class SyntheticFactoriesTests(TestCase):
         self.assertGreater(len(captured["party_counts"]), 0)
         self.assertGreater(len(captured["party_hashtags"]), 0)
 
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_synthetic_behaviour_comparisons_include_political_engagement(self):
+        pol_ids = frozenset({1001, 1002, 1003})
+        comparisons = factories._synthetic_behaviour_comparisons(pol_ids)
+        metrics = {row["metric"] for row in comparisons}
+        self.assertIn("frac_political_engagement", metrics)
 
-# ============================================================
-# plots
-# ============================================================
+
+class BehaviourProfileComparisonTests(TestCase):
+    def _sample_comparison(self, percentile: float = 72.0) -> dict:
+        return {
+            "metric": "frac_instant_skip",
+            "label": "Anteil Instant-Skips (< 1 Sek. bis zum nächsten Video)",
+            "radar_label": "Anteil Instant-Skips",
+            "value": 0.42,
+            "value_display": "42.0 %",
+            "percentile": percentile,
+            "reference_mean": 0.3,
+            "reference_mean_display": "30.0 %",
+            "reference_mean_percentile": 50.0,
+            "reference_median": 0.28,
+            "reference_median_display": "28.0 %",
+            "reference_p25": 0.2,
+            "reference_p75": 0.4,
+            "reference_min": 0.05,
+            "reference_max": 0.75,
+            "reference_min_display": "5.0 %",
+            "reference_max_display": "75.0 %",
+            "radar_user": percentile,
+            "radar_mean": 50.0,
+            "is_fraction": True,
+        }
+
+    def test_returns_empty_list_when_empty(self):
+        self.assertEqual(plots.get_behaviour_profile_rows([]), [])
+
+    def test_row_title_is_single_user_sentence_in_teal(self):
+        text = plots._row_title_text(self._sample_comparison())
+        self.assertIn("color: #0cc4b6", text)
+        self.assertIn("42.0 %", text)
+        self.assertIn("scrollst du direkt weiter", text)
+        self.assertNotIn("Teilnehmende", text)
+
+    def test_chart_uses_teal_and_magenta_bars_with_end_labels(self):
+        rows = plots.get_behaviour_profile_rows([self._sample_comparison()])
+        html = rows[0]["chart_html"]
+        self.assertIn("#0cc4b6", html)
+        self.assertIn("#ff587a", html)
+        self.assertIn("42.0", html)
+        self.assertIn("30.0", html)
+
+    def test_axis_max_is_max_of_user_and_mean(self):
+        self.assertEqual(
+            plots._metric_axis_max(0.42, 0.3),
+            0.42,
+        )
+
+    def test_hours_title_is_user_sentence_only(self):
+        hours = {
+            **self._sample_comparison(),
+            "metric": "avg_active_hours_per_day",
+            "value": 2.5,
+            "value_display": "2.50",
+            "reference_mean": 1.8,
+            "reference_mean_display": "1.80",
+            "is_fraction": False,
+        }
+        title = plots._row_title_text(hours)
+        self.assertIn("Stunden aktiv", title)
+        self.assertIn("2.50", title)
+        self.assertNotIn("Videos", title)
+
+    def test_session_length_title_uses_minutes(self):
+        session = {
+            **self._sample_comparison(),
+            "metric": "avg_session_length_sec",
+            "value": 180.0,
+            "value_display": "3.0 Min.",
+            "is_fraction": False,
+        }
+        title = plots._row_title_text(session)
+        self.assertIn("3.0 Min.", title)
+        self.assertIn("Sessions dauern", title)
+
+    def test_chart_rows_include_all_behaviour_metrics(self):
+        hours = {
+            **self._sample_comparison(),
+            "metric": "avg_active_hours_per_day",
+            "value": 2.5,
+            "value_display": "2.50",
+            "reference_mean": 1.8,
+            "reference_mean_display": "1.80",
+            "is_fraction": False,
+        }
+        session = {
+            **self._sample_comparison(),
+            "metric": "avg_session_length_sec",
+            "value": 180.0,
+            "value_display": "3.0 Min.",
+            "reference_mean": 120.0,
+            "reference_mean_display": "2.0 Min.",
+            "is_fraction": False,
+        }
+        rows = plots.get_behaviour_profile_rows(
+            [
+                self._sample_comparison(),
+                hours,
+                session,
+            ]
+        )
+        self.assertEqual(len(rows), 3)
+
+    def test_slides_group_metrics_into_three_carousel_panels(self):
+        comparisons = [
+            {
+                **self._sample_comparison(),
+                "metric": metric,
+            }
+            for metric in (
+                "avg_active_hours_per_day",
+                "avg_videos_per_session",
+                "avg_session_length_sec",
+                "weekend_activity_frac",
+                "night_activity_frac",
+                "frac_instant_skip",
+                "frac_political_engagement",
+            )
+        ]
+        slides = plots.get_behaviour_profile_slides(comparisons)
+        self.assertEqual(len(slides), 3)
+        self.assertEqual(len(slides[0]["rows"]), 3)
+        self.assertEqual(len(slides[1]["rows"]), 2)
+        self.assertEqual(len(slides[2]["rows"]), 2)
+
+    def test_returns_rows_with_chart_and_title(self):
+        rows = plots.get_behaviour_profile_rows([self._sample_comparison()])
+        self.assertEqual(len(rows), 1)
+        self.assertIn("plotly-graph-div", rows[0]["chart_html"])
+        self.assertIn("color: #0cc4b6", rows[0]["title_html"])
+        self.assertIn("scrollst du direkt weiter", rows[0]["title_html"])
+        self.assertNotIn("description_html", rows[0])
+
+    def test_returns_html_for_legacy_wrapper(self):
+        result = plots.get_behaviour_profile_comparison([self._sample_comparison()])
+        self.assertIsNotNone(result["html"])
+        self.assertIn("plotly-graph-div", result["html"])
 
 
 class PartyDistributionPlotTests(TestCase):

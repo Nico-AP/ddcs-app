@@ -9,8 +9,11 @@ from ddm.projects.models import DonationProject
 
 from ddcs.core.types import TikTokUserData
 from ddcs.datadonation.config import (
+    COMMENTS_BP_NAME,
     FOLLOWED_BP_NAME,
     LIKED_VIDEOS_BP_NAME,
+    SHARED_VIDEOS_BP_NAME,
+    VIDEO_BOOKMARKS_BP_NAME,
     WATCH_HISTORY_BP_NAME,
 )
 from ddcs.metadata.services import register_donation_metadata
@@ -33,6 +36,9 @@ _BLUEPRINT_NAMES = [
     WATCH_HISTORY_BP_NAME,
     FOLLOWED_BP_NAME,
     LIKED_VIDEOS_BP_NAME,
+    SHARED_VIDEOS_BP_NAME,
+    VIDEO_BOOKMARKS_BP_NAME,
+    COMMENTS_BP_NAME,
 ]
 
 
@@ -168,28 +174,33 @@ def _extract_id_from_link(link: str) -> int | None:
 
 def _add_video_id_to_record(record: dict[str, Any]) -> dict[str, Any]:
     """Extract video ID from link and add it to the record under 'video_id' key."""
-    if link := record.get("link"):
-        return {**record, "video_id": _extract_id_from_link(link)}
-    return record
+    record_with_link = dict(record)
+    if not record_with_link.get("link") and (
+        shared_content := record_with_link.get("sharedcontent")
+    ):
+        record_with_link["link"] = shared_content
+    if link := record_with_link.get("link"):
+        return {**record_with_link, "video_id": _extract_id_from_link(link)}
+    return record_with_link
+
+
+def _map_video_records(
+    records: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]] | None:
+    if records is None:
+        return None
+    return [_add_video_id_to_record(record) for record in records]
 
 
 def _map_to_user_data(data: dict[str, Any]) -> TikTokUserData:
     """Map raw blueprint data to a TikTokUserData dataclass."""
-    watch_history = data.get(WATCH_HISTORY_BP_NAME)
-    liked_videos = data.get(LIKED_VIDEOS_BP_NAME)
-
     return TikTokUserData(
-        watch_history=(
-            [_add_video_id_to_record(r) for r in watch_history]
-            if watch_history is not None
-            else None
-        ),
+        watch_history=_map_video_records(data.get(WATCH_HISTORY_BP_NAME)),
         followed_accounts=data.get(FOLLOWED_BP_NAME),
-        liked_videos=(
-            [_add_video_id_to_record(r) for r in liked_videos]
-            if liked_videos is not None
-            else None
-        ),
+        liked_videos=_map_video_records(data.get(LIKED_VIDEOS_BP_NAME)),
+        shared_videos=_map_video_records(data.get(SHARED_VIDEOS_BP_NAME)),
+        video_bookmarks=_map_video_records(data.get(VIDEO_BOOKMARKS_BP_NAME)),
+        comments=_map_video_records(data.get(COMMENTS_BP_NAME)),
     )
 
 

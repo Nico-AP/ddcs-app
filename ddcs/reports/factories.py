@@ -90,8 +90,25 @@ def _synthetic_description_list() -> list[str]:
     return choices(SYNTHETIC_DESCRIPTIONS, k=randint(20, 60))
 
 
-def _synthetic_behaviour_comparisons() -> list[dict]:
+def _synthetic_engagement_record(
+    video_id: int,
+    *,
+    day_offset: int = 0,
+) -> dict:
+    return {
+        "date": REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=day_offset),
+        "link": f"https://www.tiktok.com/@user/video/{video_id}",
+        "video_id": video_id,
+    }
+
+
+def _synthetic_behaviour_comparisons(
+    political_video_ids: frozenset[int] | None = None,
+) -> list[dict]:
     start = REPORT_FIRST_DATE_TO_INCLUDE
+    pol_ids = list(political_video_ids or [])
+    non_pol_ids = [randint(1000000, 9999999) for _ in range(12)]
+
     watch_history = [
         {
             "date": start + timedelta(days=i % 30, hours=(i * 3) % 24),
@@ -100,7 +117,36 @@ def _synthetic_behaviour_comparisons() -> list[dict]:
         }
         for i in range(120)
     ]
-    return compute_behaviour_comparisons(TikTokUserData(watch_history=watch_history))
+
+    political_likes = (
+        [
+            _synthetic_engagement_record(video_id, day_offset=i % 20)
+            for i, video_id in enumerate(choices(pol_ids, k=min(10, len(pol_ids))))
+        ]
+        if pol_ids
+        else []
+    )
+    other_likes = [
+        _synthetic_engagement_record(video_id, day_offset=i % 20)
+        for i, video_id in enumerate(non_pol_ids[:15])
+    ]
+    political_shares = (
+        [
+            _synthetic_engagement_record(video_id, day_offset=i % 15)
+            for i, video_id in enumerate(choices(pol_ids, k=min(4, len(pol_ids))))
+        ]
+        if pol_ids
+        else []
+    )
+
+    return compute_behaviour_comparisons(
+        TikTokUserData(
+            watch_history=watch_history,
+            liked_videos=political_likes + other_likes,
+            shared_videos=political_shares,
+        ),
+        political_video_ids or frozenset(),
+    )
 
 
 def get_synthetic_report_statistics(
@@ -134,5 +180,7 @@ def get_synthetic_report_statistics(
         top_videos=_synthetic_top_videos(seen_pol_video_ids),
         party_hashtags=_synthetic_description_list(),
         non_party_hashtags=_synthetic_description_list(),
-        behaviour_comparisons=_synthetic_behaviour_comparisons(),
+        behaviour_comparisons=_synthetic_behaviour_comparisons(
+            frozenset(seen_pol_video_ids)
+        ),
     )

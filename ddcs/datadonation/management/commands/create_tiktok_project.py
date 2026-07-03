@@ -459,6 +459,15 @@ BLUEPRINT_CONFIGS = [
                 "comparison_value": "",
                 "replacement_value": "",
             },
+            {
+                "name": "Keep Link",
+                "field": "(L|l)ink",
+                "regex_field": True,
+                "execution_order": 2,
+                "comparison_operator": None,
+                "comparison_value": "",
+                "replacement_value": "",
+            },
         ],
     },
     {
