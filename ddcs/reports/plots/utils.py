@@ -17,6 +17,7 @@ PARTY_COLORS = {
     "B90/GRÜNE": "#83b672",  # "#46962b",
     "FDP": "#f8eb45",  # "#ffed00",
     "AfD": "#45b4e2",  # "#009ee0",
+    "LINKE": "#ca6697",  # "#be3075",
     "Linke": "#ca6697",  # "#be3075",
     "Sonstige": PARTY_COLOR_OTHER,  # "#808080",
     "BSW": "#8e5973",  # "#691d42",
