@@ -15,6 +15,8 @@ from ddcs.metadata.models import DataOrigins, TikTokHashtag, TikTokUser, TikTokV
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.reports import factories, plots, services, views, wordclouds
 from ddcs.reports.behaviour_metrics import (
+    _build_peak_hour_comparison,
+    _peak_hour_same_fraction,
     apply_reference_demographic_filter,
     compute_behaviour_comparisons,
     compute_engagement_metrics,
@@ -185,6 +187,52 @@ class PoliticalEngagementTests(TestCase):
             compute_engagement_metrics(data, frozenset({1})),
             {},
         )
+
+
+class RateLikeTests(TestCase):
+    def test_like_rate_is_likes_divided_by_views(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        data = TikTokUserData(
+            watch_history=[
+                {
+                    "date": base + timedelta(seconds=i),
+                    "link": f"https://www.tiktok.com/@user/video/{i}",
+                    "video_id": i,
+                }
+                for i in range(4)
+            ],
+            liked_videos=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/10",
+                    "video_id": 10,
+                },
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/20",
+                    "video_id": 20,
+                },
+            ],
+        )
+        metrics = compute_watch_history_metrics(data)
+        self.assertEqual(metrics["rate_like"], 0.5)
+
+
+class PeakHourShareTests(TestCase):
+    def test_same_peak_hour_fraction(self):
+        population = [6.0, 6.0, 12.0, 22.0, 6.0]
+        self.assertEqual(
+            _peak_hour_same_fraction(6, population),
+            0.6,
+        )
+
+    def test_peak_hour_comparison_uses_share_bars(self):
+        row = _build_peak_hour_comparison(6.0, [6.0, 6.0, 12.0, 22.0, 6.0])
+        self.assertEqual(row["value_display"], "6:00")
+        self.assertEqual(row["chart_user_value"], 0.6)
+        self.assertEqual(row["chart_reference_value"], 0.4)
+        self.assertEqual(row["chart_user_value_display"], "60.0\u00a0%")
+        self.assertEqual(row["chart_reference_value_display"], "40.0\u00a0%")
 
 
 class ReferenceDemographicFilterTests(TestCase):
@@ -938,6 +986,31 @@ class BehaviourProfileComparisonTests(TestCase):
         self.assertIn("3.0 Min.", title)
         self.assertIn("Sessions dauern", title)
 
+    def test_peak_hour_chart_uses_same_and_different_shares(self):
+        peak = {
+            **self._sample_comparison(),
+            "metric": "peak_activity_hour",
+            "value": 6.0,
+            "value_display": "6:00",
+            "reference_mean": 0.4,
+            "reference_mean_display": "40.0 %",
+            "chart_user_value": 0.6,
+            "chart_reference_value": 0.4,
+            "chart_user_value_display": "60.0 %",
+            "chart_reference_value_display": "40.0 %",
+            "is_fraction": True,
+        }
+        rows = plots.get_behaviour_profile_rows([peak])
+        html = rows[0]["chart_html"]
+        self.assertIn("60.0", html)
+        self.assertIn("40.0", html)
+        title = plots._row_title_text(peak)
+        self.assertIn("6:00", title)
+        self.assertIn("60.0", title)
+        self.assertIn("40.0", title)
+        self.assertIn("gleichen Stunde", title)
+        self.assertIn("anderen Uhrzeit", title)
+
     def test_chart_rows_include_all_behaviour_metrics(self):
         hours = {
             **self._sample_comparison(),
@@ -978,15 +1051,17 @@ class BehaviourProfileComparisonTests(TestCase):
                 "avg_session_length_sec",
                 "weekend_activity_frac",
                 "night_activity_frac",
+                "peak_activity_hour",
                 "frac_instant_skip",
+                "rate_like",
                 "frac_political_engagement",
             )
         ]
         slides = plots.get_behaviour_profile_slides(comparisons)
         self.assertEqual(len(slides), 3)
         self.assertEqual(len(slides[0]["rows"]), 3)
-        self.assertEqual(len(slides[1]["rows"]), 2)
-        self.assertEqual(len(slides[2]["rows"]), 2)
+        self.assertEqual(len(slides[1]["rows"]), 3)
+        self.assertEqual(len(slides[2]["rows"]), 3)
 
     def test_returns_rows_with_chart_and_title(self):
         rows = plots.get_behaviour_profile_rows([self._sample_comparison()])
