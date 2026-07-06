@@ -33,6 +33,7 @@ from ddcs.reports.plots import (
     get_temporal_party_distribution_plot_user,
 )
 from ddcs.reports.services import generate_report_statistics
+from ddcs.reports.utils import enrich_top_videos_for_embed
 from ddcs.reports.wordclouds import get_wordcloud
 
 
@@ -145,8 +146,10 @@ class GetReportView(TemplateView):
             )
         )
 
-        # Top videos table
-        context["top_videos"] = self.get_top_videos_table_stats()
+        # Top videos carousel
+        context["top_videos"] = enrich_top_videos_for_embed(
+            self.get_top_videos_table_stats()
+        )
 
         # Wordclouds
         context["wordcloud_party_user"] = get_wordcloud(

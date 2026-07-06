@@ -22,7 +22,7 @@ PARTIES_ORDER = [
     "Keine Partei",
 ]
 
-N_TOP_VIDEOS = 5
+N_TOP_VIDEOS = 3
 
 HASHTAGS_TO_EXCLUDE = {
     "capcut",

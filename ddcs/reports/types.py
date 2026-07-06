@@ -18,6 +18,8 @@ class TopVideoRecord(TypedDict):
     party: str | None
     view_count: int
     description: str
+    tiktok_url: NotRequired[str]
+    embed_url: NotRequired[str]
 
 
 class BehaviourComparisonRecord(TypedDict):

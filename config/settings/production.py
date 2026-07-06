@@ -49,6 +49,7 @@ CONTENT_SECURITY_POLICY = {
         "script-src": [
             SELF,
             "https://analytics.dein-feed-deine-wahl.de",
+            "https://www.tiktok.com",
             UNSAFE_INLINE,  # TODO: Remove again when htmx issue is figured out
         ],
         "style-src": [
@@ -62,12 +63,17 @@ CONTENT_SECURITY_POLICY = {
             "*.br.de",
             "*.fu-berlin.de",
             "*.tagesspiegel.de",
+            "*.tiktokcdn.com",
+            "*.tiktokcdn-eu.com",
+            "*.muscdn.com",
         ],
-        "media-src": [SELF],
+        "media-src": [SELF, "https://www.tiktok.com"],
         "font-src": [SELF],
+        "frame-src": ["https://www.tiktok.com"],
         "connect-src": [
             SELF,
             "https://analytics.dein-feed-deine-wahl.de",
+            "https://www.tiktok.com",
         ],
         "frame-ancestors": [NONE],
         "base-uri": [NONE],

@@ -32,7 +32,14 @@ from ddcs.reports.config import (
     REPORT_FIRST_DATE_TO_INCLUDE,
 )
 from ddcs.reports.factories import get_synthetic_report_statistics
-from ddcs.reports.utils import load_account_party_mapping
+from ddcs.reports.utils import (
+    build_tiktok_embed_url,
+    build_top_video_tiktok_url,
+    enrich_top_videos_for_embed,
+    load_account_party_mapping,
+    parse_tiktok_username_from_url,
+    parse_tiktok_video_id_from_url,
+)
 
 # ============================================================
 # utils
@@ -55,6 +62,52 @@ class LoadAccountPartyMappingTests(TestCase):
         # Spot-check that values are non-empty party strings.
         self.assertTrue(all(isinstance(k, str) and k for k in result))
         self.assertTrue(all(isinstance(v, str) and v for v in result.values()))
+
+
+class TopVideoUrlTests(TestCase):
+    def test_parse_video_id_from_video_and_photo_urls(self):
+        self.assertEqual(
+            parse_tiktok_video_id_from_url(
+                "https://www.tiktok.com/@alice_weidel_afd/video/7658941918302326048"
+            ),
+            7658941918302326048,
+        )
+        self.assertEqual(
+            parse_tiktok_video_id_from_url(
+                "https://www.tiktok.com/@die.linke/photo/7623456044794055968"
+            ),
+            7623456044794055968,
+        )
+
+    def test_parse_username_from_url(self):
+        self.assertEqual(
+            parse_tiktok_username_from_url(
+                "https://www.tiktok.com/@deinespd/video/7657187761883041057"
+            ),
+            "deinespd",
+        )
+
+    def test_build_url_uses_username_when_available(self):
+        url = build_top_video_tiktok_url(
+            {"video_id": 123, "username": "deinespd", "view_count": 1}
+        )
+        self.assertEqual(url, "https://www.tiktok.com/@deinespd/video/123")
+
+    def test_build_embed_url(self):
+        self.assertEqual(
+            build_tiktok_embed_url(7658941918302326048),
+            "https://www.tiktok.com/player/v1/7658941918302326048?autoplay=0",
+        )
+
+    def test_enrich_top_videos_limits_to_three(self):
+        videos = [
+            {"video_id": index, "username": f"user{index}", "view_count": index}
+            for index in range(5)
+        ]
+        enriched = enrich_top_videos_for_embed(videos)
+        self.assertEqual(len(enriched), 3)
+        self.assertTrue(all(video["tiktok_url"] for video in enriched))
+        self.assertTrue(all(video["embed_url"] for video in enriched))
 
 
 # ============================================================
@@ -863,14 +916,14 @@ class SyntheticFactoriesTests(TestCase):
         unique_dates = {r["date"] for r in result}
         self.assertEqual(len(unique_dates), days)
 
-    def test_top_videos_dedupes_and_respects_limit(self):
-        ids = [1, 1, 2, 3, 4, 5, 6, 7]
-        result = factories._synthetic_top_videos(ids, n=3)
-        self.assertLessEqual(len(result), 3)
-        self.assertEqual(len({r["video_id"] for r in result}), len(result))
-
-    def test_top_videos_returns_empty_for_no_ids(self):
-        self.assertEqual(factories._synthetic_top_videos([]), [])
+    def test_top_videos_use_synthetic_embed_urls(self):
+        result = factories._synthetic_top_videos([])
+        self.assertEqual(len(result), 3)
+        self.assertEqual(
+            [video["tiktok_url"] for video in result],
+            factories.SYNTHETIC_TOP_VIDEO_URLS,
+        )
+        self.assertEqual(result[0]["username"], "alice_weidel_afd")
 
     def test_descriptions_by_video_returns_one_entry_per_id(self):
         result = factories._synthetic_descriptions_by_video([1, 2, 3])
@@ -1305,7 +1358,7 @@ class GetReportViewTests(TestCase):
             context = view.get_context_data()
         self.assertIsNone(context["share_political"])
 
-    def test_top_videos_table_passes_through_descriptions(self):
+    def test_top_videos_include_tiktok_urls(self):
         view = views.GetReportView()
         view.statistics = self._statistics(
             top_videos=[
@@ -1314,24 +1367,79 @@ class GetReportViewTests(TestCase):
                     "view_count": 10,
                     "party": "SPD",
                     "description": "Politik und Wahl",
+                    "username": "deinespd",
                 },
             ],
         )
-        result = view.get_top_videos_table_stats()
-        self.assertEqual(result[0]["description"], "Politik und Wahl")
+        view.kwargs = {}
+        with (
+            patch.object(
+                views, "get_party_distribution_plot_user", return_value={"html": None}
+            ),
+            patch.object(
+                views,
+                "get_temporal_party_distribution_plot_user",
+                return_value={"html": None},
+            ),
+            patch.object(views, "get_wordcloud", return_value={"html": None}),
+        ):
+            context = view.get_context_data()
+        self.assertEqual(
+            context["top_videos"][0]["tiktok_url"],
+            "https://www.tiktok.com/@deinespd/video/1",
+        )
+        self.assertEqual(
+            context["top_videos"][0]["embed_url"],
+            "https://www.tiktok.com/player/v1/1?autoplay=0",
+        )
+        self.assertEqual(
+            context["top_videos"][0]["description"],
+            "Politik und Wahl",
+        )
 
-    def test_top_videos_table_preserves_input_order(self):
+    def test_top_videos_preserves_input_order(self):
         # services already returns top_videos sorted desc by view_count;
         # the view trusts that order and does not re-sort.
         view = views.GetReportView()
         view.statistics = self._statistics(
             top_videos=[
-                {"video_id": 2, "view_count": 9, "party": "SPD", "description": ""},
-                {"video_id": 3, "view_count": 5, "party": "SPD", "description": ""},
-                {"video_id": 1, "view_count": 2, "party": "SPD", "description": ""},
+                {
+                    "video_id": 2,
+                    "view_count": 9,
+                    "party": "SPD",
+                    "description": "",
+                    "username": "user2",
+                },
+                {
+                    "video_id": 3,
+                    "view_count": 5,
+                    "party": "SPD",
+                    "description": "",
+                    "username": "user3",
+                },
+                {
+                    "video_id": 1,
+                    "view_count": 2,
+                    "party": "SPD",
+                    "description": "",
+                    "username": "user1",
+                },
             ],
         )
-        result = view.get_top_videos_table_stats()
+        view.kwargs = {}
+        with (
+            patch.object(
+                views, "get_party_distribution_plot_user", return_value={"html": None}
+            ),
+            patch.object(
+                views,
+                "get_temporal_party_distribution_plot_user",
+                return_value={"html": None},
+            ),
+            patch.object(views, "get_wordcloud", return_value={"html": None}),
+        ):
+            context = view.get_context_data()
+        result = context["top_videos"]
         self.assertEqual([v["video_id"] for v in result], [2, 3, 1])
 
 
