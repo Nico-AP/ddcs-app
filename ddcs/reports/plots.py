@@ -98,6 +98,7 @@ _MEAN_BAR_Y = -0.085
 _BEHAVIOUR_USER_COLOR = "#0cc4b6"
 _BEHAVIOUR_MEAN_COLOR = "#ff587a"
 _SINGLE_METRIC_CHART_HEIGHT = 128
+_PLOT_CORNER_RADIUS = 4
 
 _FRACTION_METRICS = frozenset(
     {
@@ -234,17 +235,18 @@ def _add_horizontal_value_bar(
     y_center: float,
     color: str,
 ) -> None:
-    fig.add_shape(
-        type="rect",
-        x0=0,
-        x1=x_end,
-        y0=y_center - _BAR_HALF_HEIGHT,
-        y1=y_center + _BAR_HALF_HEIGHT,
-        xref="x",
-        yref="y",
-        fillcolor=color,
-        line={"width": 0},
-        layer="above",
+    if x_end <= 0:
+        return
+    fig.add_trace(
+        go.Bar(
+            x=[x_end],
+            y=[y_center],
+            orientation="h",
+            width=_BAR_HALF_HEIGHT * 2,
+            marker={"color": color},
+            showlegend=False,
+            hoverinfo="skip",
+        )
     )
 
 
@@ -373,6 +375,7 @@ def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
         plot_bgcolor="rgba(0,0,0,0)",
         margin={"l": 8, "r": 56, "t": 0, "b": 24},
         hovermode="closest",
+        barcornerradius=_PLOT_CORNER_RADIUS,
     )
     return _create_plot_html(fig, config=PLOT_CONFIG)
 
@@ -464,7 +467,8 @@ def get_party_distribution_plot_user(
                 "colors": [
                     _hex_to_rgba(PARTY_COLORS.get(party, _PARTY_COLOR_OTHER))
                     for party in labels
-                ]
+                ],
+                "cornerradius": _PLOT_CORNER_RADIUS,
             },
         )
     )
@@ -489,7 +493,7 @@ def get_party_distribution_plot_user(
 def get_temporal_party_distribution_plot_user(
     daily_party_counts: list[DailyPartyCountRecord],
 ) -> dict:
-    """Create weekly watched videos visualization with stacked area chart."""
+    """Create daily watched videos visualization with stacked bar chart."""
     relevant_data = [c for c in daily_party_counts if c["party"] != NO_PARTY_KEY]
 
     if not relevant_data:
@@ -518,14 +522,13 @@ def get_temporal_party_distribution_plot_user(
 
         counts = party_data[party]
         fig.add_trace(
-            go.Scatter(
+            go.Bar(
                 x=all_dates,
                 y=[counts.get(d, 0) for d in all_dates],
                 name=party,
-                mode="lines",
-                line={"width": 0},
-                stackgroup="one",
-                fillcolor=_hex_to_rgba(PARTY_COLORS.get(party, _PARTY_COLOR_OTHER)),
+                marker={
+                    "color": _hex_to_rgba(PARTY_COLORS.get(party, _PARTY_COLOR_OTHER))
+                },
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",
@@ -545,8 +548,9 @@ def get_temporal_party_distribution_plot_user(
     }
 
     fig.update_layout(
+        barmode="stack",
         xaxis_title="Datum",
-        yaxis_title="Anzahl gesehener Videos (kumulativ)",
+        yaxis_title="",
         hovermode="x unified",
         dragmode=False,
         showlegend=True,
@@ -560,6 +564,8 @@ def get_temporal_party_distribution_plot_user(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         hoverdistance=100,
         hoverlabel={"namelength": 0},
+        bargap=0.15,
+        barcornerradius=_PLOT_CORNER_RADIUS,
     )
 
     fig.update_xaxes(
@@ -577,6 +583,7 @@ def get_temporal_party_distribution_plot_user(
     )
 
     fig.update_yaxes(
+        automargin=True,
         showgrid=True,
         gridwidth=1,
         gridcolor="gray",
@@ -584,7 +591,8 @@ def get_temporal_party_distribution_plot_user(
         zerolinewidth=1,
         zerolinecolor="gray",
         tickfont={"size": 20, "color": "black"},
-        title_font={"size": 20},
+        title_font={"size": 1},
+        title_standoff=0,
     )
 
     return {"html": _create_plot_html(fig, config=PLOT_CONFIG)}

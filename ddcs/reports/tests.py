@@ -1165,9 +1165,13 @@ class TemporalPartyDistributionPlotTests(TestCase):
             [
                 {"date": "2026-05-08", "party": "SPD", "count": 2},
                 {"date": "2026-05-09", "party": "SPD", "count": 1},
+                {"date": "2026-05-08", "party": "CDU/CSU", "count": 3},
             ]
         )
         self.assertIsNotNone(result["html"])
+        self.assertIn("bar", result["html"])
+        self.assertIn("stack", result["html"])
+        self.assertIn("barcornerradius", result["html"])
 
 
 class HexToRgbaTests(TestCase):
