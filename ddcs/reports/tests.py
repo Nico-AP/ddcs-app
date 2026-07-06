@@ -14,7 +14,6 @@ from django.http import Http404
 from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 
-import ddcs.reports.metrics.account_metrics
 import ddcs.reports.plots.utils
 from ddcs.core.types import TikTokUserData
 from ddcs.metadata.models import (
@@ -42,6 +41,7 @@ from ddcs.reports.config import (
     REPORT_FIRST_DATE_TO_INCLUDE,
 )
 from ddcs.reports.factories import get_synthetic_report_statistics
+from ddcs.reports.metrics import account_metrics, user_metrics
 from ddcs.reports.plots import public_plots, user_plots
 from ddcs.reports.utils import load_account_party_mapping
 from ddcs.reports.views import PublicPlotsDevView
@@ -270,10 +270,10 @@ class ReferenceDemographicFilterTests(TestCase):
 
 class GetVideoIdListTests(TestCase):
     def test_returns_empty_for_none(self):
-        self.assertEqual(services._get_video_id_list(None), [])
+        self.assertEqual(user_metrics._get_video_id_list(None), [])
 
     def test_returns_empty_for_empty_list(self):
-        self.assertEqual(services._get_video_id_list([]), [])
+        self.assertEqual(user_metrics._get_video_id_list([]), [])
 
     def test_filters_records_before_cutoff(self):
         after = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=1)
@@ -282,18 +282,18 @@ class GetVideoIdListTests(TestCase):
             {"date": after, "video_id": 1},
             {"date": before, "video_id": 2},
         ]
-        self.assertEqual(services._get_video_id_list(data), [1])
+        self.assertEqual(user_metrics._get_video_id_list(data), [1])
 
     def test_includes_records_on_cutoff(self):
         data = [{"date": REPORT_FIRST_DATE_TO_INCLUDE, "video_id": 9}]
-        self.assertEqual(services._get_video_id_list(data), [9])
+        self.assertEqual(user_metrics._get_video_id_list(data), [9])
 
     def test_skips_records_with_unparseable_date(self):
         data = [
             {"date": "not a date", "video_id": 1},
             {"date": REPORT_FIRST_DATE_TO_INCLUDE, "video_id": 2},
         ]
-        self.assertEqual(services._get_video_id_list(data), [2])
+        self.assertEqual(user_metrics._get_video_id_list(data), [2])
 
     def test_skips_records_with_missing_video_id(self):
         data = [
@@ -301,7 +301,7 @@ class GetVideoIdListTests(TestCase):
             {"date": REPORT_FIRST_DATE_TO_INCLUDE},
             {"date": REPORT_FIRST_DATE_TO_INCLUDE, "video_id": 5},
         ]
-        self.assertEqual(services._get_video_id_list(data), [5])
+        self.assertEqual(user_metrics._get_video_id_list(data), [5])
 
     def test_preserves_duplicates_and_order(self):
         d = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(hours=1)
@@ -310,23 +310,23 @@ class GetVideoIdListTests(TestCase):
             {"date": d, "video_id": 2},
             {"date": d, "video_id": 1},
         ]
-        self.assertEqual(services._get_video_id_list(data), [1, 2, 1])
+        self.assertEqual(user_metrics._get_video_id_list(data), [1, 2, 1])
 
 
 class GetUsernameListTests(TestCase):
     def test_returns_empty_for_none(self):
-        self.assertEqual(services._get_username_list(None), [])
+        self.assertEqual(user_metrics._get_username_list(None), [])
 
     def test_returns_empty_for_empty_list(self):
-        self.assertEqual(services._get_username_list([]), [])
+        self.assertEqual(user_metrics._get_username_list([]), [])
 
     def test_extracts_usernames(self):
         data = [{"username": "alice"}, {"username": "bob"}]
-        self.assertEqual(services._get_username_list(data), ["alice", "bob"])
+        self.assertEqual(user_metrics._get_username_list(data), ["alice", "bob"])
 
     def test_skips_records_without_username(self):
         data = [{"username": None}, {"username": "alice"}, {}]
-        self.assertEqual(services._get_username_list(data), ["alice"])
+        self.assertEqual(user_metrics._get_username_list(data), ["alice"])
 
 
 class BuildPoliticalVideoMetadataTests(TestCase):
@@ -342,7 +342,7 @@ class BuildPoliticalVideoMetadataTests(TestCase):
     def test_party_account_videos_map_to_csv_party(self):
         videos = [self._video(1, "alice"), self._video(2, "bob")]
         mapping = {"alice": "SPD", "bob": "CDU/CSU"}
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             videos, [], mapping
         )
         self.assertEqual(party_map, {1: "SPD", 2: "CDU/CSU"})
@@ -351,7 +351,7 @@ class BuildPoliticalVideoMetadataTests(TestCase):
     def test_party_account_video_with_unmapped_user_is_skipped(self):
         videos = [self._video(1, "alice"), self._video(2, "stranger")]
         mapping = {"alice": "SPD"}
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             videos, [], mapping
         )
         self.assertEqual(party_map, {1: "SPD"})
@@ -359,14 +359,14 @@ class BuildPoliticalVideoMetadataTests(TestCase):
 
     def test_non_party_political_videos_map_to_no_party_key(self):
         non_party = [self._video(10, "stranger"), self._video(11, "outsider")]
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             [], non_party, {}
         )
         self.assertEqual(party_map, {10: NO_PARTY_KEY, 11: NO_PARTY_KEY})
         self.assertEqual(username_map, {10: "stranger", 11: "outsider"})
 
     def test_non_party_video_without_user_gets_empty_username(self):
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             [], [self._video(99, None)], {}
         )
         self.assertEqual(party_map, {99: NO_PARTY_KEY})
@@ -375,21 +375,23 @@ class BuildPoliticalVideoMetadataTests(TestCase):
     def test_combines_both_buckets(self):
         party_videos = [self._video(1, "alice")]
         non_party = [self._video(2, "stranger")]
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             party_videos, non_party, {"alice": "SPD"}
         )
         self.assertEqual(party_map, {1: "SPD", 2: NO_PARTY_KEY})
         self.assertEqual(username_map, {1: "alice", 2: "stranger"})
 
     def test_returns_empty_maps_for_no_videos(self):
-        party_map, username_map = services._build_political_video_metadata([], [], {})
+        party_map, username_map = user_metrics._build_political_video_metadata(
+            [], [], {}
+        )
         self.assertEqual(party_map, {})
         self.assertEqual(username_map, {})
 
 
 class ComputePartyCountsTests(TestCase):
     def test_counts_per_party_and_bucket_unknown(self):
-        result = services._compute_party_counts(
+        result = user_metrics._compute_party_counts(
             seen_video_ids=[1, 1, 2, 99],
             video_party_map={1: "SPD", 2: "CDU/CSU"},
         )
@@ -397,15 +399,15 @@ class ComputePartyCountsTests(TestCase):
         self.assertEqual(as_dict, {"SPD": 2, "CDU/CSU": 1, NO_PARTY_KEY: 1})
 
     def test_returns_empty_list_for_no_videos(self):
-        self.assertEqual(services._compute_party_counts([], {}), [])
+        self.assertEqual(user_metrics._compute_party_counts([], {}), [])
 
     def test_all_buckets_to_no_party_when_no_political_videos_seen(self):
-        result = services._compute_party_counts([10, 20], {})
+        result = user_metrics._compute_party_counts([10, 20], {})
         self.assertEqual(result, [{"party": NO_PARTY_KEY, "count": 2}])
 
     def test_orders_by_parties_order_constant(self):
         # Input order intentionally reversed vs PARTIES_ORDER.
-        result = services._compute_party_counts(
+        result = user_metrics._compute_party_counts(
             seen_video_ids=[1, 2, 3, 4, 99],
             video_party_map={1: "AfD", 2: "SPD", 3: "CDU/CSU", 4: "B90/GRÜNE"},
         )
@@ -415,7 +417,7 @@ class ComputePartyCountsTests(TestCase):
         )
 
     def test_unknown_party_sorts_after_known_alphabetically(self):
-        result = services._compute_party_counts(
+        result = user_metrics._compute_party_counts(
             seen_video_ids=[1, 2, 3],
             video_party_map={1: "SPD", 2: "Volt", 3: "Tierschutz"},
         )
@@ -436,7 +438,7 @@ class ComputeDailyPartyCountsTests(TestCase):
             self._record("2026-05-09", 2),
         ]
         video_party_map = {1: "SPD", 2: "CDU/CSU"}
-        result = services._compute_daily_party_counts(records, video_party_map)
+        result = user_metrics._compute_daily_party_counts(records, video_party_map)
         self.assertIn({"date": "2026-05-08", "party": "SPD", "count": 2}, result)
         self.assertIn({"date": "2026-05-09", "party": "CDU/CSU", "count": 1}, result)
 
@@ -446,13 +448,15 @@ class ComputeDailyPartyCountsTests(TestCase):
             self._record("2026-05-08", 1),
             self._record("2026-05-09", 1),
         ]
-        result = services._compute_daily_party_counts(records, {1: "SPD", 2: "CDU/CSU"})
+        result = user_metrics._compute_daily_party_counts(
+            records, {1: "SPD", 2: "CDU/CSU"}
+        )
         dates = [r["date"] for r in result]
         self.assertEqual(dates, sorted(dates))
 
     def test_buckets_unmapped_to_no_party(self):
         records = [self._record("2026-05-08", 999)]
-        result = services._compute_daily_party_counts(records, {})
+        result = user_metrics._compute_daily_party_counts(records, {})
         self.assertEqual(
             result, [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
         )
@@ -463,14 +467,14 @@ class ComputeDailyPartyCountsTests(TestCase):
             {"date": datetime(2026, 5, 8, tzinfo=UTC), "video_id": None},
             self._record("2026-05-08", 1),
         ]
-        result = services._compute_daily_party_counts(records, {1: "SPD"})
+        result = user_metrics._compute_daily_party_counts(records, {1: "SPD"})
         self.assertEqual(result, [{"date": "2026-05-08", "party": "SPD", "count": 1}])
 
 
 class GetTopVideosTests(TestCase):
     def test_returns_videos_sorted_by_view_count_desc(self):
         seen = [1, 2, 2, 3, 3, 3]
-        result = services._get_top_videos(
+        result = user_metrics._get_top_videos(
             seen_pol_video_ids=seen,
             video_party_map={1: "SPD", 2: "CDU/CSU", 3: "Grüne"},
             username_by_video={1: "alice", 2: "bob", 3: "carol"},
@@ -485,18 +489,18 @@ class GetTopVideosTests(TestCase):
 
     def test_respects_n_limit(self):
         seen = [1, 2, 3, 4, 5, 6, 7]
-        result = services._get_top_videos(seen, {}, {}, {}, n=2)
+        result = user_metrics._get_top_videos(seen, {}, {}, {}, n=2)
         self.assertEqual(len(result), 2)
 
     def test_returns_empty_for_no_seen_videos(self):
-        self.assertEqual(services._get_top_videos([], {}, {}, {}), [])
+        self.assertEqual(user_metrics._get_top_videos([], {}, {}, {}), [])
 
     def test_description_defaults_to_empty_string_when_missing(self):
-        result = services._get_top_videos([1], {1: "SPD"}, {1: "alice"}, {}, n=1)
+        result = user_metrics._get_top_videos([1], {1: "SPD"}, {1: "alice"}, {}, n=1)
         self.assertEqual(result[0]["description"], "")
 
     def test_username_defaults_to_empty_string_when_missing(self):
-        result = services._get_top_videos([1], {1: "SPD"}, {}, {}, n=1)
+        result = user_metrics._get_top_videos([1], {1: "SPD"}, {}, {}, n=1)
         self.assertEqual(result[0]["username"], "")
 
 
@@ -508,15 +512,17 @@ class GetTopVideosTests(TestCase):
 class ExtractUsernameFromLinkTests(TestCase):
     def test_extracts_username_from_standard_link(self):
         self.assertEqual(
-            services._extract_username_from_link(
+            user_metrics._extract_username_from_link(
                 "https://www.tiktok.com/@alice/video/12345"
             ),
             "alice",
         )
 
     def test_returns_none_for_invalid_link(self):
-        self.assertIsNone(services._extract_username_from_link(""))
-        self.assertIsNone(services._extract_username_from_link("https://example.com"))
+        self.assertIsNone(user_metrics._extract_username_from_link(""))
+        self.assertIsNone(
+            user_metrics._extract_username_from_link("https://example.com")
+        )
 
 
 class PartyVideosFromWatchHistoryTests(TestCase):
@@ -534,7 +540,7 @@ class PartyVideosFromWatchHistoryTests(TestCase):
                 "link": "https://www.tiktok.com/@stranger/video/100",
             },
         ]
-        party_map, username_map = services._party_videos_from_watch_history(
+        party_map, username_map = user_metrics._party_videos_from_watch_history(
             watch_history, {"alice": "SPD"}
         )
         self.assertEqual(party_map, {99: "SPD"})
@@ -552,7 +558,7 @@ class PartyVideosFromWatchHistoryTests(TestCase):
                 "link": "https://www.tiktok.com/@alice/video/2",
             },
         ]
-        party_map, username_map = services._party_videos_from_watch_history(
+        party_map, username_map = user_metrics._party_videos_from_watch_history(
             watch_history, {"alice": "SPD"}
         )
         self.assertEqual(party_map, {})
@@ -573,15 +579,15 @@ class GetDescriptionsByVideoTests(TestCase):
         )
 
     def test_returns_descriptions_for_matched_videos(self):
-        result = services._get_descriptions_by_video([111, 222])
+        result = user_metrics._get_descriptions_by_video([111, 222])
         self.assertEqual(result[111], "Wichtige Politik Nachrichten")
         self.assertEqual(result[222], "")
 
     def test_returns_empty_dict_for_no_ids(self):
-        self.assertEqual(services._get_descriptions_by_video([]), {})
+        self.assertEqual(user_metrics._get_descriptions_by_video([]), {})
 
     def test_ignores_unknown_video_ids(self):
-        result = services._get_descriptions_by_video([999])
+        result = user_metrics._get_descriptions_by_video([999])
         self.assertEqual(result, {})
 
     def test_prefers_latest_api_info_with_description(self):
@@ -594,7 +600,7 @@ class GetDescriptionsByVideoTests(TestCase):
         APIVideoInfos.objects.filter(pk=latest.pk).update(
             updated_at=datetime.now(tz=UTC) + timedelta(days=1)
         )
-        result = services._get_descriptions_by_video([333])
+        result = user_metrics._get_descriptions_by_video([333])
         self.assertEqual(result[333], "neueste Beschreibung")
 
 
@@ -659,7 +665,7 @@ class ComputeReportStatisticsTests(TestCase):
 
     def _patch_csv(self, mapping: dict[str, str] | None = None):
         return patch.object(
-            services,
+            user_metrics,
             "load_account_party_mapping",
             return_value=mapping if mapping is not None else {"alice": "SPD"},
         )
@@ -677,7 +683,7 @@ class ComputeReportStatisticsTests(TestCase):
             liked_videos=[{"date": cutoff, "video_id": 2}],
         )
         with self._patch_csv():
-            result = services.compute_user_report_statistics(data)
+            result = user_metrics.compute_user_report_metrics(data)
 
         # v1, v2 and v4 are political; v3 is not.
         self.assertEqual(set(result["seen_pol_video_ids"]), {1, 2, 4})
@@ -708,7 +714,7 @@ class ComputeReportStatisticsTests(TestCase):
             watch_history=[{"date": cutoff, "video_id": 4}],
         )
         with self._patch_csv():
-            result = services.compute_user_report_statistics(data)
+            result = user_metrics.compute_user_report_metrics(data)
 
         # v4 (party-account + monitored hashtag) — counts once, as SPD.
         self.assertEqual(result["seen_pol_video_ids"], [4])
@@ -731,7 +737,7 @@ class ComputeReportStatisticsTests(TestCase):
             ],
         )
         with self._patch_csv():
-            result = services.compute_user_report_statistics(data)
+            result = user_metrics.compute_user_report_metrics(data)
 
         by_id = {v["video_id"]: v for v in result["top_videos"]}
         self.assertEqual(by_id[2]["username"], "stranger")
@@ -761,7 +767,7 @@ class ComputeReportStatisticsTests(TestCase):
             ],
         )
         with self._patch_csv():
-            result = services.compute_user_report_statistics(data)
+            result = user_metrics.compute_user_report_metrics(data)
 
         self.assertEqual(result["seen_pol_video_ids"], [5, 5])
         by_id = {v["video_id"]: v for v in result["top_videos"]}
@@ -771,7 +777,7 @@ class ComputeReportStatisticsTests(TestCase):
 
     def test_handles_completely_empty_user_data(self):
         with self._patch_csv():
-            result = services.compute_user_report_statistics(TikTokUserData())
+            result = user_metrics.compute_user_report_metrics(TikTokUserData())
         self.assertEqual(result["videos_seen_count_total"], 0)
         self.assertEqual(result["seen_pol_video_ids"], [])
         self.assertEqual(result["liked_pol_video_ids"], [])
@@ -781,7 +787,7 @@ class ComputeReportStatisticsTests(TestCase):
 
 
 class GenerateReportStatisticsTests(TestCase):
-    @patch.object(services, "compute_user_report_statistics")
+    @patch.object(services, "compute_user_report_metrics")
     def test_persists_statistics_to_db(self, mock_compute):
         mock_compute.return_value = {
             "videos_seen_count_total": 5,
@@ -1102,7 +1108,7 @@ class HexToRgbaTests(TestCase):
 
 class PostDataDateRangeTests(TestCase):
     def test_range_starts_at_configured_start_date_and_ends_with_lag(self):
-        start, end = ddcs.reports.metrics.account_metrics._post_data_date_range()
+        start, end = account_metrics._post_data_date_range()
         self.assertEqual(start, ddcs.reports.config.PUBLIC_POST_DATA_START_DATE)
         expected_end = timezone.now().date() - timedelta(
             days=ddcs.reports.config.PUBLIC_POST_DATA_END_LAG_DAYS
@@ -1118,14 +1124,14 @@ class ComputePostDataTests(TestCase):
 
     def _patch_mapping(self, mapping: dict[str, str]):
         return patch.object(
-            ddcs.reports.metrics.account_metrics,
+            account_metrics,
             "load_account_party_mapping",
             return_value=mapping,
         )
 
     def _patch_range(self, start: date, end: date):
         return patch.object(
-            ddcs.reports.metrics.account_metrics,
+            account_metrics,
             "_post_data_date_range",
             return_value=(start, end),
         )
@@ -1148,7 +1154,7 @@ class ComputePostDataTests(TestCase):
         APIVideoInfos.objects.create(video=v1, create_time=moment)
         APIVideoInfos.objects.create(video=v2, create_time=moment + timedelta(hours=2))
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertEqual(
             records,
             [{"username": "alice", "party": "SPD", "date": "2026-06-01", "count": 2}],
@@ -1160,13 +1166,13 @@ class ComputePostDataTests(TestCase):
             user=self.alice, target_date=day, status=SyncAttempt.Status.SUCCESS
         )
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertEqual(records[0]["count"], 0)
 
     def test_zero_posts_without_successful_sync_is_none(self):
         day = date(2026, 6, 1)
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertIsNone(records[0]["count"])
 
     def test_failed_sync_attempt_does_not_count_as_synced(self):
@@ -1175,14 +1181,14 @@ class ComputePostDataTests(TestCase):
             user=self.alice, target_date=day, status=SyncAttempt.Status.RATE_LIMITED
         )
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertIsNone(records[0]["count"])
 
     def test_builds_one_record_per_account_per_date_in_range(self):
         start, end = date(2026, 6, 1), date(2026, 6, 3)
         mapping = {"alice": "SPD", "bob": "CDU/CSU"}
         with self._patch_mapping(mapping), self._patch_range(start, end):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertEqual(len(records), len(mapping) * 3)
         self.assertEqual({r["username"] for r in records}, set(mapping))
 
@@ -1194,25 +1200,23 @@ class GetPostDataCacheTests(TestCase):
 
     def test_caches_result_between_calls(self):
         with patch.object(
-            ddcs.reports.metrics.account_metrics,
+            account_metrics,
             "_compute_post_data",
             return_value=[{"username": "alice"}],
         ) as mock_compute:
-            first = ddcs.reports.metrics.account_metrics.get_post_data()
-            second = ddcs.reports.metrics.account_metrics.get_post_data()
+            first = account_metrics.get_post_data()
+            second = account_metrics.get_post_data()
         mock_compute.assert_called_once()
         self.assertEqual(first, second)
 
     def test_force_refresh_recomputes(self):
         with patch.object(
-            ddcs.reports.metrics.account_metrics,
+            account_metrics,
             "_compute_post_data",
             side_effect=[["v1"], ["v2"]],
         ) as mock_compute:
-            first = ddcs.reports.metrics.account_metrics.get_post_data()
-            second = ddcs.reports.metrics.account_metrics.get_post_data(
-                force_refresh=True
-            )
+            first = account_metrics.get_post_data()
+            second = account_metrics.get_post_data(force_refresh=True)
         self.assertEqual(mock_compute.call_count, 2)
         self.assertEqual(first, ["v1"])
         self.assertEqual(second, ["v2"])
@@ -1225,11 +1229,11 @@ class AggregatePartyCountsTests(TestCase):
             {"username": "b", "party": "SPD", "date": "2026-06-02", "count": 3},
             {"username": "c", "party": "CDU/CSU", "date": "2026-06-01", "count": None},
         ]
-        result = ddcs.reports.metrics.account_metrics.aggregate_party_counts(records)
+        result = account_metrics.aggregate_party_counts(records)
         self.assertEqual({r["party"]: r["count"] for r in result}, {"SPD": 5})
 
     def test_returns_empty_list_for_no_records(self):
-        result = ddcs.reports.metrics.account_metrics.aggregate_party_counts([])
+        result = account_metrics.aggregate_party_counts([])
         self.assertEqual(result, [])
 
 
@@ -1241,9 +1245,7 @@ class AggregateDailyPartyCountsTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 5},
             {"username": "c", "party": "CDU/CSU", "date": "2026-06-01", "count": None},
         ]
-        result = ddcs.reports.metrics.account_metrics.aggregate_daily_party_counts(
-            records
-        )
+        result = account_metrics.aggregate_daily_party_counts(records)
         self.assertEqual(
             result,
             [
@@ -1257,9 +1259,7 @@ class AggregateDailyPartyCountsTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-02", "count": 1},
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 1},
         ]
-        result = ddcs.reports.metrics.account_metrics.aggregate_daily_party_counts(
-            records
-        )
+        result = account_metrics.aggregate_daily_party_counts(records)
         dates = [r["date"] for r in result]
         self.assertEqual(dates, sorted(dates))
 
