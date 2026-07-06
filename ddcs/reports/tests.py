@@ -14,12 +14,9 @@ from django.http import Http404
 from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 
-import ddcs.reports.plots.public_plots as public_plots
-import ddcs.reports.plots.user_plots as user_plots
 import ddcs.reports.metrics.account_metrics
 import ddcs.reports.plots.utils
 from ddcs.core.types import TikTokUserData
-from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.models import (
     DataOrigins,
     SyncAttempt,
@@ -45,6 +42,7 @@ from ddcs.reports.config import (
     REPORT_FIRST_DATE_TO_INCLUDE,
 )
 from ddcs.reports.factories import get_synthetic_report_statistics
+from ddcs.reports.plots import public_plots, user_plots
 from ddcs.reports.utils import load_account_party_mapping
 from ddcs.reports.views import PublicPlotsDevView
 
@@ -1033,7 +1031,9 @@ class BehaviourProfileComparisonTests(TestCase):
         self.assertNotIn("description_html", rows[0])
 
     def test_returns_html_for_legacy_wrapper(self):
-        result = user_plots.get_behaviour_profile_comparison([self._sample_comparison()])
+        result = user_plots.get_behaviour_profile_comparison(
+            [self._sample_comparison()]
+        )
         self.assertIsNotNone(result["html"])
         self.assertIn("plotly-graph-div", result["html"])
 
@@ -1067,21 +1067,17 @@ class TemporalPartyDistributionPlotTests(TestCase):
         )
 
     def test_returns_none_html_when_only_no_party_records(self):
-        result = (
-            user_plots.get_temporal_party_distribution_plot_user(
-                [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
-            )
+        result = user_plots.get_temporal_party_distribution_plot_user(
+            [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
         )
         self.assertEqual(result, {"html": None})
 
     def test_returns_html_when_party_records_present(self):
-        result = (
-            user_plots.get_temporal_party_distribution_plot_user(
-                [
-                    {"date": "2026-05-08", "party": "SPD", "count": 2},
-                    {"date": "2026-05-09", "party": "SPD", "count": 1},
-                ]
-            )
+        result = user_plots.get_temporal_party_distribution_plot_user(
+            [
+                {"date": "2026-05-08", "party": "SPD", "count": 2},
+                {"date": "2026-05-09", "party": "SPD", "count": 1},
+            ]
         )
         self.assertIsNotNone(result["html"])
 
@@ -1277,9 +1273,7 @@ class PartyDistributionAllAccountsPlotTests(TestCase):
         records = [
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": None}
         ]
-        result = public_plots.get_party_distribution_all_accounts(
-            records
-        )
+        result = public_plots.get_party_distribution_all_accounts(records)
         self.assertEqual(result, {"html": None})
 
     def test_returns_html_and_top_party_data(self):
@@ -1287,9 +1281,7 @@ class PartyDistributionAllAccountsPlotTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 5},
             {"username": "b", "party": "CDU/CSU", "date": "2026-06-01", "count": 2},
         ]
-        result = public_plots.get_party_distribution_all_accounts(
-            records
-        )
+        result = public_plots.get_party_distribution_all_accounts(records)
         self.assertIsNotNone(result["html"])
         expected = {"party": "SPD", "value": 5, "color": "#e4454f"}
         self.assertEqual(result["data"], expected)
@@ -1303,9 +1295,7 @@ class PartyDistributionAllAccountsPlotTests(TestCase):
                 "count": 1,
             }
         ]
-        result = public_plots.get_party_distribution_all_accounts(
-            records
-        )
+        result = public_plots.get_party_distribution_all_accounts(records)
         self.assertEqual(
             result["data"]["color"], ddcs.reports.plots.utils.PARTY_COLOR_OTHER
         )
@@ -1313,18 +1303,14 @@ class PartyDistributionAllAccountsPlotTests(TestCase):
 
 class TemporalPartyDistributionAllAccountsPlotTests(TestCase):
     def test_returns_none_html_when_empty(self):
-        result = public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
-            []
-        )
+        result = public_plots.get_temporal_party_distribution_all_accounts([])
         self.assertEqual(result, {"html": None})
 
     def test_returns_none_html_when_all_counts_are_none(self):
         records = [
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": None}
         ]
-        result = public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
-            records
-        )
+        result = public_plots.get_temporal_party_distribution_all_accounts(records)
         self.assertEqual(result, {"html": None})
 
     def test_returns_html_when_counts_present(self):
@@ -1332,9 +1318,7 @@ class TemporalPartyDistributionAllAccountsPlotTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 2},
             {"username": "a", "party": "SPD", "date": "2026-06-02", "count": 1},
         ]
-        result = public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
-            records
-        )
+        result = public_plots.get_temporal_party_distribution_all_accounts(records)
         self.assertIsNotNone(result["html"])
 
 
@@ -1466,7 +1450,7 @@ class GetReportViewTests(TestCase):
     def test_context_includes_intro_text_fields(self):
         view = views.GetReportView()
         view.statistics = self._statistics()
-        view.kwargs = {}
+        view.kwargs = {"participant_id": "abc123"}
         with (
             patch.object(
                 views, "get_party_distribution_plot_user", return_value={"html": "p"}
@@ -1503,7 +1487,7 @@ class GetReportViewTests(TestCase):
         view.statistics = self._statistics(
             videos_seen_count_total=0, seen_pol_video_ids=[]
         )
-        view.kwargs = {}
+        view.kwargs = {"participant_id": "abc123"}
         with (
             patch.object(
                 views, "get_party_distribution_plot_user", return_value={"html": None}
