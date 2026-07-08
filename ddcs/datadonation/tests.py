@@ -211,6 +211,14 @@ class AddVideoIdToRecordTests(TestCase):
         result = _add_video_id_to_record(record)
         self.assertEqual(result["video_id"], None)
 
+    def test_adds_video_id_from_shared_content(self):
+        record = {
+            "sharedcontent": "https://www.tiktok.com/@user/video/99",
+        }
+        result = _add_video_id_to_record(record)
+        self.assertEqual(result["video_id"], 99)
+        self.assertEqual(result["link"], record["sharedcontent"])
+
     def test_returns_record_unchanged_when_no_link(self):
         record = {"date": "2026-05-08 13:15:38"}
         result = _add_video_id_to_record(record)
@@ -255,6 +263,9 @@ class MapToUserDataTests(TestCase):
         self.assertIsNone(result.watch_history)
         self.assertIsNone(result.followed_accounts)
         self.assertIsNone(result.liked_videos)
+        self.assertIsNone(result.shared_videos)
+        self.assertIsNone(result.video_bookmarks)
+        self.assertIsNone(result.comments)
 
     def test_preserves_none_blueprint_values(self):
         data = {

@@ -13,13 +13,18 @@ from typing import Any
 from ddm.participation.models import Participant
 from django.conf import settings
 from django.http import Http404, HttpRequest
+from django.urls import reverse
 from django.views.generic import TemplateView
 
 from ddcs.datadonation.services import get_user_data
-from ddcs.reports.config import (
-    HASHTAGS_TO_EXCLUDE,
-    REPORT_FIRST_DATE_TO_INCLUDE,
+from ddcs.reports.behaviour_metrics import (
+    apply_reference_demographic_filter,
+    normalize_age_group,
+    normalize_gender_filter,
+    reference_group_label,
+    reference_group_size,
 )
+from ddcs.reports.config import HASHTAGS_TO_EXCLUDE, REPORT_FIRST_DATE_TO_INCLUDE
 from ddcs.reports.factories import (
     get_synthetic_post_data,
     get_synthetic_report_statistics,
@@ -30,12 +35,41 @@ from ddcs.reports.plots.public_plots import (
     get_temporal_party_distribution_all_accounts,
 )
 from ddcs.reports.plots.user_plots import (
-    get_behaviour_profile_radar,
+    get_behaviour_profile_rows,
+    get_behaviour_profile_slides,
     get_party_distribution_plot_user,
     get_temporal_party_distribution_plot_user,
 )
 from ddcs.reports.services import generate_user_report_statistics
+from ddcs.reports.utils import enrich_top_videos_for_embed
 from ddcs.reports.wordclouds import get_wordcloud
+
+
+def _behaviour_profile_context(
+    behaviour_comparisons: list[dict],
+    *,
+    age_group: str = "all",
+    gender: str = "any",
+    behaviour_profile_url: str,
+) -> dict[str, Any]:
+    age_group = normalize_age_group(age_group)
+    gender = normalize_gender_filter(gender)
+    filtered_comparisons = apply_reference_demographic_filter(
+        behaviour_comparisons,
+        age_group=age_group,
+        gender=gender,
+    )
+    group_size = reference_group_size(age_group, gender)
+    return {
+        "behaviour_comparisons": filtered_comparisons,
+        "behaviour_profile_rows": get_behaviour_profile_rows(filtered_comparisons),
+        "behaviour_profile_slides": get_behaviour_profile_slides(filtered_comparisons),
+        "behaviour_profile_url": behaviour_profile_url,
+        "behaviour_age_group": age_group,
+        "behaviour_gender": gender,
+        "behaviour_reference_group_label": reference_group_label(age_group, gender),
+        "behaviour_reference_group_size": group_size,
+    }
 
 
 class MainReportView(TemplateView):
@@ -91,13 +125,21 @@ class GetReportView(TemplateView):
             for video in self.statistics.top_videos
         ]
 
+    def _behaviour_profile_url(self) -> str:
+        return reverse(
+            "reports:behaviour_profile",
+            kwargs={"participant_id": self.kwargs["participant_id"]},
+        )
+
     def get_context_data(self, **kwargs) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
 
         behaviour_comparisons = self.statistics.behaviour_comparisons
-        context["behaviour_comparisons"] = behaviour_comparisons
-        context["behaviour_profile_radar"] = get_behaviour_profile_radar(
-            behaviour_comparisons
+        context.update(
+            _behaviour_profile_context(
+                behaviour_comparisons,
+                behaviour_profile_url=self._behaviour_profile_url(),
+            )
         )
 
         # Intro text
@@ -122,8 +164,10 @@ class GetReportView(TemplateView):
             )
         )
 
-        # Top videos table
-        context["top_videos"] = self.get_top_videos_table_stats()
+        # Top videos carousel
+        context["top_videos"] = enrich_top_videos_for_embed(
+            self.get_top_videos_table_stats()
+        )
 
         # Wordclouds
         context["wordcloud_party_user"] = get_wordcloud(
@@ -143,8 +187,39 @@ class GetSyntheticReportView(GetReportView):
     def _get_statistics(self) -> ParticipantReportStatistics:
         return get_synthetic_report_statistics(self.participant)
 
+    def _behaviour_profile_url(self) -> str:
+        return reverse("reports:behaviour_profile_synthetic")
+
     def _get_behaviour_comparisons(self) -> list[dict]:
         return self.statistics.behaviour_comparisons
+
+
+class BehaviourProfileFilterView(GetReportView):
+    template_name = "reports/partials/behaviour_profile_content.html"
+
+    def get_context_data(self, **kwargs) -> dict[str, Any]:
+        age_group = normalize_age_group(self.request.GET.get("age_group"))
+        gender = normalize_gender_filter(self.request.GET.get("gender"))
+        return _behaviour_profile_context(
+            self.statistics.behaviour_comparisons,
+            age_group=age_group,
+            gender=gender,
+            behaviour_profile_url=self._behaviour_profile_url(),
+        )
+
+
+class BehaviourProfileFilterSyntheticView(GetSyntheticReportView):
+    template_name = "reports/partials/behaviour_profile_content.html"
+
+    def get_context_data(self, **kwargs) -> dict[str, Any]:
+        age_group = normalize_age_group(self.request.GET.get("age_group"))
+        gender = normalize_gender_filter(self.request.GET.get("gender"))
+        return _behaviour_profile_context(
+            self.statistics.behaviour_comparisons,
+            age_group=age_group,
+            gender=gender,
+            behaviour_profile_url=self._behaviour_profile_url(),
+        )
 
 
 class DebugOrSuperuserMixin:

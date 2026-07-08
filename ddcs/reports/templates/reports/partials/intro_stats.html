@@ -7,11 +7,11 @@
   </p>
   <p>
     {% if n_seen_pol_videos == 0 %}
-      Davon hatte <span class="report-highlight">kein</span> Video einen politischen Hashtag.
+      Davon hatten <span class="report-highlight">keine</span> Videos einen politischen Schlagwort oder kamen von offiziellen Partei-Accounts. {% include "reports/partials/political_content_info_trigger.html" %}
     {% elif n_seen_pol_videos == 1 %}
-      Davon hatte nur <span class="report-highlight">1</span> Video einen politischen Hashtag.
+      Davon hatte nur <span class="report-highlight">1</span> Video einen politischen Schlagwort oder kam von einem offiziellen Partei-Account. {% include "reports/partials/political_content_info_trigger.html" %}
     {% else %}
-      Davon hatten <span class="report-highlight">{{ n_seen_pol_videos }}</span> Videos einen politischen Hashtag.
+      Davon hatten <span class="report-highlight">{{ n_seen_pol_videos }}</span> Videos einen politischen Schlagwort oder kamen von offiziellen Partei-Accounts. {% include "reports/partials/political_content_info_trigger.html" %}
     {% endif %}
   </p>
   {% if n_seen_pol_videos > 0 %}
@@ -21,5 +21,7 @@
     </p>
   {% endif %}
 </div>
+
+{% include "reports/partials/political_content_info_modal.html" %}
 
 <hr />

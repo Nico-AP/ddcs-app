@@ -8,7 +8,7 @@ data without requiring an actual data donation.
 # ruff: noqa: S311
 
 from datetime import UTC, datetime, timedelta
-from random import choices, randint, shuffle
+from random import choices, randint
 
 from ddm.participation.models import Participant
 
@@ -27,6 +27,10 @@ from ddcs.reports.types import (
     PartyCountRecord,
     TopVideoRecord,
 )
+from ddcs.reports.utils import (
+    parse_tiktok_username_from_url,
+    parse_tiktok_video_id_from_url,
+)
 
 # Mirrors what the real pipeline emits: every entry in PARTIES_ORDER,
 # including NO_PARTY_KEY for non-party political (and neutral) videos.
@@ -42,30 +46,15 @@ SYNTHETIC_USERNAMES = [
     "bsw_official",
 ]
 
-SYNTHETIC_HASHTAGS = [
-    "politik",
-    "bundestagswahl",
-    "demokratie",
-    "deutschland",
-    "wahl2025",
-    "bundestag",
-    "wahlkampf",
-    "news",
-    "regierung",
-    "jungealternative",
-    "jungeliberale",
-    "jungeunion",
-    "jusos",
-    "katringoertingeckardt",
-    "keinechancedercdu",
-    "koalition",
-    "kubicki",
-    "larsklingbeil",
-    "lauterbach",
-    "linke",
-    "linkesindzecke",
-    "linkewohnkngssitutuation",
-    "linksfraktion",
+SYNTHETIC_DESCRIPTIONS = [
+    "Wichtige Politik Nachrichten aus dem Bundestag",
+    "Bundestagswahl 2025 - Demokratie stärken",
+    "Wahlkampf Update von der Regierung",
+    "Junge Wählerinnen und Wähler auf TikTok",
+    "Koalitionsverhandlungen und aktuelle Debatten",
+    "News zur Bundestagswahl und Demokratie",
+    "Diskussion über Wirtschaft und Klimaschutz",
+    "Statement zur aktuellen Regierungspolitik",
 ]
 
 
@@ -115,35 +104,71 @@ def get_synthetic_post_data(days: int = 30) -> list[DailyAccountPostCountRecord]
     ]
 
 
-def _synthetic_hashtags_by_video(video_ids: list[int]) -> dict[int, list[str]]:
-    return {
-        video_id: choices(SYNTHETIC_HASHTAGS, k=randint(0, 5)) for video_id in video_ids
-    }
+def _synthetic_descriptions_by_video(video_ids: list[int]) -> dict[int, str]:
+    return {video_id: choices(SYNTHETIC_DESCRIPTIONS)[0] for video_id in video_ids}
+
+
+SYNTHETIC_TOP_VIDEO_URLS: list[str] = [
+    "https://www.tiktok.com/@alice_weidel_afd/video/7658941918302326048",
+    "https://www.tiktok.com/@deinespd/video/7657187761883041057",
+    "https://www.tiktok.com/@die.linke/photo/7623456044794055968",
+]
+
+_SYNTHETIC_TOP_VIDEO_PARTIES = {
+    "alice_weidel_afd": "AfD",
+    "deinespd": "SPD",
+    "die.linke": "Linke",
+}
 
 
 def _synthetic_top_videos(
     video_ids: list[int], n: int = N_TOP_VIDEOS
 ) -> list[TopVideoRecord]:
-    shuffled = list(set(video_ids))
-    shuffle(shuffled)
-    return [
-        {
-            "video_id": video_id,
-            "username": choices(SYNTHETIC_USERNAMES)[0],
-            "party": choices(SYNTHETIC_PARTIES)[0],
-            "view_count": randint(1, 20),
-            "hashtags": choices(SYNTHETIC_HASHTAGS, k=randint(0, 5)),
-        }
-        for video_id in shuffled[:n]
-    ]
+    del video_ids, n
+    videos: list[TopVideoRecord] = []
+    for index, url in enumerate(SYNTHETIC_TOP_VIDEO_URLS):
+        video_id = parse_tiktok_video_id_from_url(url)
+        username = parse_tiktok_username_from_url(url)
+        if video_id is None or not username:
+            continue
+        videos.append(
+            {
+                "video_id": video_id,
+                "username": username,
+                "party": _SYNTHETIC_TOP_VIDEO_PARTIES.get(username, NO_PARTY_KEY),
+                "view_count": len(SYNTHETIC_TOP_VIDEO_URLS) - index,
+                "description": SYNTHETIC_DESCRIPTIONS[
+                    index % len(SYNTHETIC_DESCRIPTIONS)
+                ],
+                "tiktok_url": url,
+            }
+        )
+    return videos
 
 
-def _synthetic_hashtag_list() -> list[str]:
-    return choices(SYNTHETIC_HASHTAGS, k=randint(150, 500))
+def _synthetic_description_list() -> list[str]:
+    return choices(SYNTHETIC_DESCRIPTIONS, k=randint(20, 60))
 
 
-def _synthetic_behaviour_comparisons() -> list[dict]:
+def _synthetic_engagement_record(
+    video_id: int,
+    *,
+    day_offset: int = 0,
+) -> dict:
+    return {
+        "date": REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=day_offset),
+        "link": f"https://www.tiktok.com/@user/video/{video_id}",
+        "video_id": video_id,
+    }
+
+
+def _synthetic_behaviour_comparisons(
+    political_video_ids: frozenset[int] | None = None,
+) -> list[dict]:
     start = REPORT_FIRST_DATE_TO_INCLUDE
+    pol_ids = list(political_video_ids or [])
+    non_pol_ids = [randint(1000000, 9999999) for _ in range(12)]
+
     watch_history = [
         {
             "date": start + timedelta(days=i % 30, hours=(i * 3) % 24),
@@ -152,7 +177,36 @@ def _synthetic_behaviour_comparisons() -> list[dict]:
         }
         for i in range(120)
     ]
-    return compute_behaviour_comparisons(TikTokUserData(watch_history=watch_history))
+
+    political_likes = (
+        [
+            _synthetic_engagement_record(video_id, day_offset=i % 20)
+            for i, video_id in enumerate(choices(pol_ids, k=min(10, len(pol_ids))))
+        ]
+        if pol_ids
+        else []
+    )
+    other_likes = [
+        _synthetic_engagement_record(video_id, day_offset=i % 20)
+        for i, video_id in enumerate(non_pol_ids[:15])
+    ]
+    political_shares = (
+        [
+            _synthetic_engagement_record(video_id, day_offset=i % 15)
+            for i, video_id in enumerate(choices(pol_ids, k=min(4, len(pol_ids))))
+        ]
+        if pol_ids
+        else []
+    )
+
+    return compute_behaviour_comparisons(
+        TikTokUserData(
+            watch_history=watch_history,
+            liked_videos=political_likes + other_likes,
+            shared_videos=political_shares,
+        ),
+        political_video_ids or frozenset(),
+    )
 
 
 def get_synthetic_report_statistics(
@@ -182,9 +236,11 @@ def get_synthetic_report_statistics(
         followed_pol_users=followed_pol_users,
         party_counts=_synthetic_party_counts(),
         daily_party_counts=_synthetic_daily_party_counts(),
-        hashtags_by_pol_video=_synthetic_hashtags_by_video(seen_pol_video_ids),
+        hashtags_by_pol_video=_synthetic_descriptions_by_video(seen_pol_video_ids),
         top_videos=_synthetic_top_videos(seen_pol_video_ids),
-        party_hashtags=_synthetic_hashtag_list(),
-        non_party_hashtags=_synthetic_hashtag_list(),
-        behaviour_comparisons=_synthetic_behaviour_comparisons(),
+        party_hashtags=_synthetic_description_list(),
+        non_party_hashtags=_synthetic_description_list(),
+        behaviour_comparisons=_synthetic_behaviour_comparisons(
+            frozenset(seen_pol_video_ids)
+        ),
     )

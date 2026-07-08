@@ -20,6 +20,16 @@ urlpatterns = [
         name="get_report",
     ),
     path(
+        "report/behaviour/get/synthetic/",
+        views.BehaviourProfileFilterSyntheticView.as_view(),
+        name="behaviour_profile_synthetic",
+    ),
+    path(
+        "report/behaviour/get/<slug:participant_id>/",
+        views.BehaviourProfileFilterView.as_view(),
+        name="behaviour_profile",
+    ),
+    path(
         "report/public/dev/",
         views.PublicPlotsDevView.as_view(),
         name="public_plots_dev",

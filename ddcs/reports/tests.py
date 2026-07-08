@@ -14,9 +14,6 @@ from django.http import Http404
 from django.test import RequestFactory, TestCase, override_settings
 from django.utils import timezone
 
-import ddcs.reports.metrics.account_metrics
-import ddcs.reports.plots.public_plots
-import ddcs.reports.plots.user_plots
 import ddcs.reports.plots.utils
 from ddcs.core.types import TikTokUserData
 from ddcs.metadata.models import (
@@ -29,8 +26,15 @@ from ddcs.metadata.models import (
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.reports import factories, services, views, wordclouds
 from ddcs.reports.behaviour_metrics import (
+    _build_peak_hour_comparison,
+    _peak_hour_same_fraction,
+    apply_reference_demographic_filter,
     compute_behaviour_comparisons,
+    compute_engagement_metrics,
     compute_watch_history_metrics,
+    normalize_age_group,
+    normalize_gender_filter,
+    reference_group_size,
 )
 from ddcs.reports.config import (
     ACCOUNT_PARTY_MAPPING_CSV_PATH,
@@ -39,11 +43,19 @@ from ddcs.reports.config import (
     REPORT_FIRST_DATE_TO_INCLUDE,
 )
 from ddcs.reports.factories import get_synthetic_report_statistics
-from ddcs.reports.utils import load_account_party_mapping
+from ddcs.reports.metrics import account_metrics, user_metrics
+from ddcs.reports.plots import public_plots, user_plots
+from ddcs.reports.utils import (
+    build_tiktok_embed_url,
+    build_top_video_tiktok_url,
+    enrich_top_videos_for_embed,
+    load_account_party_mapping,
+    parse_tiktok_username_from_url,
+    parse_tiktok_video_id_from_url,
+)
 from ddcs.reports.views import PublicPlotsDevView
 
 User = get_user_model()
-
 
 # ============================================================
 # utils
@@ -66,6 +78,52 @@ class LoadAccountPartyMappingTests(TestCase):
         # Spot-check that values are non-empty party strings.
         self.assertTrue(all(isinstance(k, str) and k for k in result))
         self.assertTrue(all(isinstance(v, str) and v for v in result.values()))
+
+
+class TopVideoUrlTests(TestCase):
+    def test_parse_video_id_from_video_and_photo_urls(self):
+        self.assertEqual(
+            parse_tiktok_video_id_from_url(
+                "https://www.tiktok.com/@alice_weidel_afd/video/7658941918302326048"
+            ),
+            7658941918302326048,
+        )
+        self.assertEqual(
+            parse_tiktok_video_id_from_url(
+                "https://www.tiktok.com/@die.linke/photo/7623456044794055968"
+            ),
+            7623456044794055968,
+        )
+
+    def test_parse_username_from_url(self):
+        self.assertEqual(
+            parse_tiktok_username_from_url(
+                "https://www.tiktok.com/@deinespd/video/7657187761883041057"
+            ),
+            "deinespd",
+        )
+
+    def test_build_url_uses_username_when_available(self):
+        url = build_top_video_tiktok_url(
+            {"video_id": 123, "username": "deinespd", "view_count": 1}
+        )
+        self.assertEqual(url, "https://www.tiktok.com/@deinespd/video/123")
+
+    def test_build_embed_url(self):
+        self.assertEqual(
+            build_tiktok_embed_url(7658941918302326048),
+            "https://www.tiktok.com/player/v1/7658941918302326048?autoplay=0",
+        )
+
+    def test_enrich_top_videos_limits_to_three(self):
+        videos = [
+            {"video_id": index, "username": f"user{index}", "view_count": index}
+            for index in range(5)
+        ]
+        enriched = enrich_top_videos_for_embed(videos)
+        self.assertEqual(len(enriched), 3)
+        self.assertTrue(all(video["tiktok_url"] for video in enriched))
+        self.assertTrue(all(video["embed_url"] for video in enriched))
 
 
 # ============================================================
@@ -104,9 +162,205 @@ class FracInstantSkipTests(TestCase):
     )
     def test_included_in_behaviour_comparisons_when_reference_csv_present(self):
         # CSV is not present in gh actions
-        comparisons = compute_behaviour_comparisons(self._watch_history([0, 0.5, 10]))
+        comparisons = compute_behaviour_comparisons(
+            self._watch_history([0, 0.5, 10]), frozenset()
+        )
         metrics = {row["metric"] for row in comparisons}
         self.assertIn("frac_instant_skip", metrics)
+
+
+class WatchSessionTests(TestCase):
+    def _watch_history(self, offsets_sec: list[float]) -> TikTokUserData:
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        return TikTokUserData(
+            watch_history=[
+                {
+                    "date": base + timedelta(seconds=offset),
+                    "link": f"https://www.tiktok.com/@user/video/{i}",
+                    "video_id": i,
+                }
+                for i, offset in enumerate(offsets_sec)
+            ]
+        )
+
+    def test_single_session_duration_and_video_count(self):
+        metrics = compute_watch_history_metrics(self._watch_history([0, 30, 60]))
+        self.assertEqual(metrics["avg_session_length_sec"], 60.0)
+        self.assertEqual(metrics["avg_videos_per_session"], 3.0)
+
+    def test_ninety_second_break_starts_new_session(self):
+        metrics = compute_watch_history_metrics(self._watch_history([0, 50, 200]))
+        self.assertEqual(metrics["avg_session_length_sec"], 25.0)
+        self.assertEqual(metrics["avg_videos_per_session"], 1.5)
+
+
+class PoliticalEngagementTests(TestCase):
+    def test_fraction_counts_likes_shares_saves_and_comments(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        data = TikTokUserData(
+            watch_history=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/1",
+                    "video_id": 1,
+                }
+            ],
+            liked_videos=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/10",
+                    "video_id": 10,
+                },
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/20",
+                    "video_id": 20,
+                },
+            ],
+            shared_videos=[
+                {
+                    "date": base,
+                    "sharedcontent": "https://www.tiktok.com/@user/video/10",
+                    "video_id": 10,
+                },
+            ],
+            video_bookmarks=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/30",
+                    "video_id": 30,
+                },
+            ],
+            comments=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/20",
+                    "video_id": 20,
+                },
+            ],
+        )
+        metrics = compute_engagement_metrics(data, frozenset({10, 20}))
+        self.assertEqual(metrics["frac_political_engagement"], 0.8)
+
+    def test_returns_empty_when_no_engagements(self):
+        data = TikTokUserData(
+            watch_history=[
+                {
+                    "date": REPORT_FIRST_DATE_TO_INCLUDE,
+                    "link": "https://www.tiktok.com/@user/video/1",
+                    "video_id": 1,
+                }
+            ]
+        )
+        self.assertEqual(
+            compute_engagement_metrics(data, frozenset({1})),
+            {},
+        )
+
+
+class RateLikeTests(TestCase):
+    def test_like_rate_is_likes_divided_by_views(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        data = TikTokUserData(
+            watch_history=[
+                {
+                    "date": base + timedelta(seconds=i),
+                    "link": f"https://www.tiktok.com/@user/video/{i}",
+                    "video_id": i,
+                }
+                for i in range(4)
+            ],
+            liked_videos=[
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/10",
+                    "video_id": 10,
+                },
+                {
+                    "date": base,
+                    "link": "https://www.tiktok.com/@user/video/20",
+                    "video_id": 20,
+                },
+            ],
+        )
+        metrics = compute_watch_history_metrics(data)
+        self.assertEqual(metrics["rate_like"], 0.5)
+
+
+class PeakHourShareTests(TestCase):
+    def test_same_peak_hour_fraction(self):
+        population = [6.0, 6.0, 12.0, 22.0, 6.0]
+        self.assertEqual(
+            _peak_hour_same_fraction(6, population),
+            0.6,
+        )
+
+    def test_peak_hour_comparison_uses_share_bars(self):
+        row = _build_peak_hour_comparison(6.0, [6.0, 6.0, 12.0, 22.0, 6.0])
+        self.assertEqual(row["value_display"], "6:00")
+        self.assertEqual(row["chart_user_value"], 0.6)
+        self.assertEqual(row["chart_reference_value"], 0.4)
+        self.assertEqual(row["chart_user_value_display"], "60.0\u00a0%")
+        self.assertEqual(row["chart_reference_value_display"], "40.0\u00a0%")
+
+
+class ReferenceDemographicFilterTests(TestCase):
+    def _sample_comparison(self, value: float = 0.42, mean: float = 0.3) -> dict:
+        return {
+            "metric": "frac_instant_skip",
+            "label": "Anteil Instant-Skips",
+            "radar_label": "Anteil Instant-Skips",
+            "value": value,
+            "value_display": f"{value * 100:.1f} %",
+            "percentile": 72.0,
+            "reference_mean": mean,
+            "reference_mean_display": f"{mean * 100:.1f} %",
+            "reference_mean_percentile": 50.0,
+            "reference_median": mean,
+            "reference_median_display": f"{mean * 100:.1f} %",
+            "reference_p25": 0.2,
+            "reference_p75": 0.4,
+            "reference_min": 0.05,
+            "reference_max": 0.75,
+            "reference_min_display": "5.0 %",
+            "reference_max_display": "75.0 %",
+            "radar_user": 72.0,
+            "radar_mean": 50.0,
+            "is_fraction": True,
+        }
+
+    def test_normalizes_invalid_filter_values(self):
+        self.assertEqual(normalize_age_group("invalid"), "all")
+        self.assertEqual(normalize_gender_filter("invalid"), "any")
+
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_female_filter_changes_reference_mean(self):
+        comparisons = [self._sample_comparison()]
+        filtered = apply_reference_demographic_filter(
+            comparisons,
+            age_group="all",
+            gender="female",
+        )
+        self.assertEqual(filtered[0]["value"], comparisons[0]["value"])
+        self.assertNotEqual(
+            filtered[0]["reference_mean"],
+            comparisons[0]["reference_mean"],
+        )
+
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_reference_group_size_respects_filters(self):
+        self.assertGreater(reference_group_size("all", "any"), 0)
+        self.assertGreater(reference_group_size("under30", "female"), 0)
+        self.assertLess(
+            reference_group_size("under30", "female"),
+            reference_group_size("all", "any"),
+        )
 
 
 # ============================================================
@@ -116,10 +370,10 @@ class FracInstantSkipTests(TestCase):
 
 class GetVideoIdListTests(TestCase):
     def test_returns_empty_for_none(self):
-        self.assertEqual(services._get_video_id_list(None), [])
+        self.assertEqual(user_metrics._get_video_id_list(None), [])
 
     def test_returns_empty_for_empty_list(self):
-        self.assertEqual(services._get_video_id_list([]), [])
+        self.assertEqual(user_metrics._get_video_id_list([]), [])
 
     def test_filters_records_before_cutoff(self):
         after = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=1)
@@ -128,18 +382,18 @@ class GetVideoIdListTests(TestCase):
             {"date": after, "video_id": 1},
             {"date": before, "video_id": 2},
         ]
-        self.assertEqual(services._get_video_id_list(data), [1])
+        self.assertEqual(user_metrics._get_video_id_list(data), [1])
 
     def test_includes_records_on_cutoff(self):
         data = [{"date": REPORT_FIRST_DATE_TO_INCLUDE, "video_id": 9}]
-        self.assertEqual(services._get_video_id_list(data), [9])
+        self.assertEqual(user_metrics._get_video_id_list(data), [9])
 
     def test_skips_records_with_unparseable_date(self):
         data = [
             {"date": "not a date", "video_id": 1},
             {"date": REPORT_FIRST_DATE_TO_INCLUDE, "video_id": 2},
         ]
-        self.assertEqual(services._get_video_id_list(data), [2])
+        self.assertEqual(user_metrics._get_video_id_list(data), [2])
 
     def test_skips_records_with_missing_video_id(self):
         data = [
@@ -147,7 +401,7 @@ class GetVideoIdListTests(TestCase):
             {"date": REPORT_FIRST_DATE_TO_INCLUDE},
             {"date": REPORT_FIRST_DATE_TO_INCLUDE, "video_id": 5},
         ]
-        self.assertEqual(services._get_video_id_list(data), [5])
+        self.assertEqual(user_metrics._get_video_id_list(data), [5])
 
     def test_preserves_duplicates_and_order(self):
         d = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(hours=1)
@@ -156,23 +410,23 @@ class GetVideoIdListTests(TestCase):
             {"date": d, "video_id": 2},
             {"date": d, "video_id": 1},
         ]
-        self.assertEqual(services._get_video_id_list(data), [1, 2, 1])
+        self.assertEqual(user_metrics._get_video_id_list(data), [1, 2, 1])
 
 
 class GetUsernameListTests(TestCase):
     def test_returns_empty_for_none(self):
-        self.assertEqual(services._get_username_list(None), [])
+        self.assertEqual(user_metrics._get_username_list(None), [])
 
     def test_returns_empty_for_empty_list(self):
-        self.assertEqual(services._get_username_list([]), [])
+        self.assertEqual(user_metrics._get_username_list([]), [])
 
     def test_extracts_usernames(self):
         data = [{"username": "alice"}, {"username": "bob"}]
-        self.assertEqual(services._get_username_list(data), ["alice", "bob"])
+        self.assertEqual(user_metrics._get_username_list(data), ["alice", "bob"])
 
     def test_skips_records_without_username(self):
         data = [{"username": None}, {"username": "alice"}, {}]
-        self.assertEqual(services._get_username_list(data), ["alice"])
+        self.assertEqual(user_metrics._get_username_list(data), ["alice"])
 
 
 class BuildPoliticalVideoMetadataTests(TestCase):
@@ -188,7 +442,7 @@ class BuildPoliticalVideoMetadataTests(TestCase):
     def test_party_account_videos_map_to_csv_party(self):
         videos = [self._video(1, "alice"), self._video(2, "bob")]
         mapping = {"alice": "SPD", "bob": "CDU/CSU"}
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             videos, [], mapping
         )
         self.assertEqual(party_map, {1: "SPD", 2: "CDU/CSU"})
@@ -197,7 +451,7 @@ class BuildPoliticalVideoMetadataTests(TestCase):
     def test_party_account_video_with_unmapped_user_is_skipped(self):
         videos = [self._video(1, "alice"), self._video(2, "stranger")]
         mapping = {"alice": "SPD"}
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             videos, [], mapping
         )
         self.assertEqual(party_map, {1: "SPD"})
@@ -205,14 +459,14 @@ class BuildPoliticalVideoMetadataTests(TestCase):
 
     def test_non_party_political_videos_map_to_no_party_key(self):
         non_party = [self._video(10, "stranger"), self._video(11, "outsider")]
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             [], non_party, {}
         )
         self.assertEqual(party_map, {10: NO_PARTY_KEY, 11: NO_PARTY_KEY})
         self.assertEqual(username_map, {10: "stranger", 11: "outsider"})
 
     def test_non_party_video_without_user_gets_empty_username(self):
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             [], [self._video(99, None)], {}
         )
         self.assertEqual(party_map, {99: NO_PARTY_KEY})
@@ -221,21 +475,23 @@ class BuildPoliticalVideoMetadataTests(TestCase):
     def test_combines_both_buckets(self):
         party_videos = [self._video(1, "alice")]
         non_party = [self._video(2, "stranger")]
-        party_map, username_map = services._build_political_video_metadata(
+        party_map, username_map = user_metrics._build_political_video_metadata(
             party_videos, non_party, {"alice": "SPD"}
         )
         self.assertEqual(party_map, {1: "SPD", 2: NO_PARTY_KEY})
         self.assertEqual(username_map, {1: "alice", 2: "stranger"})
 
     def test_returns_empty_maps_for_no_videos(self):
-        party_map, username_map = services._build_political_video_metadata([], [], {})
+        party_map, username_map = user_metrics._build_political_video_metadata(
+            [], [], {}
+        )
         self.assertEqual(party_map, {})
         self.assertEqual(username_map, {})
 
 
 class ComputePartyCountsTests(TestCase):
     def test_counts_per_party_and_bucket_unknown(self):
-        result = services._compute_party_counts(
+        result = user_metrics._compute_party_counts(
             seen_video_ids=[1, 1, 2, 99],
             video_party_map={1: "SPD", 2: "CDU/CSU"},
         )
@@ -243,15 +499,15 @@ class ComputePartyCountsTests(TestCase):
         self.assertEqual(as_dict, {"SPD": 2, "CDU/CSU": 1, NO_PARTY_KEY: 1})
 
     def test_returns_empty_list_for_no_videos(self):
-        self.assertEqual(services._compute_party_counts([], {}), [])
+        self.assertEqual(user_metrics._compute_party_counts([], {}), [])
 
     def test_all_buckets_to_no_party_when_no_political_videos_seen(self):
-        result = services._compute_party_counts([10, 20], {})
+        result = user_metrics._compute_party_counts([10, 20], {})
         self.assertEqual(result, [{"party": NO_PARTY_KEY, "count": 2}])
 
     def test_orders_by_parties_order_constant(self):
         # Input order intentionally reversed vs PARTIES_ORDER.
-        result = services._compute_party_counts(
+        result = user_metrics._compute_party_counts(
             seen_video_ids=[1, 2, 3, 4, 99],
             video_party_map={1: "AfD", 2: "SPD", 3: "CDU/CSU", 4: "B90/GRÜNE"},
         )
@@ -261,7 +517,7 @@ class ComputePartyCountsTests(TestCase):
         )
 
     def test_unknown_party_sorts_after_known_alphabetically(self):
-        result = services._compute_party_counts(
+        result = user_metrics._compute_party_counts(
             seen_video_ids=[1, 2, 3],
             video_party_map={1: "SPD", 2: "Volt", 3: "Tierschutz"},
         )
@@ -282,7 +538,7 @@ class ComputeDailyPartyCountsTests(TestCase):
             self._record("2026-05-09", 2),
         ]
         video_party_map = {1: "SPD", 2: "CDU/CSU"}
-        result = services._compute_daily_party_counts(records, video_party_map)
+        result = user_metrics._compute_daily_party_counts(records, video_party_map)
         self.assertIn({"date": "2026-05-08", "party": "SPD", "count": 2}, result)
         self.assertIn({"date": "2026-05-09", "party": "CDU/CSU", "count": 1}, result)
 
@@ -292,13 +548,15 @@ class ComputeDailyPartyCountsTests(TestCase):
             self._record("2026-05-08", 1),
             self._record("2026-05-09", 1),
         ]
-        result = services._compute_daily_party_counts(records, {1: "SPD", 2: "CDU/CSU"})
+        result = user_metrics._compute_daily_party_counts(
+            records, {1: "SPD", 2: "CDU/CSU"}
+        )
         dates = [r["date"] for r in result]
         self.assertEqual(dates, sorted(dates))
 
     def test_buckets_unmapped_to_no_party(self):
         records = [self._record("2026-05-08", 999)]
-        result = services._compute_daily_party_counts(records, {})
+        result = user_metrics._compute_daily_party_counts(records, {})
         self.assertEqual(
             result, [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
         )
@@ -309,40 +567,40 @@ class ComputeDailyPartyCountsTests(TestCase):
             {"date": datetime(2026, 5, 8, tzinfo=UTC), "video_id": None},
             self._record("2026-05-08", 1),
         ]
-        result = services._compute_daily_party_counts(records, {1: "SPD"})
+        result = user_metrics._compute_daily_party_counts(records, {1: "SPD"})
         self.assertEqual(result, [{"date": "2026-05-08", "party": "SPD", "count": 1}])
 
 
 class GetTopVideosTests(TestCase):
     def test_returns_videos_sorted_by_view_count_desc(self):
         seen = [1, 2, 2, 3, 3, 3]
-        result = services._get_top_videos(
+        result = user_metrics._get_top_videos(
             seen_pol_video_ids=seen,
             video_party_map={1: "SPD", 2: "CDU/CSU", 3: "Grüne"},
             username_by_video={1: "alice", 2: "bob", 3: "carol"},
-            hashtags_by_video={1: ["a"], 2: ["b"], 3: ["c"]},
+            descriptions_by_video={1: "a", 2: "b", 3: "c"},
             n=3,
         )
         self.assertEqual([v["video_id"] for v in result], [3, 2, 1])
         self.assertEqual(result[0]["view_count"], 3)
         self.assertEqual(result[0]["party"], "Grüne")
         self.assertEqual(result[0]["username"], "carol")
-        self.assertEqual(result[0]["hashtags"], ["c"])
+        self.assertEqual(result[0]["description"], "c")
 
     def test_respects_n_limit(self):
         seen = [1, 2, 3, 4, 5, 6, 7]
-        result = services._get_top_videos(seen, {}, {}, {}, n=2)
+        result = user_metrics._get_top_videos(seen, {}, {}, {}, n=2)
         self.assertEqual(len(result), 2)
 
     def test_returns_empty_for_no_seen_videos(self):
-        self.assertEqual(services._get_top_videos([], {}, {}, {}), [])
+        self.assertEqual(user_metrics._get_top_videos([], {}, {}, {}), [])
 
-    def test_hashtags_default_to_empty_list_when_missing(self):
-        result = services._get_top_videos([1], {1: "SPD"}, {1: "alice"}, {}, n=1)
-        self.assertEqual(result[0]["hashtags"], [])
+    def test_description_defaults_to_empty_string_when_missing(self):
+        result = user_metrics._get_top_videos([1], {1: "SPD"}, {1: "alice"}, {}, n=1)
+        self.assertEqual(result[0]["description"], "")
 
     def test_username_defaults_to_empty_string_when_missing(self):
-        result = services._get_top_videos([1], {1: "SPD"}, {}, {}, n=1)
+        result = user_metrics._get_top_videos([1], {1: "SPD"}, {}, {}, n=1)
         self.assertEqual(result[0]["username"], "")
 
 
@@ -351,33 +609,99 @@ class GetTopVideosTests(TestCase):
 # ============================================================
 
 
-class GetHashtagsByVideoTests(TestCase):
+class ExtractUsernameFromLinkTests(TestCase):
+    def test_extracts_username_from_standard_link(self):
+        self.assertEqual(
+            user_metrics._extract_username_from_link(
+                "https://www.tiktok.com/@alice/video/12345"
+            ),
+            "alice",
+        )
+
+    def test_returns_none_for_invalid_link(self):
+        self.assertIsNone(user_metrics._extract_username_from_link(""))
+        self.assertIsNone(
+            user_metrics._extract_username_from_link("https://example.com")
+        )
+
+
+class PartyVideosFromWatchHistoryTests(TestCase):
+    def test_maps_party_account_videos_from_links(self):
+        cutoff = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=1)
+        watch_history = [
+            {
+                "date": cutoff,
+                "video_id": 99,
+                "link": "https://www.tiktok.com/@alice/video/99",
+            },
+            {
+                "date": cutoff,
+                "video_id": 100,
+                "link": "https://www.tiktok.com/@stranger/video/100",
+            },
+        ]
+        party_map, username_map = user_metrics._party_videos_from_watch_history(
+            watch_history, {"alice": "SPD"}
+        )
+        self.assertEqual(party_map, {99: "SPD"})
+        self.assertEqual(username_map, {99: "alice"})
+
+    def test_skips_entries_before_cutoff_or_without_video_id(self):
+        watch_history = [
+            {
+                "date": REPORT_FIRST_DATE_TO_INCLUDE - timedelta(days=1),
+                "video_id": 1,
+                "link": "https://www.tiktok.com/@alice/video/1",
+            },
+            {
+                "date": REPORT_FIRST_DATE_TO_INCLUDE,
+                "link": "https://www.tiktok.com/@alice/video/2",
+            },
+        ]
+        party_map, username_map = user_metrics._party_videos_from_watch_history(
+            watch_history, {"alice": "SPD"}
+        )
+        self.assertEqual(party_map, {})
+        self.assertEqual(username_map, {})
+
+
+class GetDescriptionsByVideoTests(TestCase):
     def setUp(self):
-        self.tag_a = TikTokHashtag.objects.create(
-            name="a", added_by=DataOrigins.DONATION
-        )
-        self.tag_b = TikTokHashtag.objects.create(
-            name="b", added_by=DataOrigins.DONATION
-        )
         self.video = TikTokVideo.objects.create(
             id_tiktok=111, added_by=DataOrigins.DONATION
         )
-        self.video.hashtags.set([self.tag_a, self.tag_b])
+        APIVideoInfos.objects.create(
+            video=self.video,
+            description="Wichtige Politik Nachrichten",
+        )
         self.other_video = TikTokVideo.objects.create(
             id_tiktok=222, added_by=DataOrigins.DONATION
         )
 
-    def test_returns_hashtags_for_matched_videos(self):
-        result = services._get_hashtags_by_video([111, 222])
-        self.assertEqual(sorted(result[111]), ["a", "b"])
-        self.assertEqual(result[222], [])
+    def test_returns_descriptions_for_matched_videos(self):
+        result = user_metrics._get_descriptions_by_video([111, 222])
+        self.assertEqual(result[111], "Wichtige Politik Nachrichten")
+        self.assertEqual(result[222], "")
 
     def test_returns_empty_dict_for_no_ids(self):
-        self.assertEqual(services._get_hashtags_by_video([]), {})
+        self.assertEqual(user_metrics._get_descriptions_by_video([]), {})
 
     def test_ignores_unknown_video_ids(self):
-        result = services._get_hashtags_by_video([999])
+        result = user_metrics._get_descriptions_by_video([999])
         self.assertEqual(result, {})
+
+    def test_prefers_latest_api_info_with_description(self):
+        video = TikTokVideo.objects.create(id_tiktok=333, added_by=DataOrigins.DONATION)
+        APIVideoInfos.objects.create(video=video, description="ältere Version")
+        latest = APIVideoInfos.objects.create(
+            video=video,
+            description="neueste Beschreibung",
+        )
+        APIVideoInfos.objects.filter(pk=latest.pk).update(
+            updated_at=datetime.now(tz=UTC) + timedelta(days=1)
+        )
+        result = user_metrics._get_descriptions_by_video([333])
+        self.assertEqual(result[333], "neueste Beschreibung")
 
 
 # ============================================================
@@ -386,7 +710,7 @@ class GetHashtagsByVideoTests(TestCase):
 
 
 class ComputeReportStatisticsTests(TestCase):
-    """End-to-end DB integration tests for compute_report_statistics.
+    """End-to-end DB integration tests for compute_user_report_statistics.
 
     Covers the dual definition of "political video":
     party-account videos (CSV) + videos with a monitored hashtag.
@@ -426,9 +750,22 @@ class ComputeReportStatisticsTests(TestCase):
         )
         self.v_party_pol.hashtags.add(self.tag_pol)
 
+        APIVideoInfos.objects.create(
+            video=self.v_party,
+            description="Statement der SPD zum Wahlkampf",
+        )
+        APIVideoInfos.objects.create(
+            video=self.v_nonparty,
+            description="Wichtige Politik Nachrichten von stranger",
+        )
+        APIVideoInfos.objects.create(
+            video=self.v_party_pol,
+            description="Politik Update von der SPD",
+        )
+
     def _patch_csv(self, mapping: dict[str, str] | None = None):
         return patch.object(
-            services,
+            user_metrics,
             "load_account_party_mapping",
             return_value=mapping if mapping is not None else {"alice": "SPD"},
         )
@@ -446,17 +783,28 @@ class ComputeReportStatisticsTests(TestCase):
             liked_videos=[{"date": cutoff, "video_id": 2}],
         )
         with self._patch_csv():
-            result = services.compute_user_report_statistics(data)
+            result = user_metrics.compute_user_report_metrics(data)
 
         # v1, v2 and v4 are political; v3 is not.
         self.assertEqual(set(result["seen_pol_video_ids"]), {1, 2, 4})
         self.assertEqual(result["liked_pol_video_ids"], [2])
         # stranger isn't in the CSV, so it doesn't appear in followed_pol_users.
         self.assertEqual(result["followed_pol_users"], ["alice"])
-        # Non-party political video's hashtags go to the non-party bucket;
-        # party-account videos' hashtags go to the party bucket.
-        self.assertEqual(result["non_party_hashtags"], ["politik"])
-        self.assertEqual(result["party_hashtags"], ["politik"])
+        # Non-party political video descriptions go to the non-party bucket;
+        # party-account video descriptions go to the party bucket.
+        self.assertEqual(
+            result["non_party_hashtags"],
+            ["Wichtige Politik Nachrichten von stranger"],
+        )
+        self.assertEqual(
+            sorted(result["party_hashtags"]),
+            sorted(
+                [
+                    "Statement der SPD zum Wahlkampf",
+                    "Politik Update von der SPD",
+                ]
+            ),
+        )
         # Total watched includes the neutral video too.
         self.assertEqual(result["videos_seen_count_total"], 4)
 
@@ -466,14 +814,18 @@ class ComputeReportStatisticsTests(TestCase):
             watch_history=[{"date": cutoff, "video_id": 4}],
         )
         with self._patch_csv():
-            result = services.compute_user_report_statistics(data)
+            result = user_metrics.compute_user_report_metrics(data)
 
         # v4 (party-account + monitored hashtag) — counts once, as SPD.
         self.assertEqual(result["seen_pol_video_ids"], [4])
         as_dict = {r["party"]: r["count"] for r in result["party_counts"]}
         self.assertEqual(as_dict, {"SPD": 1})
-        # Its hashtags must NOT appear in non_party_hashtags.
+        # Its description must NOT appear in non_party_hashtags.
         self.assertEqual(result["non_party_hashtags"], [])
+        self.assertEqual(
+            result["party_hashtags"],
+            ["Politik Update von der SPD"],
+        )
 
     def test_top_videos_include_non_party_username(self):
         cutoff = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=1)
@@ -485,7 +837,7 @@ class ComputeReportStatisticsTests(TestCase):
             ],
         )
         with self._patch_csv():
-            result = services.compute_user_report_statistics(data)
+            result = user_metrics.compute_user_report_metrics(data)
 
         by_id = {v["video_id"]: v for v in result["top_videos"]}
         self.assertEqual(by_id[2]["username"], "stranger")
@@ -493,9 +845,39 @@ class ComputeReportStatisticsTests(TestCase):
         self.assertEqual(by_id[1]["username"], "alice")
         self.assertEqual(by_id[1]["party"], "SPD")
 
+    def test_top_videos_include_party_account_from_watch_history_link(self):
+        """Donated videos without a DB user still count when the link is
+        a party account."""
+        donation_only_party_video = TikTokVideo.objects.create(
+            id_tiktok=5, added_by=DataOrigins.DONATION
+        )
+        APIVideoInfos.objects.create(
+            video=donation_only_party_video,
+            description="SPD Wahlkampf ohne DB-User",
+        )
+        cutoff = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=1)
+        data = TikTokUserData(
+            watch_history=[
+                {
+                    "date": cutoff,
+                    "video_id": 5,
+                    "link": "https://www.tiktok.com/@alice/video/5",
+                },
+                {"date": cutoff, "video_id": 5},
+            ],
+        )
+        with self._patch_csv():
+            result = user_metrics.compute_user_report_metrics(data)
+
+        self.assertEqual(result["seen_pol_video_ids"], [5, 5])
+        by_id = {v["video_id"]: v for v in result["top_videos"]}
+        self.assertEqual(by_id[5]["username"], "alice")
+        self.assertEqual(by_id[5]["party"], "SPD")
+        self.assertEqual(by_id[5]["description"], "SPD Wahlkampf ohne DB-User")
+
     def test_handles_completely_empty_user_data(self):
         with self._patch_csv():
-            result = services.compute_user_report_statistics(TikTokUserData())
+            result = user_metrics.compute_user_report_metrics(TikTokUserData())
         self.assertEqual(result["videos_seen_count_total"], 0)
         self.assertEqual(result["seen_pol_video_ids"], [])
         self.assertEqual(result["liked_pol_video_ids"], [])
@@ -505,7 +887,7 @@ class ComputeReportStatisticsTests(TestCase):
 
 
 class GenerateReportStatisticsTests(TestCase):
-    @patch.object(services, "compute_user_report_statistics")
+    @patch.object(services, "compute_user_report_metrics")
     def test_persists_statistics_to_db(self, mock_compute):
         mock_compute.return_value = {
             "videos_seen_count_total": 5,
@@ -558,17 +940,17 @@ class SyntheticFactoriesTests(TestCase):
         unique_dates = {r["date"] for r in result}
         self.assertEqual(len(unique_dates), days)
 
-    def test_top_videos_dedupes_and_respects_limit(self):
-        ids = [1, 1, 2, 3, 4, 5, 6, 7]
-        result = factories._synthetic_top_videos(ids, n=3)
-        self.assertLessEqual(len(result), 3)
-        self.assertEqual(len({r["video_id"] for r in result}), len(result))
+    def test_top_videos_use_synthetic_embed_urls(self):
+        result = factories._synthetic_top_videos([])
+        self.assertEqual(len(result), 3)
+        self.assertEqual(
+            [video["tiktok_url"] for video in result],
+            factories.SYNTHETIC_TOP_VIDEO_URLS,
+        )
+        self.assertEqual(result[0]["username"], "alice_weidel_afd")
 
-    def test_top_videos_returns_empty_for_no_ids(self):
-        self.assertEqual(factories._synthetic_top_videos([]), [])
-
-    def test_hashtags_by_video_returns_one_entry_per_id(self):
-        result = factories._synthetic_hashtags_by_video([1, 2, 3])
+    def test_descriptions_by_video_returns_one_entry_per_id(self):
+        result = factories._synthetic_descriptions_by_video([1, 2, 3])
         self.assertEqual(set(result), {1, 2, 3})
 
     def test_post_data_has_one_record_per_account_per_day(self):
@@ -609,27 +991,201 @@ class SyntheticFactoriesTests(TestCase):
         self.assertGreater(len(captured["party_counts"]), 0)
         self.assertGreater(len(captured["party_hashtags"]), 0)
 
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_synthetic_behaviour_comparisons_include_political_engagement(self):
+        pol_ids = frozenset({1001, 1002, 1003})
+        comparisons = factories._synthetic_behaviour_comparisons(pol_ids)
+        metrics = {row["metric"] for row in comparisons}
+        self.assertIn("frac_political_engagement", metrics)
 
-# ============================================================
-# plots
-# ============================================================
+
+class BehaviourProfileComparisonTests(TestCase):
+    def _sample_comparison(self, percentile: float = 72.0) -> dict:
+        return {
+            "metric": "frac_instant_skip",
+            "label": "Anteil Instant-Skips (< 1 Sek. bis zum nächsten Video)",
+            "radar_label": "Anteil Instant-Skips",
+            "value": 0.42,
+            "value_display": "42.0 %",
+            "percentile": percentile,
+            "reference_mean": 0.3,
+            "reference_mean_display": "30.0 %",
+            "reference_mean_percentile": 50.0,
+            "reference_median": 0.28,
+            "reference_median_display": "28.0 %",
+            "reference_p25": 0.2,
+            "reference_p75": 0.4,
+            "reference_min": 0.05,
+            "reference_max": 0.75,
+            "reference_min_display": "5.0 %",
+            "reference_max_display": "75.0 %",
+            "radar_user": percentile,
+            "radar_mean": 50.0,
+            "is_fraction": True,
+        }
+
+    def test_returns_empty_list_when_empty(self):
+        self.assertEqual(user_plots.get_behaviour_profile_rows([]), [])
+
+    def test_row_title_is_single_user_sentence_in_teal(self):
+        text = user_plots._row_title_text(self._sample_comparison())
+        self.assertIn("color: #0cc4b6", text)
+        self.assertIn("42.0 %", text)
+        self.assertIn("scrollst du direkt weiter", text)
+        self.assertNotIn("Teilnehmende", text)
+
+    def test_chart_uses_teal_and_magenta_bars_with_end_labels(self):
+        rows = user_plots.get_behaviour_profile_rows([self._sample_comparison()])
+        html = rows[0]["chart_html"]
+        self.assertIn("#0cc4b6", html)
+        self.assertIn("#ff587a", html)
+        self.assertIn("42.0", html)
+        self.assertIn("30.0", html)
+
+    def test_axis_max_is_max_of_user_and_mean(self):
+        self.assertEqual(
+            user_plots._metric_axis_max(0.42, 0.3),
+            0.42,
+        )
+
+    def test_hours_title_is_user_sentence_only(self):
+        hours = {
+            **self._sample_comparison(),
+            "metric": "avg_active_hours_per_day",
+            "value": 2.5,
+            "value_display": "2.50",
+            "reference_mean": 1.8,
+            "reference_mean_display": "1.80",
+            "is_fraction": False,
+        }
+        title = user_plots._row_title_text(hours)
+        self.assertIn("Stunden aktiv", title)
+        self.assertIn("2.50", title)
+        self.assertNotIn("Videos", title)
+
+    def test_session_length_title_uses_minutes(self):
+        session = {
+            **self._sample_comparison(),
+            "metric": "avg_session_length_sec",
+            "value": 180.0,
+            "value_display": "3.0 Min.",
+            "is_fraction": False,
+        }
+        title = user_plots._row_title_text(session)
+        self.assertIn("3.0 Min.", title)
+        self.assertIn("Sessions dauern", title)
+
+    def test_peak_hour_chart_uses_same_and_different_shares(self):
+        peak = {
+            **self._sample_comparison(),
+            "metric": "peak_activity_hour",
+            "value": 6.0,
+            "value_display": "6:00",
+            "reference_mean": 0.4,
+            "reference_mean_display": "40.0 %",
+            "chart_user_value": 0.6,
+            "chart_reference_value": 0.4,
+            "chart_user_value_display": "60.0 %",
+            "chart_reference_value_display": "40.0 %",
+            "is_fraction": True,
+        }
+        rows = user_plots.get_behaviour_profile_rows([peak])
+        html = rows[0]["chart_html"]
+        self.assertIn("60.0", html)
+        self.assertIn("40.0", html)
+        title = user_plots._row_title_text(peak)
+        self.assertIn("6:00", title)
+        self.assertIn("60.0", title)
+        self.assertIn("40.0", title)
+        self.assertIn("gleichen Stunde", title)
+        self.assertIn("anderen Uhrzeit", title)
+
+    def test_chart_rows_include_all_behaviour_metrics(self):
+        hours = {
+            **self._sample_comparison(),
+            "metric": "avg_active_hours_per_day",
+            "value": 2.5,
+            "value_display": "2.50",
+            "reference_mean": 1.8,
+            "reference_mean_display": "1.80",
+            "is_fraction": False,
+        }
+        session = {
+            **self._sample_comparison(),
+            "metric": "avg_session_length_sec",
+            "value": 180.0,
+            "value_display": "3.0 Min.",
+            "reference_mean": 120.0,
+            "reference_mean_display": "2.0 Min.",
+            "is_fraction": False,
+        }
+        rows = user_plots.get_behaviour_profile_rows(
+            [
+                self._sample_comparison(),
+                hours,
+                session,
+            ]
+        )
+        self.assertEqual(len(rows), 3)
+
+    def test_slides_group_metrics_into_three_carousel_panels(self):
+        comparisons = [
+            {
+                **self._sample_comparison(),
+                "metric": metric,
+            }
+            for metric in (
+                "avg_active_hours_per_day",
+                "avg_videos_per_session",
+                "avg_session_length_sec",
+                "weekend_activity_frac",
+                "night_activity_frac",
+                "peak_activity_hour",
+                "frac_instant_skip",
+                "rate_like",
+                "frac_political_engagement",
+            )
+        ]
+        slides = user_plots.get_behaviour_profile_slides(comparisons)
+        self.assertEqual(len(slides), 3)
+        self.assertEqual(len(slides[0]["rows"]), 3)
+        self.assertEqual(len(slides[1]["rows"]), 3)
+        self.assertEqual(len(slides[2]["rows"]), 3)
+
+    def test_returns_rows_with_chart_and_title(self):
+        rows = user_plots.get_behaviour_profile_rows([self._sample_comparison()])
+        self.assertEqual(len(rows), 1)
+        self.assertIn("plotly-graph-div", rows[0]["chart_html"])
+        self.assertIn("color: #0cc4b6", rows[0]["title_html"])
+        self.assertIn("scrollst du direkt weiter", rows[0]["title_html"])
+        self.assertNotIn("description_html", rows[0])
+
+    def test_returns_html_for_legacy_wrapper(self):
+        result = user_plots.get_behaviour_profile_comparison(
+            [self._sample_comparison()]
+        )
+        self.assertIsNotNone(result["html"])
+        self.assertIn("plotly-graph-div", result["html"])
 
 
 class PartyDistributionPlotTests(TestCase):
     def test_returns_none_html_when_only_no_party_data(self):
-        result = ddcs.reports.plots.user_plots.get_party_distribution_plot_user(
+        result = user_plots.get_party_distribution_plot_user(
             [{"party": NO_PARTY_KEY, "count": 5}]
         )
         self.assertEqual(result, {"html": None})
 
     def test_returns_none_html_when_empty(self):
         self.assertEqual(
-            ddcs.reports.plots.user_plots.get_party_distribution_plot_user([]),
+            user_plots.get_party_distribution_plot_user([]),
             {"html": None},
         )
 
     def test_returns_html_when_party_data_present(self):
-        result = ddcs.reports.plots.user_plots.get_party_distribution_plot_user(
+        result = user_plots.get_party_distribution_plot_user(
             [{"party": "SPD", "count": 5}, {"party": "CDU/CSU", "count": 3}]
         )
         self.assertIsNotNone(result["html"])
@@ -639,28 +1195,28 @@ class PartyDistributionPlotTests(TestCase):
 class TemporalPartyDistributionPlotTests(TestCase):
     def test_returns_none_html_when_empty(self):
         self.assertEqual(
-            ddcs.reports.plots.user_plots.get_temporal_party_distribution_plot_user([]),
+            user_plots.get_temporal_party_distribution_plot_user([]),
             {"html": None},
         )
 
     def test_returns_none_html_when_only_no_party_records(self):
-        result = (
-            ddcs.reports.plots.user_plots.get_temporal_party_distribution_plot_user(
-                [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
-            )
+        result = user_plots.get_temporal_party_distribution_plot_user(
+            [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
         )
         self.assertEqual(result, {"html": None})
 
     def test_returns_html_when_party_records_present(self):
-        result = (
-            ddcs.reports.plots.user_plots.get_temporal_party_distribution_plot_user(
-                [
-                    {"date": "2026-05-08", "party": "SPD", "count": 2},
-                    {"date": "2026-05-09", "party": "SPD", "count": 1},
-                ]
-            )
+        result = user_plots.get_temporal_party_distribution_plot_user(
+            [
+                {"date": "2026-05-08", "party": "SPD", "count": 2},
+                {"date": "2026-05-09", "party": "SPD", "count": 1},
+                {"date": "2026-05-08", "party": "CDU/CSU", "count": 3},
+            ]
         )
         self.assertIsNotNone(result["html"])
+        self.assertIn("bar", result["html"])
+        self.assertIn("stack", result["html"])
+        self.assertIn("barcornerradius", result["html"])
 
 
 class HexToRgbaTests(TestCase):
@@ -683,7 +1239,7 @@ class HexToRgbaTests(TestCase):
 
 class PostDataDateRangeTests(TestCase):
     def test_range_starts_at_configured_start_date_and_ends_with_lag(self):
-        start, end = ddcs.reports.metrics.account_metrics._post_data_date_range()
+        start, end = account_metrics._post_data_date_range()
         self.assertEqual(start, ddcs.reports.config.PUBLIC_POST_DATA_START_DATE)
         expected_end = timezone.now().date() - timedelta(
             days=ddcs.reports.config.PUBLIC_POST_DATA_END_LAG_DAYS
@@ -699,14 +1255,14 @@ class ComputePostDataTests(TestCase):
 
     def _patch_mapping(self, mapping: dict[str, str]):
         return patch.object(
-            ddcs.reports.metrics.account_metrics,
+            account_metrics,
             "load_account_party_mapping",
             return_value=mapping,
         )
 
     def _patch_range(self, start: date, end: date):
         return patch.object(
-            ddcs.reports.metrics.account_metrics,
+            account_metrics,
             "_post_data_date_range",
             return_value=(start, end),
         )
@@ -729,7 +1285,7 @@ class ComputePostDataTests(TestCase):
         APIVideoInfos.objects.create(video=v1, create_time=moment)
         APIVideoInfos.objects.create(video=v2, create_time=moment + timedelta(hours=2))
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertEqual(
             records,
             [{"username": "alice", "party": "SPD", "date": "2026-06-01", "count": 2}],
@@ -741,13 +1297,13 @@ class ComputePostDataTests(TestCase):
             user=self.alice, target_date=day, status=SyncAttempt.Status.SUCCESS
         )
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertEqual(records[0]["count"], 0)
 
     def test_zero_posts_without_successful_sync_is_none(self):
         day = date(2026, 6, 1)
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertIsNone(records[0]["count"])
 
     def test_failed_sync_attempt_does_not_count_as_synced(self):
@@ -756,14 +1312,14 @@ class ComputePostDataTests(TestCase):
             user=self.alice, target_date=day, status=SyncAttempt.Status.RATE_LIMITED
         )
         with self._patch_mapping({"alice": "SPD"}), self._patch_range(day, day):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertIsNone(records[0]["count"])
 
     def test_builds_one_record_per_account_per_date_in_range(self):
         start, end = date(2026, 6, 1), date(2026, 6, 3)
         mapping = {"alice": "SPD", "bob": "CDU/CSU"}
         with self._patch_mapping(mapping), self._patch_range(start, end):
-            records = ddcs.reports.metrics.account_metrics._compute_post_data()
+            records = account_metrics._compute_post_data()
         self.assertEqual(len(records), len(mapping) * 3)
         self.assertEqual({r["username"] for r in records}, set(mapping))
 
@@ -775,25 +1331,23 @@ class GetPostDataCacheTests(TestCase):
 
     def test_caches_result_between_calls(self):
         with patch.object(
-            ddcs.reports.metrics.account_metrics,
+            account_metrics,
             "_compute_post_data",
             return_value=[{"username": "alice"}],
         ) as mock_compute:
-            first = ddcs.reports.metrics.account_metrics.get_post_data()
-            second = ddcs.reports.metrics.account_metrics.get_post_data()
+            first = account_metrics.get_post_data()
+            second = account_metrics.get_post_data()
         mock_compute.assert_called_once()
         self.assertEqual(first, second)
 
     def test_force_refresh_recomputes(self):
         with patch.object(
-            ddcs.reports.metrics.account_metrics,
+            account_metrics,
             "_compute_post_data",
             side_effect=[["v1"], ["v2"]],
         ) as mock_compute:
-            first = ddcs.reports.metrics.account_metrics.get_post_data()
-            second = ddcs.reports.metrics.account_metrics.get_post_data(
-                force_refresh=True
-            )
+            first = account_metrics.get_post_data()
+            second = account_metrics.get_post_data(force_refresh=True)
         self.assertEqual(mock_compute.call_count, 2)
         self.assertEqual(first, ["v1"])
         self.assertEqual(second, ["v2"])
@@ -806,11 +1360,11 @@ class AggregatePartyCountsTests(TestCase):
             {"username": "b", "party": "SPD", "date": "2026-06-02", "count": 3},
             {"username": "c", "party": "CDU/CSU", "date": "2026-06-01", "count": None},
         ]
-        result = ddcs.reports.metrics.account_metrics.aggregate_party_counts(records)
+        result = account_metrics.aggregate_party_counts(records)
         self.assertEqual({r["party"]: r["count"] for r in result}, {"SPD": 5})
 
     def test_returns_empty_list_for_no_records(self):
-        result = ddcs.reports.metrics.account_metrics.aggregate_party_counts([])
+        result = account_metrics.aggregate_party_counts([])
         self.assertEqual(result, [])
 
 
@@ -822,9 +1376,7 @@ class AggregateDailyPartyCountsTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 5},
             {"username": "c", "party": "CDU/CSU", "date": "2026-06-01", "count": None},
         ]
-        result = ddcs.reports.metrics.account_metrics.aggregate_daily_party_counts(
-            records
-        )
+        result = account_metrics.aggregate_daily_party_counts(records)
         self.assertEqual(
             result,
             [
@@ -838,25 +1390,21 @@ class AggregateDailyPartyCountsTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-02", "count": 1},
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 1},
         ]
-        result = ddcs.reports.metrics.account_metrics.aggregate_daily_party_counts(
-            records
-        )
+        result = account_metrics.aggregate_daily_party_counts(records)
         dates = [r["date"] for r in result]
         self.assertEqual(dates, sorted(dates))
 
 
 class PartyDistributionAllAccountsPlotTests(TestCase):
     def test_returns_none_html_when_empty(self):
-        result = ddcs.reports.plots.public_plots.get_party_distribution_all_accounts([])
+        result = public_plots.get_party_distribution_all_accounts([])
         self.assertEqual(result, {"html": None})
 
     def test_returns_none_html_when_all_counts_are_none(self):
         records = [
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": None}
         ]
-        result = ddcs.reports.plots.public_plots.get_party_distribution_all_accounts(
-            records
-        )
+        result = public_plots.get_party_distribution_all_accounts(records)
         self.assertEqual(result, {"html": None})
 
     def test_returns_html_and_top_party_data(self):
@@ -864,9 +1412,7 @@ class PartyDistributionAllAccountsPlotTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 5},
             {"username": "b", "party": "CDU/CSU", "date": "2026-06-01", "count": 2},
         ]
-        result = ddcs.reports.plots.public_plots.get_party_distribution_all_accounts(
-            records
-        )
+        result = public_plots.get_party_distribution_all_accounts(records)
         self.assertIsNotNone(result["html"])
         expected = {"party": "SPD", "value": 5, "color": "#e4454f"}
         self.assertEqual(result["data"], expected)
@@ -880,9 +1426,7 @@ class PartyDistributionAllAccountsPlotTests(TestCase):
                 "count": 1,
             }
         ]
-        result = ddcs.reports.plots.public_plots.get_party_distribution_all_accounts(
-            records
-        )
+        result = public_plots.get_party_distribution_all_accounts(records)
         self.assertEqual(
             result["data"]["color"], ddcs.reports.plots.utils.PARTY_COLOR_OTHER
         )
@@ -890,18 +1434,14 @@ class PartyDistributionAllAccountsPlotTests(TestCase):
 
 class TemporalPartyDistributionAllAccountsPlotTests(TestCase):
     def test_returns_none_html_when_empty(self):
-        result = ddcs.reports.plots.public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
-            []
-        )
+        result = public_plots.get_temporal_party_distribution_all_accounts([])
         self.assertEqual(result, {"html": None})
 
     def test_returns_none_html_when_all_counts_are_none(self):
         records = [
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": None}
         ]
-        result = ddcs.reports.plots.public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
-            records
-        )
+        result = public_plots.get_temporal_party_distribution_all_accounts(records)
         self.assertEqual(result, {"html": None})
 
     def test_returns_html_when_counts_present(self):
@@ -909,9 +1449,7 @@ class TemporalPartyDistributionAllAccountsPlotTests(TestCase):
             {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 2},
             {"username": "a", "party": "SPD", "date": "2026-06-02", "count": 1},
         ]
-        result = ddcs.reports.plots.public_plots.get_temporal_party_distribution_all_accounts(  # noqa: E501
-            records
-        )
+        result = public_plots.get_temporal_party_distribution_all_accounts(records)
         self.assertIsNotNone(result["html"])
 
 
@@ -935,20 +1473,28 @@ class RemoveEmojisTests(TestCase):
         self.assertEqual(wordclouds._remove_emojis("a-b_c.d"), "abcd")
 
 
-class BuildHashtagFrequenciesTests(TestCase):
+class BuildDescriptionFrequenciesTests(TestCase):
     def test_counts_frequencies(self):
-        result = wordclouds._build_hashtag_frequencies(["politik", "Politik", "wahl"])
+        result = wordclouds._build_description_frequencies(
+            ["Politik ist wichtig", "politik und wahl"]
+        )
         self.assertEqual(result["politik"], 2)
         self.assertEqual(result["wahl"], 1)
 
-    def test_excludes_blocked_hashtags(self):
+    def test_excludes_stopwords(self):
+        result = wordclouds._build_description_frequencies(["und der die das politik"])
+        self.assertNotIn("und", result)
+        self.assertNotIn("der", result)
+        self.assertIn("politik", result)
+
+    def test_excludes_blocked_tokens(self):
         blocked = next(iter(HASHTAGS_TO_EXCLUDE))
-        result = wordclouds._build_hashtag_frequencies(["politik", blocked])
+        result = wordclouds._build_description_frequencies([f"politik {blocked} wahl"])
         self.assertNotIn(blocked, result)
         self.assertIn("politik", result)
 
-    def test_drops_emoji_only_hashtag(self):
-        result = wordclouds._build_hashtag_frequencies(["🇩🇪", "politik"])
+    def test_drops_emoji_only_tokens(self):
+        result = wordclouds._build_description_frequencies(["🇩🇪 politik"])
         self.assertEqual(set(result), {"politik"})
 
 
@@ -971,11 +1517,15 @@ class GetWordcloudTests(TestCase):
     """Smoke tests for the unified public wordcloud entry point."""
 
     def test_party_account_returns_html(self):
-        result = wordclouds.get_wordcloud(["politik", "wahl"], is_party_account=True)
+        result = wordclouds.get_wordcloud(
+            ["Politik und Wahl im Bundestag"], is_party_account=True
+        )
         self.assertIsNotNone(result["html"])
 
     def test_noparty_account_returns_html(self):
-        result = wordclouds.get_wordcloud(["politik", "wahl"], is_party_account=False)
+        result = wordclouds.get_wordcloud(
+            ["Politik und Wahl im Bundestag"], is_party_account=False
+        )
         self.assertIsNotNone(result["html"])
 
     def test_returns_none_html_for_empty_input(self):
@@ -987,19 +1537,6 @@ class GetWordcloudTests(TestCase):
 # ============================================================
 # views
 # ============================================================
-
-
-class FilterHashtagsTests(TestCase):
-    def test_excludes_blocked_hashtags_case_insensitive(self):
-        result = views._filter_hashtags(["FYP", "politik", "Trending"])
-        self.assertEqual(result, ["politik"])
-
-    def test_does_not_impose_length_limit(self):
-        tags = [f"tag{i}" for i in range(20)]
-        self.assertEqual(len(views._filter_hashtags(tags)), 20)
-
-    def test_handles_empty_list(self):
-        self.assertEqual(views._filter_hashtags([]), [])
 
 
 class MainReportViewTests(TestCase):
@@ -1021,11 +1558,11 @@ class GetReportViewTests(TestCase):
                     "video_id": 1,
                     "view_count": 5,
                     "party": "SPD",
-                    "hashtags": ["politik"],
+                    "description": "Politik Nachrichten",
                 },
             ],
-            "party_hashtags": ["politik"],
-            "non_party_hashtags": ["news"],
+            "party_hashtags": ["Politik von der SPD"],
+            "non_party_hashtags": ["Politik ohne Partei"],
             "behaviour_comparisons": [],
         }
 
@@ -1044,7 +1581,7 @@ class GetReportViewTests(TestCase):
     def test_context_includes_intro_text_fields(self):
         view = views.GetReportView()
         view.statistics = self._statistics()
-        view.kwargs = {}
+        view.kwargs = {"participant_id": "abc123"}
         with (
             patch.object(
                 views, "get_party_distribution_plot_user", return_value={"html": "p"}
@@ -1056,7 +1593,7 @@ class GetReportViewTests(TestCase):
             ),
             patch.object(views, "get_wordcloud") as mock_get_wordcloud,
         ):
-            mock_get_wordcloud.side_effect = lambda hashtags, is_party_account: {
+            mock_get_wordcloud.side_effect = lambda descriptions, is_party_account: {
                 "html": "party" if is_party_account else "non_party"
             }
             context = view.get_context_data()
@@ -1069,15 +1606,19 @@ class GetReportViewTests(TestCase):
         self.assertEqual(context["temporal_party_distribution_user"], {"html": "t"})
         self.assertEqual(context["wordcloud_party_user"], {"html": "party"})
         self.assertEqual(context["wordcloud_non_party_user"], {"html": "non_party"})
-        mock_get_wordcloud.assert_any_call(["politik"], is_party_account=True)
-        mock_get_wordcloud.assert_any_call(["news"], is_party_account=False)
+        mock_get_wordcloud.assert_any_call(
+            ["Politik von der SPD"], is_party_account=True
+        )
+        mock_get_wordcloud.assert_any_call(
+            ["Politik ohne Partei"], is_party_account=False
+        )
 
     def test_share_political_is_none_when_no_videos_seen(self):
         view = views.GetReportView()
         view.statistics = self._statistics(
             videos_seen_count_total=0, seen_pol_video_ids=[]
         )
-        view.kwargs = {}
+        view.kwargs = {"participant_id": "abc123"}
         with (
             patch.object(
                 views, "get_party_distribution_plot_user", return_value={"html": None}
@@ -1092,7 +1633,7 @@ class GetReportViewTests(TestCase):
             context = view.get_context_data()
         self.assertIsNone(context["share_political"])
 
-    def test_top_videos_table_filters_blocked_hashtags(self):
+    def test_top_videos_include_tiktok_urls(self):
         view = views.GetReportView()
         view.statistics = self._statistics(
             top_videos=[
@@ -1100,25 +1641,80 @@ class GetReportViewTests(TestCase):
                     "video_id": 1,
                     "view_count": 10,
                     "party": "SPD",
-                    "hashtags": ["fyp", "politik", "wahl"],
+                    "description": "Politik und Wahl",
+                    "username": "deinespd",
                 },
             ],
         )
-        result = view.get_top_videos_table_stats()
-        self.assertEqual(result[0]["filtered_hashtags"], ["politik", "wahl"])
+        view.kwargs = {"participant_id": "abc123"}
+        with (
+            patch.object(
+                views, "get_party_distribution_plot_user", return_value={"html": None}
+            ),
+            patch.object(
+                views,
+                "get_temporal_party_distribution_plot_user",
+                return_value={"html": None},
+            ),
+            patch.object(views, "get_wordcloud", return_value={"html": None}),
+        ):
+            context = view.get_context_data()
+        self.assertEqual(
+            context["top_videos"][0]["tiktok_url"],
+            "https://www.tiktok.com/@deinespd/video/1",
+        )
+        self.assertEqual(
+            context["top_videos"][0]["embed_url"],
+            "https://www.tiktok.com/player/v1/1?autoplay=0",
+        )
+        self.assertEqual(
+            context["top_videos"][0]["description"],
+            "Politik und Wahl",
+        )
 
-    def test_top_videos_table_preserves_input_order(self):
+    def test_top_videos_preserves_input_order(self):
         # services already returns top_videos sorted desc by view_count;
         # the view trusts that order and does not re-sort.
         view = views.GetReportView()
         view.statistics = self._statistics(
             top_videos=[
-                {"video_id": 2, "view_count": 9, "party": "SPD", "hashtags": []},
-                {"video_id": 3, "view_count": 5, "party": "SPD", "hashtags": []},
-                {"video_id": 1, "view_count": 2, "party": "SPD", "hashtags": []},
+                {
+                    "video_id": 2,
+                    "view_count": 9,
+                    "party": "SPD",
+                    "description": "",
+                    "username": "user2",
+                },
+                {
+                    "video_id": 3,
+                    "view_count": 5,
+                    "party": "SPD",
+                    "description": "",
+                    "username": "user3",
+                },
+                {
+                    "video_id": 1,
+                    "view_count": 2,
+                    "party": "SPD",
+                    "description": "",
+                    "username": "user1",
+                },
             ],
         )
-        result = view.get_top_videos_table_stats()
+        view.kwargs = {"participant_id": "abc123"}
+        with (
+            patch.object(
+                views, "get_party_distribution_plot_user", return_value={"html": None}
+            ),
+            patch.object(
+                views,
+                "get_temporal_party_distribution_plot_user",
+                return_value={"html": None},
+            ),
+            patch.object(views, "get_wordcloud", return_value={"html": None}),
+        ):
+            context = view.get_context_data()
+        result = context["top_videos"]
         self.assertEqual([v["video_id"] for v in result], [2, 3, 1])
 
 

@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 class PartyCountRecord(TypedDict):
@@ -31,7 +31,9 @@ class TopVideoRecord(TypedDict):
     username: str
     party: str | None
     view_count: int
-    hashtags: list[str]
+    description: str
+    tiktok_url: NotRequired[str]
+    embed_url: NotRequired[str]
 
 
 class BehaviourComparisonRecord(TypedDict):
@@ -48,9 +50,17 @@ class BehaviourComparisonRecord(TypedDict):
     reference_median_display: str
     reference_p25: float
     reference_p75: float
+    reference_min: float
+    reference_max: float
+    reference_min_display: str
+    reference_max_display: str
     radar_user: float
     radar_mean: float
     is_fraction: bool
+    chart_user_value: NotRequired[float]
+    chart_reference_value: NotRequired[float]
+    chart_user_value_display: NotRequired[str]
+    chart_reference_value_display: NotRequired[str]
 
 
 class ReportStatistics(TypedDict):
@@ -66,7 +76,7 @@ class ReportStatistics(TypedDict):
 
     party_counts: list[PartyCountRecord]
     daily_party_counts: list[DailyPartyCountRecord]
-    hashtags_by_pol_video: dict[int, list[str]]
+    hashtags_by_pol_video: dict[int, str]
     top_videos: list[TopVideoRecord]
 
     party_hashtags: list[str]

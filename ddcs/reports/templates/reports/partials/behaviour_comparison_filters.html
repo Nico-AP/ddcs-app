@@ -1,0 +1,76 @@
+<p class="behaviour-comparison-filters__eyebrow">Vergleichsgruppe anpassen</p>
+
+<form class="behaviour-comparison-filters__form"
+      hx-get="{{ behaviour_profile_url }}"
+      hx-target="#behaviour-profile-updates"
+      hx-swap="innerHTML"
+      hx-trigger="change"
+      hx-indicator="#behaviour-profile-loading">
+  <div class="behaviour-comparison-filters__rows">
+    <div class="behaviour-comparison-filters__row">
+      <span class="behaviour-comparison-filters__label"
+            id="behaviour-filter-age-label">Alter</span>
+      <div class="behaviour-comparison-filters__options"
+           role="radiogroup"
+           aria-labelledby="behaviour-filter-age-label">
+        <label class="behaviour-comparison-chip">
+          <input type="radio"
+                 name="age_group"
+                 value="all"
+                 {% if behaviour_age_group == "all" %}checked{% endif %} />
+          <span>Alle</span>
+        </label>
+        <label class="behaviour-comparison-chip">
+          <input type="radio"
+                 name="age_group"
+                 value="under30"
+                 {% if behaviour_age_group == "under30" %}checked{% endif %} />
+          <span>Unter 30</span>
+        </label>
+        <label class="behaviour-comparison-chip">
+          <input type="radio"
+                 name="age_group"
+                 value="over30"
+                 {% if behaviour_age_group == "over30" %}checked{% endif %} />
+          <span>Ab 30</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="behaviour-comparison-filters__row">
+      <span class="behaviour-comparison-filters__label"
+            id="behaviour-filter-gender-label">Geschlecht</span>
+      <div class="behaviour-comparison-filters__options"
+           role="radiogroup"
+           aria-labelledby="behaviour-filter-gender-label">
+        <label class="behaviour-comparison-chip">
+          <input type="radio"
+                 name="gender"
+                 value="any"
+                 {% if behaviour_gender == "any" %}checked{% endif %} />
+          <span>Alle</span>
+        </label>
+        <label class="behaviour-comparison-chip">
+          <input type="radio"
+                 name="gender"
+                 value="female"
+                 {% if behaviour_gender == "female" %}checked{% endif %} />
+          <span>Weiblich</span>
+        </label>
+        <label class="behaviour-comparison-chip">
+          <input type="radio"
+                 name="gender"
+                 value="male"
+                 {% if behaviour_gender == "male" %}checked{% endif %} />
+          <span>Männlich</span>
+        </label>
+      </div>
+    </div>
+  </div>
+</form>
+
+<div id="behaviour-profile-loading"
+     class="behaviour-comparison-filters__loading htmx-indicator"
+     aria-live="polite">
+  Vergleichsgruppe wird aktualisiert …
+</div>

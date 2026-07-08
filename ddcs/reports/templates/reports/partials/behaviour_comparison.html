@@ -1,20 +1,22 @@
 <div class="report-block">
   <h2 class="h4 mb-3">Dein TikTok-Nutzungsprofil</h2>
   <p class="text-muted mb-4">
-    So nutzt du TikTok im Vergleich zu anderen Teilnehmenden.
+    So nutzt <span class="behaviour-profile-user-label">Du</span> TikTok im Vergleich zu <span class="behaviour-profile-mean-label">Anderen</span> Teilnehmenden.
   </p>
 
-  {% if behaviour_profile_radar.html %}
-    <h3 class="h5 mb-3">Übersicht (Spider-Chart)</h3>
-    <div class="visualization-container mb-4">
-      {{ behaviour_profile_radar.html|safe }}
+  {% if behaviour_comparisons %}
+    <div id="behaviour-profile-updates">
+      {% include "reports/partials/behaviour_profile_content.html" %}
     </div>
-    <p class="small text-muted text-center mb-4">
-      Die Achsen sind nach Perzentilen skaliert (innen&nbsp;=&nbsp;niedrig,
-      außen&nbsp;=&nbsp;hoch). Grau ist der durchschnittliche Nutzer aus der Referenzgruppe (Mittelwert),
-      rot bist du. Fahre mit der Maus über die Punkte für echte Werte und Perzentile.
-      Die Referenzgruppe besteht aus allen Teilnehmenden der "Dein Feed, Deine Wahl" Datensammlung zur Bundestagswahl 2025.
+
+    <aside class="behaviour-comparison-filters position-relative" aria-label="Vergleichsgruppe filtern">
+      {% include "reports/partials/behaviour_comparison_filters.html" %}
+    </aside>
+
+    <p class="text-center mb-4">
+      {% include "reports/partials/behaviour_chart_info_trigger.html" %}
     </p>
+    {% include "reports/partials/behaviour_chart_info_modal.html" %}
   {% endif %}
 </div>
 
