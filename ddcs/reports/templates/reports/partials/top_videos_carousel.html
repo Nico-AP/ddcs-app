@@ -1,0 +1,81 @@
+<div class="report-block bg-gray">
+  <p class="fw-bold text-center">
+    Die <span class="report-highlight">viralsten</span> Politik-Videos in deinem Feed
+  </p>
+  <div id="topVideosCarousel"
+       class="carousel slide top-videos-carousel pt-2"
+       data-bs-ride="false"
+       data-bs-interval="false">
+    {% if top_videos|length > 1 %}
+      <div class="carousel-indicators top-videos-carousel__indicators">
+        {% for video in top_videos %}
+          <button type="button"
+                  data-bs-target="#topVideosCarousel"
+                  data-bs-slide-to="{{ forloop.counter0 }}"
+                  class="{% if forloop.first %}active{% endif %}"
+                  {% if forloop.first %}aria-current="true"{% endif %}
+                  aria-label="Video {{ forloop.counter }} von {{ top_videos|length }}"></button>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    <div class="top-videos-carousel__player">
+      <iframe id="topVideoEmbed"
+              class="top-videos-carousel__iframe"
+              src="{{ top_videos.0.embed_url }}"
+              data-current-embed-src="{{ top_videos.0.embed_url }}"
+              title="TikTok-Video von @{{ top_videos.0.username }}"
+              allow="encrypted-media; fullscreen; picture-in-picture"
+              referrerpolicy="strict-origin-when-cross-origin"></iframe>
+    </div>
+
+    <div class="carousel-inner top-videos-carousel__slides">
+      {% for video in top_videos %}
+        <div class="carousel-item{% if forloop.first %} active{% endif %}"
+             data-embed-src="{{ video.embed_url }}"
+             data-video-title="TikTok-Video von @{{ video.username }}"></div>
+      {% endfor %}
+    </div>
+
+    {% if top_videos|length > 1 %}
+      <button class="carousel-control-prev top-videos-carousel__control"
+              type="button"
+              data-bs-target="#topVideosCarousel"
+              data-bs-slide="prev">
+        <span class="top-videos-carousel__control-icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Vorheriges Video</span>
+      </button>
+      <button class="carousel-control-next top-videos-carousel__control"
+              type="button"
+              data-bs-target="#topVideosCarousel"
+              data-bs-slide="next">
+        <span class="top-videos-carousel__control-icon top-videos-carousel__control-icon--next"
+              aria-hidden="true"></span>
+        <span class="visually-hidden">Nächstes Video</span>
+      </button>
+    {% endif %}
+  </div>
+
+  <script nonce="{{ request.csp_nonce }}">
+    (function tryInit(attempts) {
+      if (window.initTopVideosCarousel) {
+        window.initTopVideosCarousel();
+        return;
+      }
+      if (attempts > 0) {
+        window.requestAnimationFrame(function () {
+          tryInit(attempts - 1);
+        });
+      }
+    })(30);
+  </script>
+
+  <div class="description text-center fs-6 text-secondary">
+    <p class="mb-0">
+      Viralste politische Videos: Die meistgesehenen politischen Inhalte aus
+      deinem Feed (basierend auf Gesamtaufrufen). Dazu zählen Videos mit
+      politischen Hashtags sowie Beiträge offizieller Partei-Accounts.
+    </p>
+  </div>
+</div>
+<hr />

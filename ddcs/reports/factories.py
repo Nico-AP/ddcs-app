@@ -8,7 +8,7 @@ data without requiring an actual data donation.
 # ruff: noqa: S311
 
 from datetime import UTC, datetime, timedelta
-from random import choices, randint, shuffle
+from random import choices, randint
 
 from ddm.participation.models import Participant
 
@@ -26,6 +26,10 @@ from ddcs.reports.types import (
     DailyPartyCountRecord,
     PartyCountRecord,
     TopVideoRecord,
+)
+from ddcs.reports.utils import (
+    parse_tiktok_username_from_url,
+    parse_tiktok_video_id_from_url,
 )
 
 # Mirrors what the real pipeline emits: every entry in PARTIES_ORDER,
@@ -100,34 +104,46 @@ def get_synthetic_post_data(days: int = 30) -> list[DailyAccountPostCountRecord]
     ]
 
 
-def _synthetic_hashtags_by_video(
-        video_ids: list[int],
-        SYNTHETIC_HASHTAGS=None
-) -> dict[int, list[str]]:
-    return {
-        video_id: choices(SYNTHETIC_HASHTAGS, k=randint(0, 5))
-        for video_id in video_ids
-    }
-
 def _synthetic_descriptions_by_video(video_ids: list[int]) -> dict[int, str]:
     return {video_id: choices(SYNTHETIC_DESCRIPTIONS)[0] for video_id in video_ids}
+
+
+SYNTHETIC_TOP_VIDEO_URLS: list[str] = [
+    "https://www.tiktok.com/@alice_weidel_afd/video/7658941918302326048",
+    "https://www.tiktok.com/@deinespd/video/7657187761883041057",
+    "https://www.tiktok.com/@die.linke/photo/7623456044794055968",
+]
+
+_SYNTHETIC_TOP_VIDEO_PARTIES = {
+    "alice_weidel_afd": "AfD",
+    "deinespd": "SPD",
+    "die.linke": "Linke",
+}
 
 
 def _synthetic_top_videos(
     video_ids: list[int], n: int = N_TOP_VIDEOS
 ) -> list[TopVideoRecord]:
-    shuffled = list(set(video_ids))
-    shuffle(shuffled)
-    return [
-        {
-            "video_id": video_id,
-            "username": choices(SYNTHETIC_USERNAMES)[0],
-            "party": choices(SYNTHETIC_PARTIES)[0],
-            "view_count": randint(1, 20),
-            "description": choices(SYNTHETIC_DESCRIPTIONS)[0],
-        }
-        for video_id in shuffled[:n]
-    ]
+    del video_ids, n
+    videos: list[TopVideoRecord] = []
+    for index, url in enumerate(SYNTHETIC_TOP_VIDEO_URLS):
+        video_id = parse_tiktok_video_id_from_url(url)
+        username = parse_tiktok_username_from_url(url)
+        if video_id is None or not username:
+            continue
+        videos.append(
+            {
+                "video_id": video_id,
+                "username": username,
+                "party": _SYNTHETIC_TOP_VIDEO_PARTIES.get(username, NO_PARTY_KEY),
+                "view_count": len(SYNTHETIC_TOP_VIDEO_URLS) - index,
+                "description": SYNTHETIC_DESCRIPTIONS[
+                    index % len(SYNTHETIC_DESCRIPTIONS)
+                ],
+                "tiktok_url": url,
+            }
+        )
+    return videos
 
 
 def _synthetic_description_list() -> list[str]:

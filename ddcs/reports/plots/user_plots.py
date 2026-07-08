@@ -4,6 +4,11 @@ from typing import Any
 
 from plotly import graph_objects as go
 
+from ddcs.reports.behaviour_metrics import (
+    BEHAVIOUR_CHART_METRICS,
+    BEHAVIOUR_CHART_SLIDES,
+)
+from ddcs.reports.config import NO_PARTY_KEY, PARTIES_ORDER
 from ddcs.reports.plots.utils import (
     PARTY_COLOR_OTHER,
     PARTY_COLORS,
@@ -12,11 +17,6 @@ from ddcs.reports.plots.utils import (
     create_plot_html,
     hex_to_rgba,
 )
-from ddcs.reports.behaviour_metrics import (
-    BEHAVIOUR_CHART_METRICS,
-    BEHAVIOUR_CHART_SLIDES,
-)
-from ddcs.reports.config import NO_PARTY_KEY, PARTIES_ORDER
 from ddcs.reports.types import (
     BehaviourComparisonRecord,
     DailyPartyCountRecord,
@@ -32,12 +32,14 @@ _MEAN_BAR_Y = -0.085
 _BEHAVIOUR_USER_COLOR = "#0cc4b6"
 _BEHAVIOUR_MEAN_COLOR = "#ff587a"
 _SINGLE_METRIC_CHART_HEIGHT = 128
+_PLOT_CORNER_RADIUS = 4
 
 _FRACTION_METRICS = frozenset(
     {
         "weekend_activity_frac",
         "night_activity_frac",
         "frac_instant_skip",
+        "rate_like",
         "frac_political_engagement",
     }
 )
@@ -46,6 +48,13 @@ _FRACTION_METRICS = frozenset(
 def _highlight_user_value(value_display: str) -> str:
     return (
         f'<span style="color: {_BEHAVIOUR_USER_COLOR}; font-weight: 600;">'
+        f"{value_display}</span>"
+    )
+
+
+def _highlight_mean_value(value_display: str) -> str:
+    return (
+        f'<span style="color: {_BEHAVIOUR_MEAN_COLOR}; font-weight: 600;">'
         f"{value_display}</span>"
     )
 
@@ -60,7 +69,13 @@ _USER_SUBTITLE_SENTENCES: dict[str, str] = {
         "{value} deiner TikTok-Zeit verbringst du am Wochenende."
     ),
     "night_activity_frac": ("{value} deiner Videos schaust du nachts (22-6 Uhr)."),
+    "peak_activity_hour": (
+        "Deine aktivste Stunde ist {hour}. "
+        "{same_frac} der Teilnehmenden nutzen TikTok am häufigsten "
+        "zur gleichen Stunde, {other_frac} zu einer anderen Uhrzeit."
+    ),
     "frac_instant_skip": ("Bei {value} der Videos scrollst du direkt weiter."),
+    "rate_like": ("{value} der Videos, die du anschaust, likst du."),
     "frac_political_engagement": (
         "{value} deiner Interaktionen (Likes, Shares, Speichern, Kommentare) "
         "betreffen politische Inhalte."
@@ -69,6 +84,17 @@ _USER_SUBTITLE_SENTENCES: dict[str, str] = {
 
 
 def _row_user_sentence(row: BehaviourComparisonRecord) -> str:
+    if row["metric"] == "peak_activity_hour":
+        template = _USER_SUBTITLE_SENTENCES[row["metric"]]
+        hour = _highlight_user_value(row["value_display"])
+        same_frac = _highlight_user_value(
+            row.get("chart_user_value_display", row["value_display"])
+        )
+        other_frac = _highlight_mean_value(
+            row.get("chart_reference_value_display", row["reference_mean_display"])
+        )
+        return template.format(hour=hour, same_frac=same_frac, other_frac=other_frac)
+
     template = _USER_SUBTITLE_SENTENCES.get(
         row["metric"],
         "Dein Wert: {value}",
@@ -113,6 +139,24 @@ def _behaviour_hover_value_display(metric: str, value_display: str) -> str:
     return value_display
 
 
+def _comparison_chart_values(
+    row: BehaviourComparisonRecord,
+) -> tuple[float, float, str, str]:
+    if row["metric"] == "peak_activity_hour":
+        return (
+            row.get("chart_user_value", row["value"]),
+            row.get("chart_reference_value", row["reference_mean"]),
+            row.get("chart_user_value_display", row["value_display"]),
+            row.get("chart_reference_value_display", row["reference_mean_display"]),
+        )
+    return (
+        row["value"],
+        row["reference_mean"],
+        row["value_display"],
+        row["reference_mean_display"],
+    )
+
+
 def _metric_axis_max(user_value: float, mean_value: float) -> float:
     """X-axis upper bound: the longer of the user and mean bars."""
     axis_max = max(user_value, mean_value)
@@ -125,17 +169,18 @@ def _add_horizontal_value_bar(
     y_center: float,
     color: str,
 ) -> None:
-    fig.add_shape(
-        type="rect",
-        x0=0,
-        x1=x_end,
-        y0=y_center - _BAR_HALF_HEIGHT,
-        y1=y_center + _BAR_HALF_HEIGHT,
-        xref="x",
-        yref="y",
-        fillcolor=color,
-        line={"width": 0},
-        layer="above",
+    if x_end <= 0:
+        return
+    fig.add_trace(
+        go.Bar(
+            x=[x_end],
+            y=[y_center],
+            orientation="h",
+            width=_BAR_HALF_HEIGHT * 2,
+            marker={"color": color},
+            showlegend=False,
+            hoverinfo="skip",
+        )
     )
 
 
@@ -163,6 +208,12 @@ def _behaviour_value_xaxis(axis_max: float) -> dict[str, Any]:
 def _behaviour_user_hover_data(
     row: BehaviourComparisonRecord,
 ) -> tuple[str, str, str]:
+    if row["metric"] == "peak_activity_hour":
+        return (
+            "Gleiche Peak-Stunde",
+            row.get("chart_user_value_display", row["value_display"]),
+            f"Deine Peak-Stunde: {row['value_display']}",
+        )
     return (
         row["label"],
         _behaviour_hover_value_display(row["metric"], row["value_display"]),
@@ -171,6 +222,11 @@ def _behaviour_user_hover_data(
 
 
 def _behaviour_mean_hover_data(row: BehaviourComparisonRecord) -> tuple[str, str]:
+    if row["metric"] == "peak_activity_hour":
+        return (
+            "Andere Peak-Stunde",
+            row.get("chart_reference_value_display", row["reference_mean_display"]),
+        )
     return (
         "Durchschnitt Teilnehmende",
         row["reference_mean_display"],
@@ -178,20 +234,19 @@ def _behaviour_mean_hover_data(row: BehaviourComparisonRecord) -> tuple[str, str
 
 
 def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
-    user_value = row["value"]
-    mean_value = row["reference_mean"]
+    user_value, mean_value, user_display, mean_display = _comparison_chart_values(row)
     axis_max = _metric_axis_max(user_value, mean_value)
 
     fig = go.Figure()
     _add_metric_value_bars(fig, user_value, mean_value)
     _add_bar_end_label(
-        fig, user_value, _USER_BAR_Y, row["value_display"], _BEHAVIOUR_USER_COLOR
+        fig, user_value, _USER_BAR_Y, user_display, _BEHAVIOUR_USER_COLOR
     )
     _add_bar_end_label(
         fig,
         mean_value,
         _MEAN_BAR_Y,
-        row["reference_mean_display"],
+        mean_display,
         _BEHAVIOUR_MEAN_COLOR,
     )
 
@@ -254,6 +309,7 @@ def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
         plot_bgcolor="rgba(0,0,0,0)",
         margin={"l": 8, "r": 56, "t": 0, "b": 24},
         hovermode="closest",
+        barcornerradius=_PLOT_CORNER_RADIUS,
     )
     return create_plot_html(fig, config=PLOT_CONFIG)
 
@@ -345,7 +401,8 @@ def get_party_distribution_plot_user(
                 "colors": [
                     hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER))
                     for party in labels
-                ]
+                ],
+                "cornerradius": _PLOT_CORNER_RADIUS,
             },
         )
     )
@@ -367,7 +424,7 @@ def get_party_distribution_plot_user(
 def get_temporal_party_distribution_plot_user(
     daily_party_counts: list[DailyPartyCountRecord],
 ) -> dict:
-    """Create weekly watched videos visualization with stacked area chart."""
+    """Create daily watched videos visualization with stacked bar chart."""
     relevant_data = [c for c in daily_party_counts if c["party"] != NO_PARTY_KEY]
 
     if not relevant_data:
@@ -396,14 +453,13 @@ def get_temporal_party_distribution_plot_user(
 
         counts = party_data[party]
         fig.add_trace(
-            go.Scatter(
+            go.Bar(
                 x=all_dates,
                 y=[counts.get(d, 0) for d in all_dates],
                 name=party,
-                mode="lines",
-                line={"width": 0},
-                stackgroup="one",
-                fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
+                marker={
+                    "color": hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER))
+                },
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",
@@ -423,8 +479,9 @@ def get_temporal_party_distribution_plot_user(
     }
 
     fig.update_layout(
+        barmode="stack",
         xaxis_title="Datum",
-        yaxis_title="Anzahl gesehener Videos (kumulativ)",
+        yaxis_title="",
         hovermode="x unified",
         dragmode=False,
         showlegend=True,
@@ -438,6 +495,8 @@ def get_temporal_party_distribution_plot_user(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         hoverdistance=100,
         hoverlabel={"namelength": 0},
+        bargap=0.15,
+        barcornerradius=_PLOT_CORNER_RADIUS,
     )
 
     fig.update_xaxes(
@@ -455,6 +514,7 @@ def get_temporal_party_distribution_plot_user(
     )
 
     fig.update_yaxes(
+        automargin=True,
         showgrid=True,
         gridwidth=1,
         gridcolor="gray",
@@ -462,7 +522,8 @@ def get_temporal_party_distribution_plot_user(
         zerolinewidth=1,
         zerolinecolor="gray",
         tickfont={"size": 20, "color": "black"},
-        title_font={"size": 20},
+        title_font={"size": 1},
+        title_standoff=0,
     )
 
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}

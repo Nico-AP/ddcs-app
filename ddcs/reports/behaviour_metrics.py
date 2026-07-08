@@ -26,7 +26,9 @@ PROFILE_METRICS: list[str] = [
     "avg_session_length_sec",
     "weekend_activity_frac",
     "night_activity_frac",
+    "peak_activity_hour",
     "frac_instant_skip",
+    "rate_like",
     "frac_political_engagement",
 ]
 
@@ -37,7 +39,9 @@ BEHAVIOUR_CHART_METRICS: list[str] = [
     "avg_session_length_sec",
     "weekend_activity_frac",
     "night_activity_frac",
+    "peak_activity_hour",
     "frac_instant_skip",
+    "rate_like",
     "frac_political_engagement",
 ]
 
@@ -51,9 +55,11 @@ BEHAVIOUR_CHART_SLIDES: list[list[str]] = [
     [
         "weekend_activity_frac",
         "night_activity_frac",
+        "peak_activity_hour",
     ],
     [
         "frac_instant_skip",
+        "rate_like",
         "frac_political_engagement",
     ],
 ]
@@ -64,7 +70,9 @@ RADAR_LABELS: dict[str, str] = {
     "avg_active_hours_per_day": "Durchschnittliche Anzahl <br>aktiver Stunden pro Tag",
     "weekend_activity_frac": ("Anteil TikTok-Zeit am Wochenende"),
     "night_activity_frac": "Anteil TikTok-Zeit nachts",
+    "peak_activity_hour": "Aktivste Nutzungsstunde",
     "frac_instant_skip": ("Anteil Instant-Skips"),
+    "rate_like": "Anteil gelikter Videos",
     "frac_political_engagement": ("Anteil politische Interaktionen"),
 }
 
@@ -74,7 +82,9 @@ METRIC_LABELS: dict[str, str] = {
     "avg_active_hours_per_day": "Ø aktive Stunden pro Tag",
     "weekend_activity_frac": "Anteil Wochenend-Wiedergaben",
     "night_activity_frac": "Anteil Nacht-Wiedergaben (22-6 Uhr)",
+    "peak_activity_hour": "Aktivste Nutzungsstunde",
     "frac_instant_skip": "Anteil Instant-Skips (< 1 Sek. bis zum nächsten Video)",
+    "rate_like": "Anteil gelikter Videos (Likes pro Ansicht)",
     "frac_political_engagement": "Anteil politische Interaktionen",
 }
 
@@ -82,6 +92,7 @@ FRACTION_METRICS = {
     "weekend_activity_frac",
     "night_activity_frac",
     "frac_instant_skip",
+    "rate_like",
     "frac_political_engagement",
 }
 
@@ -373,6 +384,7 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
     sessions = _watch_sessions(timestamps)
     session_lengths = [duration for duration, _ in sessions]
     videos_per_session = [count for _, count in sessions]
+    like_count = len(_filtered_engagement_records(data.liked_videos))
 
     return {
         "total_watches": float(watch_count),
@@ -385,6 +397,7 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
         "weekend_activity_frac": weekend_watches / (weekend_watches + weekday_watches),
         "night_activity_frac": night_watches / watch_count,
         "frac_instant_skip": _frac_instant_skip(timestamps),
+        "rate_like": like_count / watch_count,
         "peak_activity_hour": float(peak_hour),
     }
 
@@ -414,6 +427,57 @@ def compute_engagement_metrics(
     )
     return {
         "frac_political_engagement": political_engagements / total_engagements,
+    }
+
+
+def _peak_hour_same_fraction(peak_hour: int, population: list[float]) -> float:
+    if not population:
+        return 0.0
+    matches = sum(1 for value in population if round(value) == peak_hour)
+    return matches / len(population)
+
+
+def _build_peak_hour_comparison(
+    peak_hour: float,
+    population: list[float],
+) -> BehaviourComparisonRecord:
+    hour = round(peak_hour)
+    same_frac = _peak_hour_same_fraction(hour, population)
+    diff_frac = 1.0 - same_frac
+    stats = _distribution_stats(population)
+    same_display = f"{same_frac * 100:.1f}\u00a0%"
+    diff_display = f"{diff_frac * 100:.1f}\u00a0%"
+    return {
+        "metric": "peak_activity_hour",
+        "label": METRIC_LABELS["peak_activity_hour"],
+        "radar_label": RADAR_LABELS["peak_activity_hour"],
+        "value": peak_hour,
+        "value_display": _format_metric_value("peak_activity_hour", peak_hour),
+        "percentile": same_frac * 100.0,
+        "reference_mean": diff_frac,
+        "reference_mean_display": diff_display,
+        "reference_mean_percentile": 50.0,
+        "reference_median": stats["median"],
+        "reference_median_display": _format_metric_value(
+            "peak_activity_hour", stats["median"]
+        ),
+        "reference_p25": stats["p25"],
+        "reference_p75": stats["p75"],
+        "reference_min": stats["min"],
+        "reference_max": stats["max"],
+        "reference_min_display": _format_metric_value(
+            "peak_activity_hour", stats["min"]
+        ),
+        "reference_max_display": _format_metric_value(
+            "peak_activity_hour", stats["max"]
+        ),
+        "radar_user": same_frac * 100.0,
+        "radar_mean": 50.0,
+        "is_fraction": False,
+        "chart_user_value": same_frac,
+        "chart_reference_value": diff_frac,
+        "chart_user_value_display": same_display,
+        "chart_reference_value_display": diff_display,
     }
 
 
@@ -466,6 +530,9 @@ def apply_reference_demographic_filter(
         if not population:
             updated.append(row)
             continue
+        if row["metric"] == "peak_activity_hour":
+            updated.append(_build_peak_hour_comparison(row["value"], population))
+            continue
         updated.append(_comparison_with_reference_population(row, population))
     return updated
 
@@ -497,6 +564,9 @@ def compute_behaviour_comparisons(
             continue
         population = reference_values.get(metric)
         if not population:
+            continue
+        if metric == "peak_activity_hour":
+            comparisons.append(_build_peak_hour_comparison(value, population))
             continue
         percentile = _percentile_rank(value, population)
         stats = _distribution_stats(population)
