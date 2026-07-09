@@ -1414,6 +1414,7 @@ class PartyDistributionAllAccountsPlotTests(TestCase):
         ]
         result = public_plots.get_party_distribution_all_accounts(records)
         self.assertIsNotNone(result["html"])
+        self.assertIn("cornerradius", result["html"])
         expected = {"party": "SPD", "value": 5, "color": "#e4454f"}
         self.assertEqual(result["data"], expected)
 
@@ -1451,6 +1452,9 @@ class TemporalPartyDistributionAllAccountsPlotTests(TestCase):
         ]
         result = public_plots.get_temporal_party_distribution_all_accounts(records)
         self.assertIsNotNone(result["html"])
+        self.assertIn("bar", result["html"])
+        self.assertIn("stack", result["html"])
+        self.assertIn("barcornerradius", result["html"])
 
 
 # ============================================================

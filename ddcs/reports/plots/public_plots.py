@@ -26,6 +26,7 @@ from ddcs.reports.plots.utils import (
     PARTY_COLOR_OTHER,
     PARTY_COLORS,
     PLOT_CONFIG,
+    PLOT_CORNER_RADIUS,
     PLOT_FONT_FAMILY,
     create_plot_html,
     hex_to_rgba,
@@ -69,6 +70,7 @@ def get_party_distribution_all_accounts(
                 # treemap is flat with an unlabeled root, so that default
                 # left a large blank strip above the tiles. Match all sides.
                 "pad": {"t": 14, "l": 14, "r": 14, "b": 14},
+                "cornerradius": PLOT_CORNER_RADIUS,
             },
             hovertemplate="<b>%{label}</b><br>Videos: %{value}<extra></extra>",
             # All parties are root-level tiles (single level, no drill-down),
@@ -99,7 +101,7 @@ def get_party_distribution_all_accounts(
 def get_temporal_party_distribution_all_accounts(
     records: list[DailyAccountPostCountRecord],
 ) -> dict[str, Any]:
-    """Create stacked-area chart of posted-video counts per day, across all
+    """Create stacked bar chart of posted-video counts per day, across all
     monitored party accounts."""
     daily_party_counts = aggregate_daily_party_counts(records)
     if not daily_party_counts:
@@ -124,14 +126,13 @@ def get_temporal_party_distribution_all_accounts(
 
         counts = party_data[party]
         fig.add_trace(
-            go.Scatter(
+            go.Bar(
                 x=all_dates,
                 y=[counts.get(d, 0) for d in all_dates],
                 name=party,
-                mode="lines",
-                line={"width": 0},
-                stackgroup="one",
-                fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
+                marker={
+                    "color": hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER))
+                },
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",
@@ -142,8 +143,9 @@ def get_temporal_party_distribution_all_accounts(
         )
 
     fig.update_layout(
+        barmode="stack",
         xaxis_title="Datum",
-        yaxis_title="Anzahl Videos (kumuliert)",
+        yaxis_title="",
         hovermode="x unified",
         dragmode=False,
         showlegend=True,
@@ -164,6 +166,8 @@ def get_temporal_party_distribution_all_accounts(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         hoverdistance=100,
         hoverlabel={"namelength": 0},
+        bargap=0.15,
+        barcornerradius=PLOT_CORNER_RADIUS,
     )
 
     fig.update_xaxes(
@@ -180,16 +184,16 @@ def get_temporal_party_distribution_all_accounts(
         title_font={"size": 20},
     )
     fig.update_yaxes(
-        showgrid=True,
-        title_standoff=40,
         automargin=True,
+        showgrid=True,
         gridwidth=1,
         gridcolor="gray",
         zeroline=True,
         zerolinewidth=1,
         zerolinecolor="gray",
         tickfont={"size": 20, "color": "black"},
-        title_font={"size": 20},
+        title_font={"size": 1},
+        title_standoff=0,
     )
 
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
