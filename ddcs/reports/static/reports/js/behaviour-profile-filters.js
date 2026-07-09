@@ -17,6 +17,10 @@
     return Boolean(element && element.offsetParent !== null);
   }
 
+  function behaviourChartHeight() {
+    return window.matchMedia("(max-width: 767.98px)").matches ? 96 : 112;
+  }
+
   function initDeferredPlot(script) {
     const targetId = script.dataset.target;
     const mount = targetId ? document.getElementById(targetId) : null;
@@ -36,6 +40,12 @@
     } catch (_error) {
       return Promise.resolve();
     }
+
+    const height = behaviourChartHeight();
+    spec.layout = spec.layout || {};
+    spec.layout.height = height;
+    spec.layout.autosize = true;
+    mount.style.height = `${height}px`;
 
     return Plotly.newPlot(
       mount,
@@ -144,6 +154,18 @@
     }
 
     preservedSlideIndex = getActiveSlideIndex(carousel);
+  });
+
+  document.body.addEventListener("htmx:afterSwap", function (event) {
+    const target = event.detail.target;
+    if (!target) {
+      return;
+    }
+
+    // Filter updates swap without the long report transition — init immediately.
+    if (target.id === "behaviour-profile-updates") {
+      scheduleDeferredPlotInit(target);
+    }
   });
 
   document.body.addEventListener("htmx:afterSettle", function (event) {
