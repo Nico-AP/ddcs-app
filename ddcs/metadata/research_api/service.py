@@ -125,7 +125,14 @@ class ResearchAPIService:
             pages_retrieved += 1
             self.sync_stats["pages_retrieved"] += 1
             for video in page.get("data", {}).get("videos", []):
-                self._process_api_response(video)
+                try:
+                    self._process_api_response(video)
+                except Exception:
+                    logger.exception(
+                        "Exception while processing video data. Data: %s",
+                        video
+                    )
+                    raise
                 videos_retrieved += 1
                 self.sync_stats["videos_retrieved"] += 1
 
