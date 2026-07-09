@@ -325,6 +325,19 @@ def _make_color_func(
     return color_func
 
 
+def _responsive_wordcloud_svg(svg: str) -> str:
+    """Add viewBox so the fixed-size SVG scales to its container width."""
+    width = WORDCLOUD_CONFIG["width"]
+    height = WORDCLOUD_CONFIG["height"]
+    if "viewBox=" in svg:
+        return svg
+    return svg.replace(
+        "<svg ",
+        (f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet" '),
+        1,
+    )
+
+
 def _create_wordcloud(frequencies: Counter, color_rgb: tuple[int, int, int]) -> dict:
     """Generate a wordcloud SVG from frequencies and a base RGB color."""
     if not frequencies:
@@ -336,10 +349,9 @@ def _create_wordcloud(frequencies: Counter, color_rgb: tuple[int, int, int]) -> 
         color_func=_make_color_func(frequencies, *color_rgb),
     ).generate_from_frequencies(frequencies)
 
+    svg = _responsive_wordcloud_svg(cloud.to_svg(embed_font=False))
     return {
-        "html": (
-            f'<div class="wordcloud-container">{cloud.to_svg(embed_font=False)}</div>'
-        )
+        "html": f'<div class="wordcloud-container">{svg}</div>',
     }
 
 

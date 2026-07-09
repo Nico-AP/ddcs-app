@@ -1529,6 +1529,7 @@ class CreateWordcloudTests(TestCase):
         self.assertIsNotNone(result["html"])
         self.assertIn("wordcloud-container", result["html"])
         self.assertIn("<svg", result["html"])
+        self.assertIn('viewBox="0 0 800 600"', result["html"])
 
 
 class GetWordcloudTests(TestCase):
