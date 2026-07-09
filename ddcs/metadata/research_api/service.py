@@ -129,8 +129,7 @@ class ResearchAPIService:
                     self._process_api_response(video)
                 except Exception:
                     logger.exception(
-                        "Exception while processing video data. Data: %s",
-                        video
+                        "Exception while processing video data. Data: %s", video
                     )
                     raise
                 videos_retrieved += 1
@@ -144,7 +143,7 @@ class ResearchAPIService:
         music = self._sync_music(data.get("music_id"))
         video = self._sync_video(data, user=user, music=music)
         self._sync_video_statistics(data, video=video)
-        self._sync_hashtags(data.get("hashtag_info_list", []), video=video)
+        self._sync_hashtags(data.get("hashtag_names", []), video=video)
 
     def _sync_user(self, username: str) -> TikTokUser:
         user, created = TikTokUser.objects.get_or_create(
@@ -192,13 +191,27 @@ class ResearchAPIService:
         clean_data = self._clean_video_statistics(data)
         APIVideoStatistics.objects.create(video=video, **clean_data)
 
-    def _sync_hashtags(self, hashtag_data: list[dict], video: TikTokVideo) -> None:
-        hashtags = [self._sync_hashtag(h) for h in hashtag_data]
+    def _sync_hashtags(self, hashtag_names: list[str], video: TikTokVideo) -> None:
+        hashtags = [self._sync_hashtag_name(n) for n in hashtag_names]
         if hashtags:
-            # TODO: Decide on behaviour here; overwrite existing hashtags?
-            #  Accessed by both scraper and api
+            # TODO: If scraper is added, decide on behaviour here: which
+            #  source takes precedence/(how) are hashtags overwritten?
             video.hashtags.set(hashtags)
 
+    def _sync_hashtag_name(self, hashtag_name: str) -> TikTokHashtag:
+        hashtag, created = TikTokHashtag.objects.get_or_create(
+            name=hashtag_name,
+            defaults={
+                "added_by": DataOrigins.RESEARCH_API,
+            },
+        )
+        if created:
+            self.sync_stats["hashtags_created"] += 1
+
+        return hashtag
+
+    # Note: Function is no longer in use because TikTok's API response structure
+    #  has changed (first observed on 08.07.2026). Left to document past behaviour.
     def _sync_hashtag(self, hashtag_data: dict[str, Any]) -> TikTokHashtag:
         clean_data = self._clean_hashtag(hashtag_data)
         hashtag, created = TikTokHashtag.objects.get_or_create(

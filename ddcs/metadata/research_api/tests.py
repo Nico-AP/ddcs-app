@@ -15,7 +15,6 @@ from ddcs.metadata.models import (
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import (
-    APIHashtagInfos,
     APIVideoInfos,
     APIVideoStatistics,
 )
@@ -58,6 +57,7 @@ def make_api_payload(**overrides) -> dict:
                 "hashtag_description": "for you page",
             },
         ],
+        "hashtag_names": ["fyp", "fmp"],
     }
     payload.update(overrides)
     return payload
@@ -234,19 +234,18 @@ class ResearchAPIServiceSyncTests(TestCase):
         self.assertEqual(hashtag.id_tiktok, 999)
         self.assertEqual(self.service.sync_stats["hashtags_created"], 0)
 
+    def test_sync_hashtag_name_creates_new_hashtag(self):
+        name = "new_hashtag"
+        self.service._sync_hashtag_name(name)
+        self.assertTrue(TikTokHashtag.objects.filter(name=name).exists())
+
     def test_sync_hashtags_attaches_to_video(self):
         user = TikTokUser.objects.create(
             name="alice", added_by=DataOrigins.RESEARCH_API
         )
         video = self.service._sync_video(make_api_payload(), user=user, music=None)
 
-        self.service._sync_hashtags(
-            [
-                {"hashtag_id": 1, "hashtag_name": "a", "hashtag_description": ""},
-                {"hashtag_id": 2, "hashtag_name": "b", "hashtag_description": ""},
-            ],
-            video=video,
-        )
+        self.service._sync_hashtags(["a", "b"], video=video)
 
         names = set(video.hashtags.values_list("name", flat=True))
         self.assertEqual(names, {"a", "b"})
@@ -278,10 +277,8 @@ class ResearchAPIServiceProcessTests(TestCase):
         self.assertEqual(infos.description, "hello world")
         self.assertEqual(infos.region_code, "US")
 
-        hashtag = video.hashtags.get()
-        self.assertEqual(hashtag.name, "fyp")
-        self.assertEqual(hashtag.id_tiktok, 5500000000000000001)
-        self.assertEqual(hashtag.api_infos.get().description, "for you page")
+        hashtags = video.hashtags.all()
+        self.assertEqual(len(hashtags), 2)
 
     def test_process_api_response_handles_missing_music(self):
         payload = make_api_payload(music_id=None)
@@ -301,9 +298,8 @@ class ResearchAPIServiceProcessTests(TestCase):
         video = TikTokVideo.objects.get(id_tiktok=payload["id"])
         self.assertEqual(TikTokVideo.objects.count(), 1)
         self.assertEqual(TikTokUser.objects.count(), 1)
-        self.assertEqual(TikTokHashtag.objects.count(), 1)
+        self.assertEqual(TikTokHashtag.objects.count(), 2)
         self.assertEqual(APIVideoInfos.objects.count(), 1)
-        self.assertEqual(APIHashtagInfos.objects.count(), 1)
         # Statistics are appended on every sync — two calls, two rows.
         self.assertEqual(video.statistics.count(), 2)
 
