@@ -108,7 +108,13 @@ def create_deferred_plot_html(
     )
     return (
         f'<div id="{plot_id}" class="{mount_class}" '
-        f'style="height:{height}px; width:100%;"></div>'
+        f'style="height:{height}px; width:100%;">'
+        f'<div class="behaviour-plot-skeleton" aria-hidden="true">'
+        f'<div class="behaviour-plot-skeleton__bar '
+        f'behaviour-plot-skeleton__bar--user"></div>'
+        f'<div class="behaviour-plot-skeleton__bar '
+        f'behaviour-plot-skeleton__bar--mean"></div>'
+        f"</div></div>"
         f'<script type="application/json" class="behaviour-plot-spec" '
         f'data-target="{plot_id}">{payload}</script>'
     )

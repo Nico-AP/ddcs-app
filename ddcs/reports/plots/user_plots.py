@@ -29,11 +29,16 @@ logger = logging.getLogger(__name__)
 
 
 _BAR_HALF_HEIGHT = 0.085
-_USER_BAR_Y = 0.085
-_MEAN_BAR_Y = -0.085
+_USER_BAR_Y = _BAR_HALF_HEIGHT
+_MEAN_BAR_Y = -_BAR_HALF_HEIGHT
+_BEHAVIOUR_Y_AXIS_PADDING = 0.07
+_BEHAVIOUR_Y_AXIS_RANGE = [
+    _MEAN_BAR_Y - _BAR_HALF_HEIGHT - _BEHAVIOUR_Y_AXIS_PADDING,
+    _USER_BAR_Y + _BAR_HALF_HEIGHT + _BEHAVIOUR_Y_AXIS_PADDING,
+]
 _BEHAVIOUR_USER_COLOR = "#0cc4b6"
 _BEHAVIOUR_MEAN_COLOR = "#ff587a"
-_SINGLE_METRIC_CHART_HEIGHT = 128
+_SINGLE_METRIC_CHART_HEIGHT = 112
 _PLOT_CORNER_RADIUS = 4
 
 _FRACTION_METRICS = frozenset(
@@ -313,7 +318,7 @@ def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
             "showticklabels": False,
             "showgrid": False,
             "zeroline": False,
-            "range": [-0.34, 0.34],
+            "range": _BEHAVIOUR_Y_AXIS_RANGE,
             "fixedrange": True,
         },
         dragmode=False,
@@ -324,7 +329,7 @@ def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
         font={"size": 13, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin={"l": 8, "r": 8, "t": 0, "b": 16},
+        margin={"l": 8, "r": 8, "t": 2, "b": 4},
         hovermode="closest",
         barcornerradius=_PLOT_CORNER_RADIUS,
     )
