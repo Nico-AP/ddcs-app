@@ -1045,9 +1045,23 @@ class BehaviourProfileComparisonTests(TestCase):
         self.assertIn("42.0", html)
         self.assertIn("30.0", html)
 
-    def test_axis_max_is_max_of_user_and_mean(self):
+    def test_axis_max_includes_padding_for_end_labels(self):
         self.assertEqual(
-            user_plots._metric_axis_max(0.42, 0.3),
+            user_plots._metric_axis_max(
+                0.42,
+                0.3,
+                user_display="42.0 %",
+                mean_display="30.0 %",
+            ),
+            0.42 * (1 + max(0.22, 6 * 0.065)),
+        )
+        self.assertGreater(
+            user_plots._metric_axis_max(
+                0.42,
+                0.3,
+                user_display="42.0 %",
+                mean_display="30.0 %",
+            ),
             0.42,
         )
 
@@ -1158,7 +1172,7 @@ class BehaviourProfileComparisonTests(TestCase):
     def test_returns_rows_with_chart_and_title(self):
         rows = user_plots.get_behaviour_profile_rows([self._sample_comparison()])
         self.assertEqual(len(rows), 1)
-        self.assertIn("plotly-graph-div", rows[0]["chart_html"])
+        self.assertIn("behaviour-plot-mount", rows[0]["chart_html"])
         self.assertIn("color: #0cc4b6", rows[0]["title_html"])
         self.assertIn("scrollst du direkt weiter", rows[0]["title_html"])
         self.assertNotIn("description_html", rows[0])
@@ -1168,7 +1182,7 @@ class BehaviourProfileComparisonTests(TestCase):
             [self._sample_comparison()]
         )
         self.assertIsNotNone(result["html"])
-        self.assertIn("plotly-graph-div", result["html"])
+        self.assertIn("behaviour-plot-mount", result["html"])
 
 
 class PartyDistributionPlotTests(TestCase):

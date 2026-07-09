@@ -1,3 +1,6 @@
+import json
+import uuid
+
 from django.conf import settings
 from django.templatetags.static import static
 from plotly.graph_objs import Figure
@@ -76,6 +79,38 @@ def create_plot_html(
         full_html=False,
         include_plotlyjs=plotly_js,
         config=config or STATIC_PLOT_CONFIG,
+    )
+
+
+def create_deferred_plot_html(
+    fig: Figure,
+    config: dict | None = None,
+    *,
+    mount_class: str = "behaviour-plot-mount",
+) -> str | None:
+    """Emit a mount point plus JSON spec for client-side ``Plotly.newPlot``.
+
+    Behaviour mini-charts sit inside a Bootstrap carousel and HTMX swaps;
+    inline ``Plotly.newPlot`` runs before the container has its final width
+    (or while slides are ``display: none``), so bar lengths are wrong until
+    the user interacts. Initialise from ``behaviour-profile-filters.js`` instead.
+    """
+    plot_id = f"behaviour-plot-{uuid.uuid4().hex}"
+    figure = json.loads(fig.to_json())
+    height = figure.get("layout", {}).get("height") or 128
+    payload = json.dumps(
+        {
+            "data": figure.get("data", []),
+            "layout": figure.get("layout", {}),
+            "config": config or PLOT_CONFIG,
+        },
+        separators=(",", ":"),
+    )
+    return (
+        f'<div id="{plot_id}" class="{mount_class}" '
+        f'style="height:{height}px; width:100%;"></div>'
+        f'<script type="application/json" class="behaviour-plot-spec" '
+        f'data-target="{plot_id}">{payload}</script>'
     )
 
 
