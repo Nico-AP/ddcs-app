@@ -24,6 +24,7 @@ PARTY_COLORS = {
     "Keine Partei": "#d4c5aa",
 }
 PLOT_FONT_FAMILY = "Rubik, Arial, sans-serif"
+PLOT_CORNER_RADIUS = 4
 _RADAR_AXIS_LABEL_FONT_SIZE = 16
 # Interactive: toolbar hidden but hover/tooltips enabled.
 PLOT_CONFIG = {
