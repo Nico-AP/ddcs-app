@@ -10,6 +10,14 @@
   min-width: 0;
 }
 
+.behaviour-profile-row {
+  margin-bottom: var(--space-2);
+
+  @media (min-width: 768px) {
+    margin-bottom: var(--space-4);
+  }
+}
+
 .behaviour-profile-title {
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -31,11 +39,23 @@
     max-width: 100% !important;
     margin-top: -0.15rem;
   }
+
+  @media (max-width: 767.98px) {
+    .plotly-graph-div,
+    .js-plotly-plot {
+      height: 100px !important;
+      min-height: 100px !important;
+    }
+  }
 }
 
 .behaviour-profile-carousel {
   position: relative;
   padding: 0 2.75rem;
+
+  @media (max-width: 767.98px) {
+    padding: 0 1.5rem;
+  }
 
   .carousel-inner {
     padding: 0;
@@ -69,6 +89,10 @@
     z-index: 2;
     width: 2.25rem;
     opacity: 1;
+
+    @media (max-width: 767.98px) {
+      width: 1.75rem;
+    }
   }
 
   &__control-icon {

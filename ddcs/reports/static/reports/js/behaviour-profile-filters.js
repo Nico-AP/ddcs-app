@@ -2,8 +2,103 @@
   let preservedSlideIndex = 0;
   let preservedScrollY = 0;
 
-  function resizePlotlyCharts() {
-    window.dispatchEvent(new Event("resize"));
+  function findBehaviourCarousel(root) {
+    const scope = root || document;
+    if (scope.id === "behaviourProfileCarousel") {
+      return scope;
+    }
+    return (
+      scope.querySelector?.("#behaviourProfileCarousel") ||
+      document.getElementById("behaviourProfileCarousel")
+    );
+  }
+
+  function isVisible(element) {
+    return Boolean(element && element.offsetParent !== null);
+  }
+
+  function initDeferredPlot(script) {
+    const targetId = script.dataset.target;
+    const mount = targetId ? document.getElementById(targetId) : null;
+    if (!mount || mount.dataset.plotlyReady === "true") {
+      return Promise.resolve();
+    }
+    if (!isVisible(mount)) {
+      return Promise.resolve();
+    }
+    if (typeof Plotly === "undefined") {
+      return Promise.resolve();
+    }
+
+    let spec;
+    try {
+      spec = JSON.parse(script.textContent);
+    } catch (_error) {
+      return Promise.resolve();
+    }
+
+    return Plotly.newPlot(
+      mount,
+      spec.data,
+      spec.layout,
+      spec.config || {},
+    ).then(function () {
+      mount.dataset.plotlyReady = "true";
+    });
+  }
+
+  function initDeferredBehaviourPlots(root, options) {
+    const opts = options || {};
+    const onlyVisible = opts.onlyVisible !== false;
+    const carousel = findBehaviourCarousel(root);
+    if (!carousel) {
+      return Promise.resolve();
+    }
+
+    const scripts = Array.from(
+      carousel.querySelectorAll("script.behaviour-plot-spec"),
+    ).filter(function (script) {
+      if (!onlyVisible) {
+        return true;
+      }
+      const mount = document.getElementById(script.dataset.target || "");
+      return isVisible(mount);
+    });
+
+    return Promise.all(
+      scripts.map(function (script) {
+        return initDeferredPlot(script);
+      }),
+    );
+  }
+
+  function scheduleDeferredPlotInit(root, options) {
+    const opts = options || {};
+    requestAnimationFrame(function () {
+      initDeferredBehaviourPlots(root, opts);
+      requestAnimationFrame(function () {
+        initDeferredBehaviourPlots(root, opts);
+      });
+    });
+  }
+
+  function containsBehaviourCarousel(target) {
+    return Boolean(
+      target &&
+        (target.id === "behaviourProfileCarousel" ||
+          target.querySelector?.("#behaviourProfileCarousel")),
+    );
+  }
+
+  function handleBehaviourChartsUpdate(target, options) {
+    scheduleDeferredPlotInit(target, options);
+    // Report HTMX swap uses a 1.5s transition plus settle time.
+    window.setTimeout(function () {
+      scheduleDeferredPlotInit(target, options);
+    }, 1600);
+    window.setTimeout(function () {
+      scheduleDeferredPlotInit(target, options);
+    }, 3200);
   }
 
   function getActiveSlideIndex(carousel) {
@@ -52,18 +147,31 @@
   });
 
   document.body.addEventListener("htmx:afterSettle", function (event) {
-    if (event.detail.target?.id !== "behaviour-profile-updates") {
+    const target = event.detail.target;
+    if (!target) {
       return;
     }
 
-    restoreCarouselSlide();
-    window.scrollTo({ top: preservedScrollY, left: 0, behavior: "instant" });
-    resizePlotlyCharts();
+    if (target.id === "behaviour-profile-updates") {
+      restoreCarouselSlide();
+      window.scrollTo({ top: preservedScrollY, left: 0, behavior: "instant" });
+      handleBehaviourChartsUpdate(target);
+      return;
+    }
+
+    if (target.id === "report-statistics" || containsBehaviourCarousel(target)) {
+      handleBehaviourChartsUpdate(target);
+    }
   });
 
-  document.body.addEventListener("shown.bs.carousel", function (event) {
-    if (event.target?.id === "behaviourProfileCarousel") {
-      resizePlotlyCharts();
+  document.body.addEventListener("slid.bs.carousel", function (event) {
+    if (event.target?.id !== "behaviourProfileCarousel") {
+      return;
     }
+
+    scheduleDeferredPlotInit(event.target, { onlyVisible: true });
+    window.setTimeout(function () {
+      initDeferredBehaviourPlots(event.target, { onlyVisible: true });
+    }, 50);
   });
 })();
