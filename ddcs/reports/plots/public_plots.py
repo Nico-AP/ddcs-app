@@ -28,6 +28,7 @@ from ddcs.reports.plots.utils import (
     PLOT_CONFIG,
     PLOT_CORNER_RADIUS,
     PLOT_FONT_FAMILY,
+    TEMPORAL_PARTY_PLOT_LEGEND,
     create_plot_html,
     hex_to_rgba,
 )
@@ -149,14 +150,7 @@ def get_temporal_party_distribution_all_accounts(
         hovermode="x unified",
         dragmode=False,
         showlegend=True,
-        legend={
-            "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1.02,
-            "xanchor": "center",
-            "x": 0.5,
-            "font": {"size": 18},
-        },
+        legend=TEMPORAL_PARTY_PLOT_LEGEND,
         autosize=True,
         height=400,
         minreducedwidth=500,
