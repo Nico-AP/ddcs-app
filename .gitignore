@@ -166,3 +166,5 @@ $RECYCLE.BIN/
 
 # Potentially sensitive data
 behaviour_metrics_per_participant.csv
+
+DEL*

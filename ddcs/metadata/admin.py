@@ -199,6 +199,7 @@ class TikTokHashtagAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "id_tiktok",
+        "created_at",
         "monitor_api",
         "monitoring_priority_api",
         "added_by",

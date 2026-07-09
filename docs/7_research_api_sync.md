@@ -292,3 +292,17 @@ Removals set `monitor_api=False` (never hard-delete), so historical
 automatically after each git pull.
 
 See also section "Populating the registry" in [4_metadata.md](4_metadata.md).
+
+
+## Changelog
+
+- __09.07.2026:__ TikTok changed API response structure. `hashtag_name` was removed 
+  from dictionaries contained in `hashtag_info_list`. To account for this,
+  `ResearchAPIService._sync_hashtag` was replaced with `ResearchAPIService._sync_hashtag_name`
+  and the information contained in the API response's `hashtag_names` is now used
+  to identify video hashtags (instead of `hashtag_info_list.0.hashtag_name`. 
+  Hashtag IDs and descriptions are no longer synced, because the current 
+  response structure does not explicitly and unambiguously map its `hashtag_names`
+  to its `hashtag_info_list` (the mapping would presumably based on the position
+  in the lists, but this assumption is undocumented on TikTok's side).
+  As a consequence `APIHashtagInfos` is no longer populated (`f101ea8`).
