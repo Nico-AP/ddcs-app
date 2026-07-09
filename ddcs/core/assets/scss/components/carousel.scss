@@ -54,4 +54,17 @@
     font-size: 20px;
   }
 
+  .visualization-container {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .plotly-graph-div,
+  .js-plotly-plot,
+  .plot-container {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
 }

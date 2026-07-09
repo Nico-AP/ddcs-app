@@ -25,6 +25,14 @@ PARTY_COLORS = {
 }
 PLOT_FONT_FAMILY = "Rubik, Arial, sans-serif"
 PLOT_CORNER_RADIUS = 4
+TEMPORAL_PARTY_PLOT_LEGEND = {
+    "orientation": "h",
+    "yanchor": "bottom",
+    "y": 1.02,
+    "xanchor": "center",
+    "x": 0.5,
+    "font": {"size": 12},
+}
 _RADAR_AXIS_LABEL_FONT_SIZE = 16
 # Interactive: toolbar hidden but hover/tooltips enabled.
 PLOT_CONFIG = {

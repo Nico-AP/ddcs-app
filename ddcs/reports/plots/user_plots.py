@@ -14,6 +14,7 @@ from ddcs.reports.plots.utils import (
     PARTY_COLORS,
     PLOT_CONFIG,
     PLOT_FONT_FAMILY,
+    TEMPORAL_PARTY_PLOT_LEGEND,
     create_plot_html,
     hex_to_rgba,
 )
@@ -469,15 +470,6 @@ def get_temporal_party_distribution_plot_user(
             )
         )
 
-    legend = {
-        "orientation": "h",
-        "yanchor": "bottom",
-        "y": 1.02,
-        "xanchor": "center",
-        "x": 0.5,
-        "font": {"size": 12},
-    }
-
     fig.update_layout(
         barmode="stack",
         xaxis_title="Datum",
@@ -485,7 +477,7 @@ def get_temporal_party_distribution_plot_user(
         hovermode="x unified",
         dragmode=False,
         showlegend=True,
-        legend=legend,
+        legend=TEMPORAL_PARTY_PLOT_LEGEND,
         autosize=True,
         height=400,
         minreducedwidth=500,
