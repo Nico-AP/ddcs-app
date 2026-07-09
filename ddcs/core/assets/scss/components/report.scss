@@ -293,8 +293,29 @@
   opacity: 1;
 }
 
-.wordcloud-container svg text {
+.hashtag-section {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.wordcloud-container {
+  width: 100%;
+  max-width: 800px;
+  min-width: 0;
+  margin: 0 auto;
+  overflow: hidden;
+
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-width: 100%;
+  }
+
+  svg text {
     font-family: 'Rubik', sans-serif;
+  }
 }
 
 .report-highlight {
