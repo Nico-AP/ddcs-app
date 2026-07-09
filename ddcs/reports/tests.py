@@ -888,7 +888,7 @@ class ComputeReportStatisticsTests(TestCase):
 
 class GenerateReportStatisticsTests(TestCase):
     @patch.object(services, "compute_user_report_metrics")
-    def test_persists_statistics_to_db(self, mock_compute):
+    def test_upserts_statistics_to_db(self, mock_compute):
         mock_compute.return_value = {
             "videos_seen_count_total": 5,
             "seen_pol_video_ids": [1, 2],
@@ -902,23 +902,25 @@ class GenerateReportStatisticsTests(TestCase):
             "non_party_hashtags": [],
         }
         participant = MagicMock()
-        # ParticipantReportStatistics.objects.create needs a real Participant FK;
-        # patch the model.create call directly to keep this a pure unit test.
+        # ParticipantReportStatistics.objects.update_or_create needs a real
+        # Participant FK; patch the model call directly to keep this a pure
+        # unit test. update_or_create (rather than create) is what keeps
+        # retried/re-run task calls from piling up duplicate report rows.
         with patch.object(
-            services.ParticipantReportStatistics.objects, "create"
-        ) as mock_create:
-            mock_create.return_value = MagicMock()
+            services.ParticipantReportStatistics.objects, "update_or_create"
+        ) as mock_upsert:
+            mock_upsert.return_value = (MagicMock(), True)
             result = services.generate_user_report_statistics(
                 participant, TikTokUserData()
             )
 
         mock_compute.assert_called_once()
-        mock_create.assert_called_once()
-        kwargs = mock_create.call_args.kwargs
+        mock_upsert.assert_called_once()
+        kwargs = mock_upsert.call_args.kwargs
         self.assertEqual(kwargs["participant"], participant)
-        self.assertEqual(kwargs["videos_seen_count_total"], 5)
-        self.assertEqual(kwargs["seen_pol_video_ids"], [1, 2])
-        self.assertIs(result, mock_create.return_value)
+        self.assertEqual(kwargs["defaults"]["videos_seen_count_total"], 5)
+        self.assertEqual(kwargs["defaults"]["seen_pol_video_ids"], [1, 2])
+        self.assertIs(result, mock_upsert.return_value[0])
 
 
 # ============================================================
