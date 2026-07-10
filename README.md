@@ -102,6 +102,236 @@ The app is now available at http://127.0.0.1:8000. The Django admin is at the UR
 
 ---
 
+## Repository Management
+
+
+### Branches
+
+We work with three central branches:
+
+- `dev`: Shared code, pre-deployment;
+- `stage`: Deployed to stage for testing and QA before production.
+- `main`: Deployed to production.
+
+All three branches are protected: no direct pushes, all changes land via PR
+(with CI checks passing and branches required to be up to date before merge).
+
+### Normal Development Workflow
+
+1. Create local branch (e.g., `feat/something-nice` / `refactor/reports` etc.)
+   from `dev`:
+
+```bash
+git checkout dev
+git pull origin dev
+git checkout -b feat/something-nice
+```
+
+2. Work and commit locally on `feat/something-nice`
+
+```bash
+git add .
+git commit -m "feat: app now talks to ghosts"
+```
+
+3. When the new code is ready to be integrated into the shared codebase, ensure
+   it is still in sync with the shared codebase on `dev` and resolve conflicts
+   if necessary. Also do this regularly (e.g., daily) if work is carried out
+   over a longer time.
+
+```bash
+git checkout dev
+git pull origin dev
+git checkout feat/something-nice
+git merge dev  # or rebase
+# resolve conflicts and commit again if needed.
+```
+
+4. Push your local branch to the repository:
+
+```bash
+git push -u origin feat/something-nice
+```
+
+5. Go to github.com and open a Pull Request (PR; through "Compare & pull request").
+
+6. In the web UI, Review the diff yourself, or tag someone else to review it. Wait for CI (lint, tests) to pass.
+
+7. In the web UI, merge PR (use __squash__)
+
+8. Back in your IDE, sync and clean up:
+
+```bash
+git checkout dev
+git pull origin dev
+git branch -d feat/something-nice
+git push origin --delete feat/something-nice
+```
+
+### Promoting to Stage (QA)
+
+Once one or more updates on `dev` are ready to be tested on the server,
+promote `dev` to `stage`.
+
+1. Announce in the chat that you're promoting to stage (so the other person isn't
+   surprised by a deploy).
+
+2. Promote `dev` to `stage` through pull request:
+
+```bash
+git checkout dev
+git pull origin dev
+git push origin dev  # ensures remote dev is current
+gh pr create --base stage --head dev --title "Promote dev to stage: $(date +%Y-%m-%d)"
+# review diff in browser, wait for CI, merge (use 'merge commit')
+```
+
+3. Run the stage deployment playbook from the ddcs-infra repo.
+
+4. Test updates on the stage server. Fix bugs found here as normal commits on `dev`
+   (via a `fix/...` branch and PR, same as any other change),
+   then repeat steps 2–3 to re-promote.
+
+`stage` is protected: no direct pushes, only merges via PR from `dev` or `hotfix/*`
+(see below).
+
+---
+
+### Tags
+
+Every production release gets a tag on `main`, created right after the
+promotion PR merges and before deployment. The tag is required by the
+ddcs-infra playbook that handles the production deployment -
+it uses the tag to pull the correct code version.
+
+Tags are a plain, incrementing counter (`r1`, `r2`, `r3`, ...).
+
+Tags are important for:
+
+- **Knowing what is deployed** — production deployments are always linked to
+  a specific tag/release, never `main` directly. So what's on prod is exactly
+  what we decided to ship, even if `main` moves forward again before the deploy runs.
+- **Rollback target** — redeploy a known-good tag without hunting for the
+  right commit SHA.
+- **Reference point for debugging** — "this broke after r10" is a lot more
+  useful than "sometime last week."
+- **Changelog for free** — `git log r9..r10` shows exactly what shipped in
+  a release, assuming PR titles follow commit hygiene below.
+
+
+### Promoting to Production (Release)
+
+Once `stage` has been tested and is ready for release:
+
+1. Announce in chat that you're releasing to production, and — if not already known —
+   what the update includes.
+
+2. Find the latest release tag, to name the PR (the actual tag is created
+   later, in step 4):
+
+```bash
+git tag --list 'r[0-9]*' | sort -V | tail -1
+```
+
+This returns, e.g., `r10`. This means the next release will be `r11`.
+
+3. Promote `stage` to `main` through pull request:
+
+```bash
+git checkout stage
+git pull origin stage
+gh pr create --base main --head stage --title "Release r11"
+# review diff, wait for CI, merge (merge commit)
+```
+
+4. After merging the PR int main, tag the release:
+
+```bash
+git checkout main
+git pull origin main
+git tag r11
+git push origin --tags
+```
+
+5. Run the production deployment playbook from the ddcs-infra repo, targeting `r11`.
+
+6. Confirm the app is healthy on prod (quick smoke check).
+
+
+`main` is protected: no direct pushes, only merges via PR from `stage` or
+`hotfix/*`.
+
+---
+
+### Hotfixes
+
+For urgent production bugs that can't wait for the normal `dev` → `stage` → `main` cycle:
+
+1. Branch off `main` directly:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b hotfix/short-description
+```
+
+2. Fix, commit, push, open a PR into `main` (same PR flow as normal development,
+   base = `main` instead of `dev`).
+
+3. Merge the PR using **merge commit**, not squash, to match `main`'s
+   convention. Then tag and deploy to production as in "Promoting to
+   Production" above (find next tag, tag, deploy targeting the tag, smoke
+   check, log the release).
+
+4. **Important: Merge the fix back into `stage` and `dev`** so they don't drift
+   out of sync with `main`:
+
+```bash
+gh pr create --base stage --head main --title "Sync hotfix into stage"
+# review diff, wait for CI, merge (use merge commit, not squash)
+
+git checkout dev
+git pull origin dev
+gh pr create --base dev --head stage --title "Sync hotfix into dev"
+# review diff, wait for CI, merge (use merge commit, not squash)
+```
+
+
+### Commit Hygiene
+
+**Feature branches:** commit however works for you — messy, frequent,
+"wip"/"fix"/"actually fix" is fine. These commits get squashed away and
+never appear in `dev` history, so there's no need to keep them clean.
+
+**PR titles matter** — since squash merge uses the PR title as the
+final commit message on `dev`, the PR title is the one thing that becomes
+permanent history. Write it as a semantic commit:
+
+`<type>(<apps it touches>): <short description>`
+
+Common types:
+
+| Type       | Use for                                     |
+|------------|---------------------------------------------|
+| `feat`     | new functionality                           |
+| `style`    | visual/UI-only change, no logic change      |
+| `fix`      | bug fix                                     |
+| `refactor` | code change with no behavior change         |
+| `chore`    | tooling, deps, config, non-code maintenance |
+| `docs`     | documentation only                          |
+
+Examples:
+
+- `feat(metadata): add scraper`
+- `style(reports): update button styling`
+- `fix(website): missing closing tag in hero template`
+- `chore: update sass script`
+- `refactor(reports): move metrics into dedicated package`
+
+Keep the description short and in the imperative mood ("add X", not "added X"
+or "adds X"). This keeps `git log` on `dev`/`main` readable as a changelog
+and makes `git bisect` and tag-range diffs (`git log r9..r10`) actually useful.
+
 ## Day-to-day Development
 
 ### Running tests
