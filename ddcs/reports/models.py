@@ -3,7 +3,7 @@ from django.db import models
 
 
 class ParticipantReportStatistics(models.Model):
-    participant = models.ForeignKey(Participant, on_delete=models.CASCADE)
+    participant = models.OneToOneField(Participant, on_delete=models.CASCADE)
     generated_at = models.DateTimeField(auto_now_add=True)
 
     videos_seen_count_total = models.IntegerField(default=0)
@@ -24,7 +24,6 @@ class ParticipantReportStatistics(models.Model):
 
     class Meta:
         ordering = ("-generated_at",)
-        indexes = [models.Index(fields=("participant", "-generated_at"))]
 
     def __str__(self) -> str:
         return f"Report statistics for {self.participant.external_id}"

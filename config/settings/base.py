@@ -312,6 +312,18 @@ CELERY_TASK_SEND_SENT_EVENT = True
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_TASK_DEFAULT_QUEUE = env.str("CELERY_DEFAULT_QUEUE")
 
+# Routes donation processing off the default queue so it isn't stuck behind
+# long-running Research API sync/backfill tasks. Defaults to the default queue
+# (no-op) until CELERY_DONATION_QUEUE is set to a distinct value AND a worker
+# is provisioned to consume it (`celery worker -Q <queue>`) — that provisioning
+# step lis configured in ddcs-infra.
+CELERY_DONATION_QUEUE = env.str(
+    "CELERY_DONATION_QUEUE", default=CELERY_TASK_DEFAULT_QUEUE
+)
+CELERY_TASK_ROUTES = {
+    "ddcs.datadonation.tasks.process_donation": {"queue": CELERY_DONATION_QUEUE},
+}
+
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 # Beat schedule prepopulates the DB on first run. After that, the DB takes

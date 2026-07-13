@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+from celery.exceptions import Retry
 from django.test import TestCase
 
 from ddcs.core.types import TikTokUserData
@@ -24,6 +25,7 @@ from ddcs.datadonation.services import (
     get_user_data,
     post_process_donation,
 )
+from ddcs.datadonation.tasks import process_donation
 
 
 class NormaliseKeyTests(TestCase):
@@ -343,18 +345,58 @@ class GetUserDataTests(TestCase):
 
 
 class PostProcessDonationTests(TestCase):
-    @patch("ddcs.datadonation.services.generate_user_report_statistics")
-    @patch("ddcs.datadonation.services.register_donation_metadata")
-    @patch("ddcs.datadonation.services.get_user_data")
+    @patch("ddcs.datadonation.tasks.process_donation.delay")
+    def test_enqueues_process_donation_task(self, mock_delay):
+        participant = MagicMock(pk=42)
+
+        post_process_donation(participant)
+
+        mock_delay.assert_called_once_with(42)
+
+
+class ProcessDonationTaskTests(TestCase):
+    @patch("ddcs.datadonation.tasks.generate_user_report_statistics")
+    @patch("ddcs.datadonation.tasks.register_donation_metadata")
+    @patch("ddcs.datadonation.tasks.get_user_data")
+    @patch("ddcs.datadonation.tasks.Participant.objects.get")
     def test_runs_pipeline_in_order(
-        self, mock_get_user_data, mock_register, mock_generate
+        self, mock_get, mock_get_user_data, mock_register, mock_generate
     ):
         participant = MagicMock()
+        mock_get.return_value = participant
         user_data = TikTokUserData()
         mock_get_user_data.return_value = user_data
 
-        post_process_donation(participant)
+        process_donation(participant.pk)
 
         mock_get_user_data.assert_called_once_with(participant)
         mock_register.assert_called_once_with(user_data)
         mock_generate.assert_called_once_with(participant, user_data)
+
+    def test_returns_early_when_participant_missing(self):
+        with patch("ddcs.datadonation.tasks.get_user_data") as mock_get_user_data:
+            process_donation(participant_pk=999999999)
+
+        mock_get_user_data.assert_not_called()
+
+    @patch("ddcs.datadonation.tasks.generate_user_report_statistics")
+    @patch("ddcs.datadonation.tasks.register_donation_metadata")
+    @patch("ddcs.datadonation.tasks.get_user_data")
+    @patch("ddcs.datadonation.tasks.Participant.objects.get")
+    def test_retries_on_transient_error(
+        self, mock_get, mock_get_user_data, mock_register, mock_generate
+    ):
+        participant = MagicMock()
+        mock_get.return_value = participant
+        error = ConnectionError("transient")
+        mock_get_user_data.side_effect = error
+
+        with (
+            patch.object(process_donation, "retry", side_effect=Retry()) as mock_retry,
+            self.assertRaises(Retry),
+        ):
+            process_donation(participant.pk)
+
+        mock_retry.assert_called_once_with(exc=error)
+        mock_register.assert_not_called()
+        mock_generate.assert_not_called()
