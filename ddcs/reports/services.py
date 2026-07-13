@@ -12,6 +12,7 @@ def generate_user_report_statistics(
 ) -> ParticipantReportStatistics:
     statistics = compute_user_report_metrics(data)
 
-    return ParticipantReportStatistics.objects.create(
-        participant=participant, **statistics
+    obj, _ = ParticipantReportStatistics.objects.update_or_create(
+        participant=participant, defaults=statistics
     )
+    return obj
