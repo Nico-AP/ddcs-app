@@ -9,12 +9,16 @@
 
       <div class="carousel-item active">
         <div class="carousel-slide-title text-bold">So viel posten die Parteien über die Zeit gesehen...</div>
-        <div>{{ temporal_party_distribution_plot.html|safe }}</div>
+        <div class="visualization-container w-100 min-w-0 overflow-hidden">
+          {{ temporal_party_distribution_plot.html|safe }}
+        </div>
       </div>
 
       <div class="carousel-item">
         <div class="carousel-slide-title">...und so viel insgesamt seit dem 1. Juni 2026</div>
-        <div>{{ party_distribution_plot.html|safe }}</div>
+        <div class="visualization-container w-100 min-w-0 overflow-hidden">
+          {{ party_distribution_plot.html|safe }}
+        </div>
       </div>
 
     </div>

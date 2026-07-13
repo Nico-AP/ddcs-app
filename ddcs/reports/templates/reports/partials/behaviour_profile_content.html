@@ -21,12 +21,12 @@
         <div class="carousel-item{% if forloop.first %} active{% endif %}">
           <div class="behaviour-profile-rows">
             {% for row in slide.rows %}
-              <div class="behaviour-profile-row mb-4"
+              <div class="behaviour-profile-row"
                    {% if forloop.parentloop.first and forloop.first %}
                      id="behaviour-profile-first-bar"
                      tabindex="-1"
                    {% endif %}>
-                <p class="small text-start mb-1 behaviour-profile-title fw-bold">
+                <p class="small text-start behaviour-profile-title fw-bold">
                   {{ row.title_html|safe }}
                 </p>
                 <div class="behaviour-profile-chart visualization-container w-100 min-w-0 overflow-hidden mt-0">

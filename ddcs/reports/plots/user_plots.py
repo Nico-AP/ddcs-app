@@ -14,6 +14,8 @@ from ddcs.reports.plots.utils import (
     PARTY_COLORS,
     PLOT_CONFIG,
     PLOT_FONT_FAMILY,
+    TEMPORAL_PARTY_PLOT_LEGEND,
+    create_deferred_plot_html,
     create_plot_html,
     hex_to_rgba,
 )
@@ -27,11 +29,16 @@ logger = logging.getLogger(__name__)
 
 
 _BAR_HALF_HEIGHT = 0.085
-_USER_BAR_Y = 0.085
-_MEAN_BAR_Y = -0.085
+_USER_BAR_Y = _BAR_HALF_HEIGHT
+_MEAN_BAR_Y = -_BAR_HALF_HEIGHT
+_BEHAVIOUR_Y_AXIS_PADDING = 0.07
+_BEHAVIOUR_Y_AXIS_RANGE = [
+    _MEAN_BAR_Y - _BAR_HALF_HEIGHT - _BEHAVIOUR_Y_AXIS_PADDING,
+    _USER_BAR_Y + _BAR_HALF_HEIGHT + _BEHAVIOUR_Y_AXIS_PADDING,
+]
 _BEHAVIOUR_USER_COLOR = "#0cc4b6"
 _BEHAVIOUR_MEAN_COLOR = "#ff587a"
-_SINGLE_METRIC_CHART_HEIGHT = 128
+_SINGLE_METRIC_CHART_HEIGHT = 112
 _PLOT_CORNER_RADIUS = 4
 
 _FRACTION_METRICS = frozenset(
@@ -157,10 +164,21 @@ def _comparison_chart_values(
     )
 
 
-def _metric_axis_max(user_value: float, mean_value: float) -> float:
-    """X-axis upper bound: the longer of the user and mean bars."""
-    axis_max = max(user_value, mean_value)
-    return axis_max if axis_max > 0 else 1.0
+def _metric_axis_max(
+    user_value: float,
+    mean_value: float,
+    *,
+    user_display: str,
+    mean_display: str,
+) -> float:
+    """X-axis upper bound with room for end labels to the right of the bars."""
+    data_max = max(user_value, mean_value)
+    if data_max <= 0:
+        data_max = 1.0
+
+    longest_label = max(len(user_display), len(mean_display))
+    label_fraction = max(0.22, longest_label * 0.065)
+    return data_max * (1.0 + label_fraction)
 
 
 def _add_horizontal_value_bar(
@@ -194,9 +212,8 @@ def _add_metric_value_bars(
 
 
 def _behaviour_value_xaxis(axis_max: float) -> dict[str, Any]:
-    axis_end = axis_max * 1.02
     return {
-        "range": [0, axis_end],
+        "range": [0, axis_max],
         "fixedrange": True,
         "showticklabels": False,
         "showgrid": True,
@@ -235,7 +252,12 @@ def _behaviour_mean_hover_data(row: BehaviourComparisonRecord) -> tuple[str, str
 
 def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
     user_value, mean_value, user_display, mean_display = _comparison_chart_values(row)
-    axis_max = _metric_axis_max(user_value, mean_value)
+    axis_max = _metric_axis_max(
+        user_value,
+        mean_value,
+        user_display=user_display,
+        mean_display=mean_display,
+    )
 
     fig = go.Figure()
     _add_metric_value_bars(fig, user_value, mean_value)
@@ -296,7 +318,7 @@ def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
             "showticklabels": False,
             "showgrid": False,
             "zeroline": False,
-            "range": [-0.34, 0.34],
+            "range": _BEHAVIOUR_Y_AXIS_RANGE,
             "fixedrange": True,
         },
         dragmode=False,
@@ -307,11 +329,11 @@ def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
         font={"size": 13, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        margin={"l": 8, "r": 56, "t": 0, "b": 24},
+        margin={"l": 8, "r": 8, "t": 2, "b": 4},
         hovermode="closest",
         barcornerradius=_PLOT_CORNER_RADIUS,
     )
-    return create_plot_html(fig, config=PLOT_CONFIG)
+    return create_deferred_plot_html(fig, config=PLOT_CONFIG)
 
 
 def get_behaviour_profile_rows(
@@ -469,15 +491,6 @@ def get_temporal_party_distribution_plot_user(
             )
         )
 
-    legend = {
-        "orientation": "h",
-        "yanchor": "bottom",
-        "y": 1.02,
-        "xanchor": "center",
-        "x": 0.5,
-        "font": {"size": 12},
-    }
-
     fig.update_layout(
         barmode="stack",
         xaxis_title="Datum",
@@ -485,7 +498,7 @@ def get_temporal_party_distribution_plot_user(
         hovermode="x unified",
         dragmode=False,
         showlegend=True,
-        legend=legend,
+        legend=TEMPORAL_PARTY_PLOT_LEGEND,
         autosize=True,
         height=400,
         minreducedwidth=500,
