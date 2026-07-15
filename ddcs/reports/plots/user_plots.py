@@ -14,10 +14,13 @@ from ddcs.reports.plots.utils import (
     PARTY_COLORS,
     PLOT_CONFIG,
     PLOT_FONT_FAMILY,
+    TEMPORAL_AREA_LINE,
     TEMPORAL_PARTY_PLOT_LEGEND,
+    TEMPORAL_PLOT_HEIGHT,
     create_deferred_plot_html,
     create_plot_html,
     hex_to_rgba,
+    temporal_plot_xaxis_tickvals,
 )
 from ddcs.reports.types import (
     BehaviourComparisonRecord,
@@ -446,7 +449,7 @@ def get_party_distribution_plot_user(
 def get_temporal_party_distribution_plot_user(
     daily_party_counts: list[DailyPartyCountRecord],
 ) -> dict:
-    """Create daily watched videos visualization with stacked bar chart."""
+    """Create daily watched videos visualization with stacked area chart."""
     relevant_data = [c for c in daily_party_counts if c["party"] != NO_PARTY_KEY]
 
     if not relevant_data:
@@ -475,13 +478,14 @@ def get_temporal_party_distribution_plot_user(
 
         counts = party_data[party]
         fig.add_trace(
-            go.Bar(
+            go.Scatter(
                 x=all_dates,
                 y=[counts.get(d, 0) for d in all_dates],
                 name=party,
-                marker={
-                    "color": hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER))
-                },
+                mode="lines",
+                line=TEMPORAL_AREA_LINE,
+                stackgroup="one",
+                fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",
@@ -492,7 +496,6 @@ def get_temporal_party_distribution_plot_user(
         )
 
     fig.update_layout(
-        barmode="stack",
         xaxis_title="Datum",
         yaxis_title="",
         hovermode="x unified",
@@ -500,7 +503,7 @@ def get_temporal_party_distribution_plot_user(
         showlegend=True,
         legend=TEMPORAL_PARTY_PLOT_LEGEND,
         autosize=True,
-        height=400,
+        height=TEMPORAL_PLOT_HEIGHT,
         minreducedwidth=500,
         font={"size": 25, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
@@ -508,11 +511,11 @@ def get_temporal_party_distribution_plot_user(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         hoverdistance=100,
         hoverlabel={"namelength": 0},
-        bargap=0.15,
-        barcornerradius=_PLOT_CORNER_RADIUS,
     )
 
     fig.update_xaxes(
+        tickmode="array",
+        tickvals=temporal_plot_xaxis_tickvals(all_dates),
         hoverformat="%d.%m.%Y",
         showgrid=True,
         gridwidth=1,

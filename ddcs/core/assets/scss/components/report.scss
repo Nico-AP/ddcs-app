@@ -3,6 +3,32 @@
   padding-bottom: 3rem;
 }
 
+.temporal-plot {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+
+  @media (max-width: 767.98px) {
+    .plotly-graph-div,
+    .js-plotly-plot {
+      height: 312px !important;
+      min-height: 312px !important;
+      max-height: 312px !important;
+    }
+
+    > div:not(.description) {
+      height: 312px !important;
+      max-height: 312px !important;
+    }
+
+    .description {
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+    }
+  }
+}
+
 .behaviour-profile-rows,
 .behaviour-profile-row {
   width: 100%;

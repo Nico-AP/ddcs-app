@@ -1230,9 +1230,35 @@ class TemporalPartyDistributionPlotTests(TestCase):
             ]
         )
         self.assertIsNotNone(result["html"])
-        self.assertIn("bar", result["html"])
-        self.assertIn("stack", result["html"])
-        self.assertIn("barcornerradius", result["html"])
+        self.assertIn("scatter", result["html"])
+        self.assertIn("stackgroup", result["html"])
+
+
+class TemporalPlotXaxisTickvalsTests(TestCase):
+    def test_empty(self):
+        self.assertEqual(ddcs.reports.plots.utils.temporal_plot_xaxis_tickvals([]), [])
+
+    def test_single_date(self):
+        self.assertEqual(
+            ddcs.reports.plots.utils.temporal_plot_xaxis_tickvals(["2026-01-01"]),
+            ["2026-01-01"],
+        )
+
+    def test_short_series_uses_all_dates(self):
+        dates = [f"2026-01-{day:02d}" for day in range(1, 8)]
+        self.assertEqual(
+            ddcs.reports.plots.utils.temporal_plot_xaxis_tickvals(dates), dates
+        )
+
+    def test_long_series_always_includes_start_and_end(self):
+        dates = [
+            (date(2026, 1, 1) + timedelta(days=offset)).isoformat()
+            for offset in range(30)
+        ]
+        tickvals = ddcs.reports.plots.utils.temporal_plot_xaxis_tickvals(dates)
+        self.assertEqual(tickvals[0], dates[0])
+        self.assertEqual(tickvals[-1], dates[-1])
+        self.assertLessEqual(len(tickvals), 7)
 
 
 class HexToRgbaTests(TestCase):

@@ -37,12 +37,13 @@
   </div>
 
   <h2>Temporal party distribution</h2>
-  <div class="visualization-container">
+  <div class="visualization-container temporal-plot">
     {% if temporal_party_distribution_all_accounts.html %}
       {{ temporal_party_distribution_all_accounts.html|safe }}
     {% else %}
       <p>No data.</p>
     {% endif %}
   </div>
+  <script defer src="{% static 'reports/js/temporal-plot.js' %}"></script>
 </body>
 </html>
