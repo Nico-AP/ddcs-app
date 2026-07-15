@@ -36,6 +36,32 @@ TEMPORAL_PARTY_PLOT_LEGEND = {
     "x": 0.5,
     "font": {"size": 12},
 }
+TEMPORAL_PLOT_HEIGHT = 400
+TEMPORAL_PLOT_HEIGHT_MOBILE = 312
+# Spline smoothing: curves between daily points; hover values stay exact counts.
+TEMPORAL_AREA_LINE = {"width": 0, "shape": "spline", "smoothing": 0.65}
+
+
+def temporal_plot_xaxis_tickvals(
+    all_dates: list[str], *, max_ticks: int = 7
+) -> list[str]:
+    """X-axis ticks for temporal plots; always includes series start and end."""
+    if not all_dates:
+        return []
+    if len(all_dates) <= max_ticks:
+        return list(all_dates)
+
+    n = len(all_dates)
+    endpoint_count = 2  # first and last date are always shown
+    tick_indices = {0, n - 1}
+    interior_slots = max_ticks - endpoint_count
+    if interior_slots > 0 and n > endpoint_count:
+        for i in range(1, interior_slots + 1):
+            tick_indices.add(round(i * (n - 1) / (interior_slots + 1)))
+
+    return [all_dates[i] for i in sorted(tick_indices)]
+
+
 _RADAR_AXIS_LABEL_FONT_SIZE = 16
 # Interactive: toolbar hidden but hover/tooltips enabled.
 PLOT_CONFIG = {
