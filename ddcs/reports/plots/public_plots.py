@@ -38,6 +38,10 @@ from ddcs.reports.types import (
 
 logger = logging.getLogger(__name__)
 
+# Spline smoothing for stacked areas: curves between daily points only; hover
+# values at each date remain the exact counts.
+_TEMPORAL_AREA_LINE = {"width": 0, "shape": "spline", "smoothing": 1.0}
+
 
 def get_party_distribution_all_accounts(
     records: list[DailyAccountPostCountRecord],
@@ -102,7 +106,7 @@ def get_party_distribution_all_accounts(
 def get_temporal_party_distribution_all_accounts(
     records: list[DailyAccountPostCountRecord],
 ) -> dict[str, Any]:
-    """Create stacked bar chart of posted-video counts per day, across all
+    """Create stacked area chart of posted-video counts per day, across all
     monitored party accounts."""
     daily_party_counts = aggregate_daily_party_counts(records)
     if not daily_party_counts:
@@ -127,13 +131,14 @@ def get_temporal_party_distribution_all_accounts(
 
         counts = party_data[party]
         fig.add_trace(
-            go.Bar(
+            go.Scatter(
                 x=all_dates,
                 y=[counts.get(d, 0) for d in all_dates],
                 name=party,
-                marker={
-                    "color": hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER))
-                },
+                mode="lines",
+                line=_TEMPORAL_AREA_LINE,
+                stackgroup="one",
+                fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",
@@ -144,7 +149,6 @@ def get_temporal_party_distribution_all_accounts(
         )
 
     fig.update_layout(
-        barmode="stack",
         xaxis_title="Datum",
         yaxis_title="",
         hovermode="x unified",
@@ -160,8 +164,6 @@ def get_temporal_party_distribution_all_accounts(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         hoverdistance=100,
         hoverlabel={"namelength": 0},
-        bargap=0.15,
-        barcornerradius=PLOT_CORNER_RADIUS,
     )
 
     fig.update_xaxes(
