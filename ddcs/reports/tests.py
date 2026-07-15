@@ -1468,9 +1468,8 @@ class TemporalPartyDistributionAllAccountsPlotTests(TestCase):
         ]
         result = public_plots.get_temporal_party_distribution_all_accounts(records)
         self.assertIsNotNone(result["html"])
-        self.assertIn("bar", result["html"])
-        self.assertIn("stack", result["html"])
-        self.assertIn("barcornerradius", result["html"])
+        self.assertIn("scatter", result["html"])
+        self.assertIn("stackgroup", result["html"])
 
 
 # ============================================================
