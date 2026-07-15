@@ -40,7 +40,8 @@ logger = logging.getLogger(__name__)
 
 # Spline smoothing for stacked areas: curves between daily points only; hover
 # values at each date remain the exact counts.
-_TEMPORAL_AREA_LINE = {"width": 0, "shape": "spline", "smoothing": 1.0}
+_TEMPORAL_PLOT_HEIGHT = 400
+_TEMPORAL_AREA_LINE = {"width": 0, "shape": "spline", "smoothing": 0.65}
 
 
 def get_party_distribution_all_accounts(
@@ -156,7 +157,7 @@ def get_temporal_party_distribution_all_accounts(
         showlegend=True,
         legend=TEMPORAL_PARTY_PLOT_LEGEND,
         autosize=True,
-        height=400,
+        height=_TEMPORAL_PLOT_HEIGHT,
         minreducedwidth=500,
         font={"size": 25, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",

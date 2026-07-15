@@ -13,6 +13,11 @@
   padding-top: 30px;
   padding-bottom: 40px;
 
+  @media (max-width: 767.98px) {
+    padding-top: 16px;
+    padding-bottom: 24px;
+  }
+
   .carousel-inner {
     padding-left: 7%;
     padding-right: 7%;
@@ -52,6 +57,25 @@
   .carousel-slide-title {
     padding-bottom: 20px;
     font-size: 20px;
+
+    @media (max-width: 767.98px) {
+      padding-bottom: 12px;
+      font-size: 18px;
+    }
+  }
+
+  .public-temporal-plot {
+    @media (max-width: 767.98px) {
+      > div {
+        height: 260px !important;
+      }
+
+      .plotly-graph-div,
+      .js-plotly-plot {
+        height: 260px !important;
+        min-height: 260px !important;
+      }
+    }
   }
 
   .visualization-container {
