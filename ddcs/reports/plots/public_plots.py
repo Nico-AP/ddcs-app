@@ -28,9 +28,12 @@ from ddcs.reports.plots.utils import (
     PLOT_CONFIG,
     PLOT_CORNER_RADIUS,
     PLOT_FONT_FAMILY,
+    TEMPORAL_AREA_LINE,
     TEMPORAL_PARTY_PLOT_LEGEND,
+    TEMPORAL_PLOT_HEIGHT,
     create_plot_html,
     hex_to_rgba,
+    temporal_plot_xaxis_tickvals,
 )
 from ddcs.reports.types import (
     DailyAccountPostCountRecord,
@@ -102,7 +105,7 @@ def get_party_distribution_all_accounts(
 def get_temporal_party_distribution_all_accounts(
     records: list[DailyAccountPostCountRecord],
 ) -> dict[str, Any]:
-    """Create stacked bar chart of posted-video counts per day, across all
+    """Create stacked area chart of posted-video counts per day, across all
     monitored party accounts."""
     daily_party_counts = aggregate_daily_party_counts(records)
     if not daily_party_counts:
@@ -127,13 +130,14 @@ def get_temporal_party_distribution_all_accounts(
 
         counts = party_data[party]
         fig.add_trace(
-            go.Bar(
+            go.Scatter(
                 x=all_dates,
                 y=[counts.get(d, 0) for d in all_dates],
                 name=party,
-                marker={
-                    "color": hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER))
-                },
+                mode="lines",
+                line=TEMPORAL_AREA_LINE,
+                stackgroup="one",
+                fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",
@@ -144,7 +148,6 @@ def get_temporal_party_distribution_all_accounts(
         )
 
     fig.update_layout(
-        barmode="stack",
         xaxis_title="Datum",
         yaxis_title="",
         hovermode="x unified",
@@ -152,7 +155,7 @@ def get_temporal_party_distribution_all_accounts(
         showlegend=True,
         legend=TEMPORAL_PARTY_PLOT_LEGEND,
         autosize=True,
-        height=400,
+        height=TEMPORAL_PLOT_HEIGHT,
         minreducedwidth=500,
         font={"size": 25, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
@@ -160,11 +163,11 @@ def get_temporal_party_distribution_all_accounts(
         margin={"l": 0, "r": 0, "t": 0, "b": 0},
         hoverdistance=100,
         hoverlabel={"namelength": 0},
-        bargap=0.15,
-        barcornerradius=PLOT_CORNER_RADIUS,
     )
 
     fig.update_xaxes(
+        tickmode="array",
+        tickvals=temporal_plot_xaxis_tickvals(all_dates),
         hoverformat="%d.%m.%Y",
         showgrid=True,
         gridwidth=1,

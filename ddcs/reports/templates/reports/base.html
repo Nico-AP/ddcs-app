@@ -44,6 +44,7 @@
 
 {% block extra_js %}
   <script src="{% static 'reports/js/plotly-3.6.0.min.js' %}"></script>
+  <script src="{% static 'reports/js/temporal-plot.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
   <script src="{% static 'reports/js/behaviour-profile-filters.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
   <script src="{% static 'reports/js/top-videos-carousel.js' %}" defer nonce="{{ request.csp_nonce }}"></script>
 {% endblock extra_js %}
