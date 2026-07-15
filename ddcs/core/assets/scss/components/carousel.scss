@@ -64,20 +64,6 @@
     }
   }
 
-  .public-temporal-plot {
-    @media (max-width: 767.98px) {
-      > div {
-        height: 260px !important;
-      }
-
-      .plotly-graph-div,
-      .js-plotly-plot {
-        height: 260px !important;
-        min-height: 260px !important;
-      }
-    }
-  }
-
   .visualization-container {
     width: 100%;
     max-width: 100%;

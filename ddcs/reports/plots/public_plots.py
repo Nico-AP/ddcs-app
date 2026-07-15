@@ -28,20 +28,18 @@ from ddcs.reports.plots.utils import (
     PLOT_CONFIG,
     PLOT_CORNER_RADIUS,
     PLOT_FONT_FAMILY,
+    TEMPORAL_AREA_LINE,
     TEMPORAL_PARTY_PLOT_LEGEND,
+    TEMPORAL_PLOT_HEIGHT,
     create_plot_html,
     hex_to_rgba,
+    temporal_plot_xaxis_tickvals,
 )
 from ddcs.reports.types import (
     DailyAccountPostCountRecord,
 )
 
 logger = logging.getLogger(__name__)
-
-# Spline smoothing for stacked areas: curves between daily points only; hover
-# values at each date remain the exact counts.
-_TEMPORAL_PLOT_HEIGHT = 400
-_TEMPORAL_AREA_LINE = {"width": 0, "shape": "spline", "smoothing": 0.65}
 
 
 def get_party_distribution_all_accounts(
@@ -137,7 +135,7 @@ def get_temporal_party_distribution_all_accounts(
                 y=[counts.get(d, 0) for d in all_dates],
                 name=party,
                 mode="lines",
-                line=_TEMPORAL_AREA_LINE,
+                line=TEMPORAL_AREA_LINE,
                 stackgroup="one",
                 fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
@@ -157,7 +155,7 @@ def get_temporal_party_distribution_all_accounts(
         showlegend=True,
         legend=TEMPORAL_PARTY_PLOT_LEGEND,
         autosize=True,
-        height=_TEMPORAL_PLOT_HEIGHT,
+        height=TEMPORAL_PLOT_HEIGHT,
         minreducedwidth=500,
         font={"size": 25, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
@@ -168,6 +166,8 @@ def get_temporal_party_distribution_all_accounts(
     )
 
     fig.update_xaxes(
+        tickmode="array",
+        tickvals=temporal_plot_xaxis_tickvals(all_dates),
         hoverformat="%d.%m.%Y",
         showgrid=True,
         gridwidth=1,
