@@ -41,6 +41,7 @@ from ddcs.reports.plots.user_plots import (
     get_temporal_party_distribution_plot_user,
 )
 from ddcs.reports.services import generate_user_report_statistics
+from ddcs.reports.user_types import assign_user_type
 from ddcs.reports.utils import enrich_top_videos_for_embed
 from ddcs.reports.wordclouds import get_wordcloud
 
@@ -62,10 +63,13 @@ def _behaviour_profile_context(
         gender=gender,
     )
     group_size = reference_group_size(age_group, gender)
+    # Type uses absolute user values from the unfiltered comparisons so age /
+    # gender filters never change the merch typology on HTMX refresh.
     return {
         "behaviour_comparisons": filtered_comparisons,
         "behaviour_profile_rows": get_behaviour_profile_rows(filtered_comparisons),
         "behaviour_profile_slides": get_behaviour_profile_slides(filtered_comparisons),
+        "behaviour_user_type": assign_user_type(behaviour_comparisons),
         "behaviour_profile_url": behaviour_profile_url,
         "behaviour_age_group": age_group,
         "behaviour_gender": gender,

@@ -49,6 +49,7 @@ from ddcs.reports.config import (
 from ddcs.reports.factories import get_synthetic_report_statistics
 from ddcs.reports.metrics import account_metrics, user_metrics
 from ddcs.reports.plots import public_plots, user_plots
+from ddcs.reports.user_types import assign_user_type
 from ddcs.reports.utils import (
     build_tiktok_embed_url,
     build_top_video_tiktok_url,
@@ -354,6 +355,229 @@ class PeakHourShareTests(TestCase):
         )
         self.assertEqual(row["hourly_watch_means"][6], 1.5)
         self.assertEqual(row["reference_hourly_watch_means"][12], 2.0)
+
+
+class UserTypeAssignmentTests(TestCase):
+    def _comparisons(
+        self,
+        *,
+        means: dict[str, float] | None = None,
+        **metric_values: float,
+    ) -> list[dict]:
+        ref_means = means or {}
+        return [
+            {
+                "metric": metric,
+                "label": metric,
+                "radar_label": metric,
+                "value": value,
+                "value_display": str(value),
+                "percentile": 50.0,
+                "reference_mean": ref_means.get(metric, value),
+                "reference_mean_display": "0",
+                "reference_mean_percentile": 50.0,
+                "reference_median": 0.0,
+                "reference_median_display": "0",
+                "reference_p25": 0.0,
+                "reference_p75": 0.0,
+                "reference_min": 0.0,
+                "reference_max": 1.0,
+                "reference_min_display": "0",
+                "reference_max_display": "1",
+                "radar_user": 50.0,
+                "radar_mean": 50.0,
+                "is_fraction": True,
+            }
+            for metric, value in metric_values.items()
+        ]
+
+    def test_returns_none_for_empty_comparisons(self):
+        self.assertIsNone(assign_user_type([]))
+
+    def test_skip_above_mean_is_kolibri(self):
+        user_type = assign_user_type(
+            self._comparisons(
+                means={
+                    "frac_instant_skip": 0.4,
+                    "avg_session_length_sec": 180.0,
+                    "night_activity_frac": 0.3,
+                    "weekend_activity_frac": 0.3,
+                    "rate_like": 0.3,
+                },
+                frac_instant_skip=0.85,
+                avg_session_length_sec=180.0,
+                night_activity_frac=0.3,
+                weekend_activity_frac=0.3,
+                rate_like=0.3,
+            )
+        )
+        self.assertEqual(user_type["id"], "kolibri")
+        self.assertEqual(user_type["animal"], "Kolibri")
+
+    def test_session_above_mean_is_faultier(self):
+        user_type = assign_user_type(
+            self._comparisons(
+                means={
+                    "frac_instant_skip": 0.4,
+                    "avg_session_length_sec": 120.0,
+                    "night_activity_frac": 0.3,
+                    "weekend_activity_frac": 0.3,
+                    "rate_like": 0.3,
+                },
+                frac_instant_skip=0.4,
+                avg_session_length_sec=480.0,
+                night_activity_frac=0.3,
+                weekend_activity_frac=0.3,
+                rate_like=0.3,
+            )
+        )
+        self.assertEqual(user_type["id"], "faultier")
+
+    def test_skip_below_mean_is_luchs(self):
+        user_type = assign_user_type(
+            self._comparisons(
+                means={
+                    "frac_instant_skip": 0.5,
+                    "avg_session_length_sec": 180.0,
+                    "night_activity_frac": 0.3,
+                    "weekend_activity_frac": 0.3,
+                    "rate_like": 0.3,
+                },
+                frac_instant_skip=0.1,
+                avg_session_length_sec=180.0,
+                night_activity_frac=0.3,
+                weekend_activity_frac=0.3,
+                rate_like=0.3,
+            )
+        )
+        self.assertEqual(user_type["id"], "luchs")
+        self.assertEqual(user_type["trait_label"], "Der Beobachter")
+        self.assertIn("länger als die Meisten", user_type["description"])
+        self.assertIn("Skip auch mal", user_type["attention"])
+
+    def test_strongest_relative_deviation_wins(self):
+        # Night is only slightly above mean; weekend is far above → Waschbär.
+        user_type = assign_user_type(
+            self._comparisons(
+                means={
+                    "frac_instant_skip": 0.4,
+                    "avg_session_length_sec": 180.0,
+                    "night_activity_frac": 0.3,
+                    "weekend_activity_frac": 0.3,
+                    "rate_like": 0.3,
+                },
+                frac_instant_skip=0.4,
+                avg_session_length_sec=180.0,
+                night_activity_frac=0.35,
+                weekend_activity_frac=0.9,
+                rate_like=0.3,
+            )
+        )
+        self.assertEqual(user_type["id"], "waschbaer")
+
+    def test_night_above_mean_is_eule(self):
+        user_type = assign_user_type(
+            self._comparisons(
+                means={
+                    "frac_instant_skip": 0.4,
+                    "avg_session_length_sec": 180.0,
+                    "night_activity_frac": 0.25,
+                    "weekend_activity_frac": 0.3,
+                    "rate_like": 0.3,
+                },
+                frac_instant_skip=0.4,
+                avg_session_length_sec=180.0,
+                night_activity_frac=0.8,
+                weekend_activity_frac=0.3,
+                rate_like=0.3,
+            )
+        )
+        self.assertEqual(user_type["id"], "eule")
+
+    def test_high_like_above_mean_is_papagei(self):
+        user_type = assign_user_type(
+            self._comparisons(
+                means={
+                    "frac_instant_skip": 0.4,
+                    "avg_session_length_sec": 180.0,
+                    "night_activity_frac": 0.3,
+                    "weekend_activity_frac": 0.3,
+                    "rate_like": 0.2,
+                },
+                frac_instant_skip=0.4,
+                avg_session_length_sec=180.0,
+                night_activity_frac=0.3,
+                weekend_activity_frac=0.3,
+                rate_like=0.9,
+            )
+        )
+        self.assertEqual(user_type["id"], "papagei")
+
+    def test_no_deviation_from_mean_uses_absolute_fallback(self):
+        # All values equal their means → relative stage empty → absolute scores.
+        user_type = assign_user_type(
+            self._comparisons(
+                means={
+                    "frac_instant_skip": 0.8,
+                    "avg_session_length_sec": 100.0,
+                    "night_activity_frac": 0.2,
+                    "weekend_activity_frac": 0.2,
+                    "rate_like": 0.2,
+                },
+                frac_instant_skip=0.8,
+                avg_session_length_sec=100.0,
+                night_activity_frac=0.2,
+                weekend_activity_frac=0.2,
+                rate_like=0.2,
+            )
+        )
+        self.assertEqual(user_type["id"], "kolibri")
+
+    def test_balanced_absolute_fallback_is_luchs(self):
+        user_type = assign_user_type(
+            self._comparisons(
+                means={
+                    "frac_instant_skip": 0.35,
+                    "avg_session_length_sec": 120.0,
+                    "night_activity_frac": 0.25,
+                    "weekend_activity_frac": 0.3,
+                    "rate_like": 0.2,
+                },
+                frac_instant_skip=0.35,
+                avg_session_length_sec=120.0,
+                night_activity_frac=0.25,
+                weekend_activity_frac=0.3,
+                rate_like=0.2,
+            )
+        )
+        self.assertEqual(user_type["id"], "luchs")
+        self.assertIn("Swipe", user_type["teaser"])
+
+    def test_behaviour_profile_context_includes_stable_type(self):
+        comparisons = self._comparisons(
+            means={
+                "frac_instant_skip": 0.4,
+                "avg_session_length_sec": 180.0,
+                "night_activity_frac": 0.3,
+                "weekend_activity_frac": 0.3,
+                "rate_like": 0.3,
+                "avg_active_hours_per_day": 2.0,
+            },
+            frac_instant_skip=0.85,
+            avg_session_length_sec=180.0,
+            night_activity_frac=0.3,
+            weekend_activity_frac=0.3,
+            rate_like=0.3,
+            avg_active_hours_per_day=2.0,
+        )
+        context = views._behaviour_profile_context(
+            comparisons,
+            age_group="18-24",
+            gender="female",
+            behaviour_profile_url="/report/behaviour-profile/synthetic/",
+        )
+        self.assertIsNotNone(context["behaviour_user_type"])
+        self.assertEqual(context["behaviour_user_type"]["id"], "kolibri")
 
 
 class HourlyWatchMeansTests(TestCase):
@@ -1174,6 +1398,21 @@ class SyntheticFactoriesTests(TestCase):
         comparisons = factories._synthetic_behaviour_comparisons(pol_ids)
         metrics = {row["metric"] for row in comparisons}
         self.assertIn("frac_political_engagement", metrics)
+
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_synthetic_behaviour_refresh_varies_user_type(self):
+        # Full synthetic regenerations pick a random persona so refreshes
+        # can land on different spirit animals during manual testing.
+        type_ids: set[str] = set()
+        for _ in range(36):
+            comparisons = factories._synthetic_behaviour_comparisons(frozenset())
+            user_type = assign_user_type(comparisons)
+            if user_type is not None:
+                type_ids.add(user_type["id"])
+        self.assertGreaterEqual(len(type_ids), 3)
 
     @unittest.skipIf(
         os.getenv("GITHUB_ACTIONS") == "true",

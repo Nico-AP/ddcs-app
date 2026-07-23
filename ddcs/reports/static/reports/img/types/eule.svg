@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <defs><clipPath id="c_eule"><circle cx="150" cy="150" r="150"></circle></clipPath></defs>
+  <g clip-path="url(#c_eule)"><rect width="300" height="300" fill="#dee1f6"></rect>
+  <path d="M108 78 L92 34 L138 74 Z" fill="#43509f"></path><path d="M192 78 L208 34 L162 74 Z" fill="#43509f"></path>
+  <path d="M150 58 C88 58 72 152 82 214 C90 256 210 256 218 214 C228 152 212 58 150 58 Z" fill="#5b6bd0"></path>
+  <ellipse cx="150" cy="200" rx="66" ry="60" fill="#7a86dd"></ellipse>
+  <ellipse cx="150" cy="126" rx="74" ry="60" fill="#cdd3f2"></ellipse>
+  <circle cx="116" cy="124" r="28" fill="#fbfbf9"></circle><circle cx="184" cy="124" r="28" fill="#fbfbf9"></circle>
+  <circle cx="116" cy="124" r="16" fill="#5b6bd0"></circle><circle cx="184" cy="124" r="16" fill="#5b6bd0"></circle>
+  <circle cx="116" cy="124" r="8" fill="#2a2f3a"></circle><circle cx="184" cy="124" r="8" fill="#2a2f3a"></circle>
+  <path d="M150 136 L138 158 L162 158 Z" fill="#e0913a"></path></g>
+</svg>

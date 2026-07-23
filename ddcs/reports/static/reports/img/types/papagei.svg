@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <defs><clipPath id="c_papagei"><circle cx="150" cy="150" r="150"></circle></clipPath></defs>
+  <g clip-path="url(#c_papagei)"><rect width="300" height="300" fill="#f7dde8"></rect>
+  <ellipse cx="150" cy="258" rx="104" ry="84" fill="#d6467f"></ellipse>
+  <path d="M118 66 L108 26 L130 60 L138 22 L150 58 L162 24 L170 62 L182 28 L176 70 Z" fill="#b23566"></path>
+  <circle cx="150" cy="132" r="80" fill="#d6467f"></circle>
+  <ellipse cx="170" cy="128" rx="30" ry="34" fill="#fbe3ee"></ellipse>
+  <circle cx="176" cy="124" r="11" fill="#2a2f3a"></circle><circle cx="180" cy="120" r="3.4" fill="#fbfbf9"></circle>
+  <path d="M190 112 Q244 108 234 146 Q228 168 198 162 Q220 146 190 128 Z" fill="#2a2f3a"></path>
+  <path d="M198 162 Q222 166 216 182 Q204 188 192 178 Z" fill="#1e222b"></path></g>
+</svg>
