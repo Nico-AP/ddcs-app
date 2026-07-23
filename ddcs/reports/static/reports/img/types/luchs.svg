@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <defs><clipPath id="c_luchs"><circle cx="150" cy="150" r="150"></circle></clipPath></defs>
+  <g clip-path="url(#c_luchs)"><rect width="300" height="300" fill="#f1e6d6"></rect>
+  <ellipse cx="150" cy="256" rx="112" ry="84" fill="#cf9256"></ellipse>
+  <path d="M100 88 L78 26 L140 82 Z" fill="#cf9256"></path><path d="M200 88 L222 26 L160 82 Z" fill="#cf9256"></path>
+  <path d="M88 46 L78 26 L96 44" fill="none" stroke="#2a2f3a" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"></path>
+  <path d="M212 46 L222 26 L204 44" fill="none" stroke="#2a2f3a" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"></path>
+  <circle cx="150" cy="142" r="90" fill="#cf9256"></circle>
+  <path d="M78 158 L46 144 L78 166 L44 182 L82 186 L58 210 L96 194 Z" fill="#f2e7d4"></path>
+  <path d="M222 158 L254 144 L222 166 L256 182 L218 186 L242 210 L204 194 Z" fill="#f2e7d4"></path>
+  <ellipse cx="134" cy="108" rx="4" ry="10" fill="#7a4a2f"></ellipse><ellipse cx="166" cy="108" rx="4" ry="10" fill="#7a4a2f"></ellipse><ellipse cx="150" cy="98" rx="4" ry="10" fill="#7a4a2f"></ellipse>
+  <ellipse cx="150" cy="180" rx="46" ry="34" fill="#f2e7d4"></ellipse>
+  <ellipse cx="122" cy="146" rx="15" ry="12" fill="#e6b24e"></ellipse><ellipse cx="178" cy="146" rx="15" ry="12" fill="#e6b24e"></ellipse>
+  <circle cx="122" cy="146" r="6" fill="#2a2f3a"></circle><circle cx="178" cy="146" r="6" fill="#2a2f3a"></circle>
+  <path d="M150 168 L139 177 L161 177 Z" fill="#7a4a3a"></path></g>
+</svg>

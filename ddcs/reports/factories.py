@@ -5,10 +5,10 @@ Used during development to populate the report view with realistic-looking
 data without requiring an actual data donation.
 """
 
-# ruff: noqa: S311
+# ruff: noqa: S311, PLR2004
 
 from datetime import UTC, datetime, timedelta
-from random import choices, randint
+from random import choice, choices, randint, random, uniform
 
 from ddm.participation.models import Participant
 
@@ -209,21 +209,97 @@ def _synthetic_engagement_record(
     }
 
 
+_SYNTHETIC_BEHAVIOUR_PERSONAS = (
+    "kolibri",
+    "faultier",
+    "eule",
+    "waschbaer",
+    "papagei",
+    "luchs",
+)
+
+
+def _synthetic_persona_hour(persona: str) -> int:
+    if persona == "eule":
+        return choice([22, 23, 0, 1, 2, 3, 4, 5])
+    if persona == "luchs":
+        return randint(9, 20)
+    return randint(8, 22)
+
+
+def _synthetic_persona_day_offset(persona: str, index: int) -> int:
+    """Spread watches over ~30 days; bias weekends for Waschbär."""
+    # 2026-05-01 is Friday → weekday = (4 + offset) % 7; Sat=5, Sun=6.
+    if persona == "waschbaer":
+        # Prefer Sat/Sun offsets: Fri+1=Sat, Fri+2=Sun, then +7 cycles.
+        weekend_offsets = [1 + 7 * week + choice([0, 1]) for week in range(5)]
+        if random() < 0.75:
+            return choice(weekend_offsets)
+    if persona == "luchs":
+        return index % 28
+    return randint(0, 29)
+
+
+def _synthetic_gap_seconds(persona: str) -> float:
+    """Gap to next watch; <1s counts as instant skip, >90s starts a new session."""
+    if persona == "kolibri":
+        return uniform(0.2, 0.9) if random() < 0.85 else uniform(2.0, 8.0)
+    if persona == "faultier":
+        # Long in-session dwell, occasional session breaks.
+        return uniform(12.0, 55.0) if random() < 0.9 else uniform(120.0, 300.0)
+    if persona == "luchs":
+        return uniform(2.0, 25.0) if random() < 0.85 else uniform(100.0, 200.0)
+    # Default / eule / waschbaer / papagei: mixed pacing.
+    roll = random()
+    if roll < 0.25:
+        return uniform(0.2, 0.9)
+    if roll < 0.85:
+        return uniform(3.0, 40.0)
+    return uniform(100.0, 240.0)
+
+
+def _synthetic_watch_history(persona: str) -> list[dict]:
+    """Build a randomised watch timeline biased toward ``persona``."""
+    start = REPORT_FIRST_DATE_TO_INCLUDE
+    n_watches = randint(90, 140)
+    watches: list[dict] = []
+    cursor = start + timedelta(
+        days=_synthetic_persona_day_offset(persona, 0),
+        hours=_synthetic_persona_hour(persona),
+        minutes=randint(0, 40),
+    )
+    for i in range(n_watches):
+        watches.append(
+            {
+                "date": cursor,
+                "link": f"https://www.tiktok.com/@user/video/{i}",
+                "video_id": i,
+            }
+        )
+        gap = _synthetic_gap_seconds(persona)
+        if gap >= 90 or (i > 0 and i % 12 == 0):
+            # Jump forward into a new session with persona-typical timing.
+            jump_days = max(1, _synthetic_persona_day_offset(persona, i + 1) % 4)
+            cursor = cursor + timedelta(
+                days=jump_days,
+                hours=(_synthetic_persona_hour(persona) - cursor.hour) % 24,
+                minutes=randint(0, 40),
+                seconds=randint(0, 50),
+            )
+        else:
+            cursor = cursor + timedelta(seconds=gap)
+    return watches
+
+
 def _synthetic_behaviour_comparisons(
     political_video_ids: frozenset[int] | None = None,
 ) -> list[dict]:
-    start = REPORT_FIRST_DATE_TO_INCLUDE
+    # Pick a spirit-animal persona so full synthetic-report refreshes can
+    # land on different typologies while filters still reuse session cache.
+    persona = choice(_SYNTHETIC_BEHAVIOUR_PERSONAS)
     pol_ids = list(political_video_ids or [])
-    non_pol_ids = [randint(1000000, 9999999) for _ in range(12)]
-
-    watch_history = [
-        {
-            "date": start + timedelta(days=i % 30, hours=(i * 3) % 24),
-            "link": f"https://www.tiktok.com/@user/video/{i}",
-            "video_id": i,
-        }
-        for i in range(120)
-    ]
+    non_pol_ids = [randint(1000000, 9999999) for _ in range(20)]
+    watch_history = _synthetic_watch_history(persona)
 
     political_likes = (
         [
@@ -233,9 +309,16 @@ def _synthetic_behaviour_comparisons(
         if pol_ids
         else []
     )
+    # Papagei: like almost everything; others: sparse likes.
+    if persona == "papagei":
+        like_ids = [w["video_id"] for w in watch_history if random() < 0.85]
+    elif persona == "luchs":
+        like_ids = [w["video_id"] for w in watch_history if random() < 0.12]
+    else:
+        like_ids = list(non_pol_ids[: randint(3, 10)])
     other_likes = [
         _synthetic_engagement_record(video_id, day_offset=i % 20)
-        for i, video_id in enumerate(non_pol_ids[:15])
+        for i, video_id in enumerate(like_ids)
     ]
     political_shares = (
         [

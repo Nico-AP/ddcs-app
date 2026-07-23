@@ -1,24 +1,70 @@
-{% if behaviour_profile_slides %}
+{% load static %}
+{% with has_type=behaviour_user_type slide_count=behaviour_profile_slides|length %}
+{% if has_type or behaviour_profile_slides %}
   <div id="behaviourProfileCarousel"
        class="carousel slide behaviour-profile-carousel mb-3"
        data-bs-ride="false"
        data-bs-interval="false">
-    {% if behaviour_profile_slides|length > 1 %}
+    {% if has_type and slide_count or slide_count > 1 %}
       <div class="carousel-indicators behaviour-profile-carousel__indicators">
+        {% if has_type %}
+          <button type="button"
+                  data-bs-target="#behaviourProfileCarousel"
+                  data-bs-slide-to="0"
+                  class="active"
+                  aria-current="true"
+                  aria-label="Dein TikTok-Typ"></button>
+        {% endif %}
         {% for slide in behaviour_profile_slides %}
           <button type="button"
                   data-bs-target="#behaviourProfileCarousel"
-                  data-bs-slide-to="{{ forloop.counter0 }}"
-                  class="{% if forloop.first %}active{% endif %}"
-                  {% if forloop.first %}aria-current="true"{% endif %}
-                  aria-label="Folie {{ forloop.counter }} von {{ behaviour_profile_slides|length }}"></button>
+                  data-bs-slide-to="{% if has_type %}{{ forloop.counter }}{% else %}{{ forloop.counter0 }}{% endif %}"
+                  class="{% if not has_type and forloop.first %}active{% endif %}"
+                  {% if not has_type and forloop.first %}aria-current="true"{% endif %}
+                  aria-label="Folie {% if has_type %}{{ forloop.counter|add:1 }}{% else %}{{ forloop.counter }}{% endif %}"></button>
         {% endfor %}
       </div>
     {% endif %}
 
     <div class="carousel-inner">
+      {% if has_type %}
+        <div class="carousel-item active" data-behaviour-type-slide="true">
+          <div class="behaviour-type-card">
+            <p class="behaviour-type-card__eyebrow mb-2">Dein TikTok-Typ</p>
+            <div class="behaviour-type-card__media mx-auto mb-3">
+              <img src="{% static behaviour_user_type.image_static %}"
+                   alt="{{ behaviour_user_type.animal }}"
+                   class="behaviour-type-card__image"
+                   width="180"
+                   height="180" />
+            </div>
+            <h3 class="behaviour-type-card__title h4 mb-1">
+              {{ behaviour_user_type.headline }}
+            </h3>
+            <p class="behaviour-type-card__trait text-muted mb-3">
+              {{ behaviour_user_type.trait_label }}
+            </p>
+            <div class="behaviour-type-card__section text-start mb-3">
+              <p class="behaviour-type-card__section-label mb-1">So tickst du</p>
+              <p class="behaviour-type-card__description mb-0">
+                {{ behaviour_user_type.description }}
+              </p>
+            </div>
+            <div class="behaviour-type-card__section text-start mb-3">
+              <p class="behaviour-type-card__section-label mb-1">Darauf solltest du achten</p>
+              <p class="behaviour-type-card__attention mb-0">
+                {{ behaviour_user_type.attention }}
+              </p>
+            </div>
+            <p class="behaviour-type-card__teaser mb-0">
+              {{ behaviour_user_type.teaser }}
+            </p>
+          </div>
+        </div>
+      {% endif %}
+
       {% for slide in behaviour_profile_slides %}
-        <div class="carousel-item{% if forloop.first %} active{% endif %}">
+        <div class="carousel-item{% if not has_type and forloop.first %} active{% endif %}">
           <div class="behaviour-profile-rows">
             {% for row in slide.rows %}
               <div class="behaviour-profile-row"
@@ -44,7 +90,7 @@
       {% endfor %}
     </div>
 
-    {% if behaviour_profile_slides|length > 1 %}
+    {% if has_type and slide_count or slide_count > 1 %}
       <button class="carousel-control-prev behaviour-profile-carousel__control"
               type="button"
               data-bs-target="#behaviourProfileCarousel"
@@ -63,15 +109,20 @@
     {% endif %}
   </div>
 {% endif %}
+{% endwith %}
 
 {% if behaviour_reference_group_size %}
-  <p class="behaviour-reference-group-label text-center mb-0">
+  <p class="behaviour-reference-group-label text-center mb-0"
+     data-behaviour-detail-chrome
+     {% if behaviour_user_type %}hidden{% endif %}>
     Vergleich mit
     <span class="behaviour-reference-group-label__highlight">{{ behaviour_reference_group_label }}</span>
     <span class="behaviour-reference-group-label__count">({{ behaviour_reference_group_size }} Teilnehmende)</span>
   </p>
 {% else %}
-  <p class="behaviour-reference-group-label text-center mb-0">
+  <p class="behaviour-reference-group-label text-center mb-0"
+     data-behaviour-detail-chrome
+     {% if behaviour_user_type %}hidden{% endif %}>
     Für diese Auswahl gibt es keine Teilnehmenden in der Referenzgruppe.
   </p>
 {% endif %}

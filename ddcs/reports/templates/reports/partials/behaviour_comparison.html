@@ -9,7 +9,10 @@
       {% include "reports/partials/behaviour_profile_content.html" %}
     </div>
 
-    <aside class="behaviour-comparison-filters position-relative" aria-label="Vergleichsgruppe filtern">
+    <aside class="behaviour-comparison-filters position-relative"
+           data-behaviour-detail-chrome
+           {% if behaviour_user_type %}hidden{% endif %}
+           aria-label="Vergleichsgruppe filtern">
       {% include "reports/partials/behaviour_comparison_filters.html" %}
     </aside>
 
