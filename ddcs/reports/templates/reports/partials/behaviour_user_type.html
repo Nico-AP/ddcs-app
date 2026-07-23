@@ -1,0 +1,35 @@
+{% load static %}
+{% if behaviour_user_type %}
+  <div class="behaviour-type-card mb-4">
+    <p class="behaviour-type-card__eyebrow mb-2">Dein TikTok-Typ</p>
+    <div class="behaviour-type-card__media mx-auto mb-3">
+      <img src="{% static behaviour_user_type.image_static %}"
+           alt="{{ behaviour_user_type.animal }}"
+           class="behaviour-type-card__image"
+           width="180"
+           height="180" />
+    </div>
+    <h3 class="behaviour-type-card__title h4 mb-1">
+      {{ behaviour_user_type.headline }}
+    </h3>
+    <p class="behaviour-type-card__trait text-muted mb-3">
+      {{ behaviour_user_type.trait_label }}
+    </p>
+    <div class="behaviour-type-card__section text-start mb-3">
+      <p class="behaviour-type-card__section-label behaviour-type-card__section-label--tick mb-1">
+        So tickst du
+      </p>
+      <p class="behaviour-type-card__description mb-0">
+        {{ behaviour_user_type.description }}
+      </p>
+    </div>
+    <div class="behaviour-type-card__section text-start mb-0">
+      <p class="behaviour-type-card__section-label behaviour-type-card__section-label--attention mb-1">
+        Darauf solltest du achten
+      </p>
+      <p class="behaviour-type-card__attention mb-0">
+        {{ behaviour_user_type.attention }}
+      </p>
+    </div>
+  </div>
+{% endif %}

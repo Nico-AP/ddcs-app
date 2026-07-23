@@ -124,30 +124,6 @@
     }, 3200);
   }
 
-  function isTypeSlideActive(carousel) {
-    const activeItem = carousel.querySelector(".carousel-item.active");
-    return Boolean(activeItem?.dataset?.behaviourTypeSlide === "true");
-  }
-
-  function syncBehaviourDetailChrome(carousel) {
-    const root =
-      document.getElementById("behaviour-profile-updates")?.parentElement ||
-      document;
-    const chromeNodes = root.querySelectorAll("[data-behaviour-detail-chrome]");
-    if (!chromeNodes.length) {
-      return;
-    }
-
-    const hide = Boolean(carousel && isTypeSlideActive(carousel));
-    chromeNodes.forEach(function (node) {
-      if (hide) {
-        node.setAttribute("hidden", "");
-      } else {
-        node.removeAttribute("hidden");
-      }
-    });
-  }
-
   function getActiveSlideIndex(carousel) {
     const activeItem = carousel.querySelector(".carousel-item.active");
     const items = carousel.querySelectorAll(".carousel-item");
@@ -215,13 +191,11 @@
       restoreCarouselSlide();
       window.scrollTo({ top: preservedScrollY, left: 0, behavior: "instant" });
       handleBehaviourChartsUpdate(target);
-      syncBehaviourDetailChrome(findBehaviourCarousel(target));
       return;
     }
 
     if (target.id === "report-statistics" || containsBehaviourCarousel(target)) {
       handleBehaviourChartsUpdate(target);
-      syncBehaviourDetailChrome(findBehaviourCarousel(target));
     }
   });
 
@@ -230,14 +204,9 @@
       return;
     }
 
-    syncBehaviourDetailChrome(event.target);
     scheduleDeferredPlotInit(event.target, { onlyVisible: true });
     window.setTimeout(function () {
       initDeferredBehaviourPlots(event.target, { onlyVisible: true });
     }, 50);
-  });
-
-  document.addEventListener("DOMContentLoaded", function () {
-    syncBehaviourDetailChrome(findBehaviourCarousel(document));
   });
 })();

@@ -151,8 +151,16 @@
   font-size: 0.75rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--text-secondary);
   font-weight: var(--font-weight-600);
+  color: var(--text-secondary);
+
+  &--tick {
+    color: var(--text-accent);
+  }
+
+  &--attention {
+    color: var(--text-accent-alt);
+  }
 }
 
 .behaviour-type-card__description,
@@ -160,12 +168,6 @@
   font-size: 0.95rem;
   line-height: 1.5;
   color: var(--text-primary);
-}
-
-.behaviour-type-card__teaser {
-  font-size: 0.9rem;
-  font-weight: var(--font-weight-600);
-  color: var(--text-accent-alt);
 }
 
 .behaviour-profile-carousel {
