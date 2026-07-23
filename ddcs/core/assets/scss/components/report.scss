@@ -112,6 +112,10 @@
   padding: var(--space-3) var(--space-2) var(--space-4);
   max-width: 28rem;
   margin: 0 auto;
+
+  &--intro {
+    padding-top: 0;
+  }
 }
 
 .behaviour-type-card__eyebrow {
@@ -148,9 +152,9 @@
 }
 
 .behaviour-type-card__section-label {
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: inherit;
+  letter-spacing: 0.02em;
+  text-transform: none;
   font-weight: var(--font-weight-600);
   color: var(--text-secondary);
 
@@ -161,13 +165,6 @@
   &--attention {
     color: var(--text-accent-alt);
   }
-}
-
-.behaviour-type-card__description,
-.behaviour-type-card__attention {
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--text-primary);
 }
 
 .behaviour-profile-carousel {

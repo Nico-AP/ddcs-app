@@ -1,0 +1,42 @@
+<div class="report-block text-hero-lead">
+  <h2 class="h4 mb-3">Politik in deinem Feed</h2>
+  <p>
+    {% if n_seen_total == 0 %}
+      Von den Videos, die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
+      hatten <span class="report-highlight">keine</span> ein politisches Schlagwort
+      oder kamen von offiziellen Partei-Accounts.
+      {% include "reports/partials/political_content_info_trigger.html" %}
+    {% elif n_seen_pol_videos == 0 %}
+      Von den
+      <span class="report-highlight">{{ n_seen_total }}</span>
+      {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %},
+      die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
+      hatten <span class="report-highlight">keine</span> ein politisches Schlagwort
+      oder kamen von offiziellen Partei-Accounts.
+      {% include "reports/partials/political_content_info_trigger.html" %}
+    {% elif n_seen_pol_videos == 1 %}
+      Von den
+      <span class="report-highlight">{{ n_seen_total }}</span>
+      {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %},
+      die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
+      hatte nur <span class="report-highlight">1</span> Video mindestens ein politisches
+      Schlagwort oder kam von einem offiziellen Partei-Account.
+      {% include "reports/partials/political_content_info_trigger.html" %}
+    {% else %}
+      Von den
+      <span class="report-highlight">{{ n_seen_total }}</span>
+      Videos, die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
+      hatten <span class="report-highlight">{{ n_seen_pol_videos }}</span> Videos
+      mindestens ein politisches Schlagwort oder kamen von offiziellen Partei-Accounts.
+      {% include "reports/partials/political_content_info_trigger.html" %}
+    {% endif %}
+  </p>
+  {% if n_seen_pol_videos > 0 %}
+    <p>
+      Das entspricht <span class="report-highlight">{{ share_political }}%</span> der Videos,
+      die du gesehen hast.
+    </p>
+  {% endif %}
+</div>
+
+{% include "reports/partials/political_content_info_modal.html" %}
