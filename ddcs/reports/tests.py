@@ -2045,16 +2045,32 @@ class GetSyntheticReportViewTests(TestCase):
         )
 
     def test_filter_reuses_session_cached_behaviour_comparisons(self):
-        request = _attach_session(RequestFactory().get("/report/get/synthetic/"))
-        report_view = views.GetSyntheticReportView()
-        report_view.setup(request)
-        cached = request.session[views._SYNTHETIC_BEHAVIOUR_SESSION_KEY]
-        peak_hourly = next(
-            c["hourly_watch_means"]
-            for c in cached
-            if c["metric"] == "peak_activity_hour"
-        )
-
+        # Seed session directly: peak_activity_hour is still computed for CSV
+        # sampling but not relied on in the report UI, and CI has no metrics CSV.
+        cached = [
+            {
+                "metric": "frac_instant_skip",
+                "label": "Anteil Instant-Skips",
+                "radar_label": "Anteil Instant-Skips",
+                "value": 0.42,
+                "value_display": "42.0 %",
+                "percentile": 72.0,
+                "reference_mean": 0.3,
+                "reference_mean_display": "30.0 %",
+                "reference_mean_percentile": 50.0,
+                "reference_median": 0.28,
+                "reference_median_display": "28.0 %",
+                "reference_p25": 0.2,
+                "reference_p75": 0.4,
+                "reference_min": 0.05,
+                "reference_max": 0.75,
+                "reference_min_display": "5.0 %",
+                "reference_max_display": "75.0 %",
+                "radar_user": 72.0,
+                "radar_mean": 50.0,
+                "is_fraction": True,
+            }
+        ]
         filter_request = _attach_session(
             RequestFactory().get(
                 "/report/behaviour-profile/synthetic/",
@@ -2069,12 +2085,13 @@ class GetSyntheticReportViewTests(TestCase):
             context = filter_view.get_context_data()
             mock_stats.assert_not_called()
 
-        peak_row = next(
+        skip_row = next(
             c
             for c in context["behaviour_comparisons"]
-            if c["metric"] == "peak_activity_hour"
+            if c["metric"] == "frac_instant_skip"
         )
-        self.assertEqual(peak_row["hourly_watch_means"], peak_hourly)
+        # User value stays fixed; only reference stats may be recomputed.
+        self.assertEqual(skip_row["value"], cached[0]["value"])
 
 
 class PublicPlotsDevViewAccessTests(TestCase):
