@@ -28,6 +28,11 @@
                    {% endif %}>
                 <p class="small text-start behaviour-profile-title fw-bold">
                   {{ row.title_html|safe }}
+                  {% if row.metric == "avg_videos_per_session" or row.metric == "avg_session_length_sec" %}
+                    {% include "reports/partials/session_info_trigger.html" %}
+                  {% elif row.metric == "frac_instant_skip" %}
+                    {% include "reports/partials/instant_skip_info_trigger.html" %}
+                  {% endif %}
                 </p>
                 <div class="behaviour-profile-chart visualization-container w-100 min-w-0 overflow-hidden mt-0">
                   {{ row.chart_html|safe }}

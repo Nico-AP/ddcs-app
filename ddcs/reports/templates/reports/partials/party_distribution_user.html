@@ -1,9 +1,10 @@
 <div class="report-block text-hero-lead">
   <p class="fw-bold">
-    So oft kamen Videos von <span class="report-highlight">offiziellen Partei-Accounts</span> in deinem Feed vor ...
+    So oft kamen Videos von <span class="report-highlight">offiziellen Partei-Accounts</span> in deinem Feed vor …{% include "reports/partials/sonstige_party_info_trigger.html" %}
   </p>
   <div class="visualization-container">
     {{ party_distribution_user.html|safe }}
   </div>
 </div>
+{% include "reports/partials/sonstige_party_info_modal.html" %}
 <hr />

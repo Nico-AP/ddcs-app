@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 from ddm.participation.models import Participant
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
+from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.cache import cache
 from django.http import Http404
 from django.test import RequestFactory, TestCase, override_settings
@@ -23,12 +24,15 @@ from ddcs.metadata.models import (
     TikTokUser,
     TikTokVideo,
 )
-from ddcs.metadata.research_api.models import APIVideoInfos
+from ddcs.metadata.research_api.models import APIVideoInfos, APIVideoStatistics
 from ddcs.reports import factories, services, views, wordclouds
 from ddcs.reports.behaviour_metrics import (
     _build_peak_hour_comparison,
+    _hourly_watch_means,
     _peak_hour_same_fraction,
+    _weekday_active_hours,
     apply_reference_demographic_filter,
+    avg_inferred_watch_sec_by_video,
     compute_behaviour_comparisons,
     compute_engagement_metrics,
     compute_watch_history_metrics,
@@ -115,15 +119,25 @@ class TopVideoUrlTests(TestCase):
             "https://www.tiktok.com/player/v1/7658941918302326048?autoplay=0",
         )
 
-    def test_enrich_top_videos_limits_to_three(self):
+    def test_enrich_top_videos_limits_to_configured_count(self):
         videos = [
             {"video_id": index, "username": f"user{index}", "view_count": index}
-            for index in range(5)
+            for index in range(8)
         ]
         enriched = enrich_top_videos_for_embed(videos)
-        self.assertEqual(len(enriched), 3)
+        self.assertEqual(len(enriched), 5)
         self.assertTrue(all(video["tiktok_url"] for video in enriched))
         self.assertTrue(all(video["embed_url"] for video in enriched))
+        self.assertFalse(enriched[0]["liked"])
+        self.assertEqual(enriched[0]["watch_share"], 0.0)
+        self.assertEqual(enriched[0]["avg_watch_sec_display"], "—")
+        self.assertEqual(enriched[0]["total_views_display"], "—")
+
+    def test_enrich_formats_total_views(self):
+        enriched = enrich_top_videos_for_embed(
+            [{"video_id": 1, "username": "a", "view_count": 2, "total_views": 1250000}]
+        )
+        self.assertEqual(enriched[0]["total_views_display"], "1.250.000")
 
 
 # ============================================================
@@ -167,6 +181,30 @@ class FracInstantSkipTests(TestCase):
         )
         metrics = {row["metric"] for row in comparisons}
         self.assertIn("frac_instant_skip", metrics)
+
+
+class AvgInferredWatchSecTests(TestCase):
+    def test_averages_within_session_gaps_per_video(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        # video 1 watched twice: 4s then 8s dwell; video 2 once: 2s
+        watches = [
+            {"date": base + timedelta(seconds=0), "video_id": 1},
+            {"date": base + timedelta(seconds=4), "video_id": 2},
+            {"date": base + timedelta(seconds=6), "video_id": 1},
+            {"date": base + timedelta(seconds=14), "video_id": 3},
+        ]
+        result = avg_inferred_watch_sec_by_video(watches)
+        self.assertEqual(result[1], 6.0)
+        self.assertEqual(result[2], 2.0)
+        self.assertNotIn(3, result)
+
+    def test_ignores_gaps_beyond_session_break(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        watches = [
+            {"date": base + timedelta(seconds=0), "video_id": 1},
+            {"date": base + timedelta(seconds=200), "video_id": 2},
+        ]
+        self.assertEqual(avg_inferred_watch_sec_by_video(watches), {})
 
 
 class WatchSessionTests(TestCase):
@@ -302,6 +340,62 @@ class PeakHourShareTests(TestCase):
         self.assertEqual(row["chart_reference_value"], 0.4)
         self.assertEqual(row["chart_user_value_display"], "60.0\u00a0%")
         self.assertEqual(row["chart_reference_value_display"], "40.0\u00a0%")
+
+    def test_peak_hour_comparison_keeps_hourly_means(self):
+        hourly = [0.0] * 24
+        hourly[6] = 1.5
+        reference_hourly = [0.0] * 24
+        reference_hourly[12] = 2.0
+        row = _build_peak_hour_comparison(
+            6.0,
+            [6.0, 6.0, 12.0],
+            hourly_watch_means=hourly,
+            reference_hourly_watch_means=reference_hourly,
+        )
+        self.assertEqual(row["hourly_watch_means"][6], 1.5)
+        self.assertEqual(row["reference_hourly_watch_means"][12], 2.0)
+
+
+class HourlyWatchMeansTests(TestCase):
+    def test_mean_videos_per_hour_across_donation_span(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        watches = [
+            {"date": base.replace(hour=6), "link": "a", "video_id": 1},
+            {"date": base.replace(hour=6), "link": "b", "video_id": 2},
+            {
+                "date": base + timedelta(days=1, hours=6),
+                "link": "c",
+                "video_id": 3,
+            },
+            {
+                "date": base + timedelta(days=1, hours=18),
+                "link": "d",
+                "video_id": 4,
+            },
+        ]
+        means = _hourly_watch_means(watches)
+        self.assertEqual(len(means), 24)
+        # 3 watches at hour 6 across a 2-day span → 1.5
+        self.assertEqual(means[6], 1.5)
+        self.assertEqual(means[18], 0.5)
+        self.assertEqual(means[0], 0.0)
+
+    def test_weekday_active_hours_averages_distinct_hours(self):
+        # 2026-05-01 is a Friday.
+        friday = REPORT_FIRST_DATE_TO_INCLUDE.replace(hour=10)
+        saturday = friday + timedelta(days=1)
+        watches = [
+            {"date": friday.replace(hour=10), "link": "a", "video_id": 1},
+            {"date": friday.replace(hour=11), "link": "b", "video_id": 2},
+            {"date": saturday.replace(hour=12), "link": "c", "video_id": 3},
+            {"date": saturday.replace(hour=14), "link": "d", "video_id": 4},
+            {"date": saturday.replace(hour=16), "link": "e", "video_id": 5},
+        ]
+        means = _weekday_active_hours(watches)
+        self.assertEqual(len(means), 7)
+        self.assertEqual(means[4], 2.0)  # Friday
+        self.assertEqual(means[5], 3.0)  # Saturday
+        self.assertEqual(means[0], 0.0)
 
 
 class ReferenceDemographicFilterTests(TestCase):
@@ -572,36 +666,86 @@ class ComputeDailyPartyCountsTests(TestCase):
 
 
 class GetTopVideosTests(TestCase):
-    def test_returns_videos_sorted_by_view_count_desc(self):
-        seen = [1, 2, 2, 3, 3, 3]
+    def test_returns_videos_sorted_by_total_views_desc(self):
+        # Feed appearances: 3 most often, then 2, then 1 — but overall views
+        # rank 1 highest, so viral order must follow total_views.
+        seen = [1, 2, 2, 2, 2, 3, 3, 3]
         result = user_metrics._get_top_videos(
             seen_pol_video_ids=seen,
             video_party_map={1: "SPD", 2: "CDU/CSU", 3: "Grüne"},
             username_by_video={1: "alice", 2: "bob", 3: "carol"},
             descriptions_by_video={1: "a", 2: "b", 3: "c"},
+            liked_video_ids={3},
+            shared_video_ids={2},
+            saved_video_ids={3},
+            followed_usernames={"carol"},
+            avg_watch_sec_by_video={3: 12.5, 2: 0.4, 1: 8.0},
+            total_views_by_video={1: 5_000_000, 3: 1_250_000, 2: 40_000},
             n=3,
         )
-        self.assertEqual([v["video_id"] for v in result], [3, 2, 1])
-        self.assertEqual(result[0]["view_count"], 3)
-        self.assertEqual(result[0]["party"], "Grüne")
-        self.assertEqual(result[0]["username"], "carol")
-        self.assertEqual(result[0]["description"], "c")
+        self.assertEqual([v["video_id"] for v in result], [1, 3, 2])
+        self.assertEqual(result[0]["view_count"], 1)
+        self.assertEqual(result[0]["total_views"], 5_000_000)
+        self.assertEqual(result[0]["avg_watch_sec"], 8.0)
+        self.assertEqual(result[1]["view_count"], 3)
+        self.assertEqual(result[1]["total_views"], 1_250_000)
+        self.assertEqual(result[1]["party"], "Grüne")
+        self.assertEqual(result[1]["username"], "carol")
+        self.assertEqual(result[1]["description"], "c")
+        self.assertTrue(result[1]["liked"])
+        self.assertTrue(result[1]["saved"])
+        self.assertTrue(result[1]["followed_author"])
+        self.assertEqual(result[2]["view_count"], 4)
+        self.assertEqual(result[2]["total_views"], 40_000)
+        self.assertTrue(result[2]["shared"])
+
+    def test_videos_without_total_views_rank_after_known_views(self):
+        seen = [1, 1, 1, 2]
+        result = user_metrics._get_top_videos(
+            seen_pol_video_ids=seen,
+            video_party_map={1: "SPD", 2: "AfD"},
+            username_by_video={1: "a", 2: "b"},
+            descriptions_by_video={},
+            total_views_by_video={2: 100},
+            n=2,
+        )
+        self.assertEqual([v["video_id"] for v in result], [2, 1])
+        self.assertEqual(result[0]["total_views"], 100)
+        self.assertIsNone(result[1]["total_views"])
 
     def test_respects_n_limit(self):
         seen = [1, 2, 3, 4, 5, 6, 7]
-        result = user_metrics._get_top_videos(seen, {}, {}, {}, n=2)
+        result = user_metrics._get_top_videos(
+            seen,
+            {},
+            {},
+            {},
+            total_views_by_video={i: i * 10 for i in range(1, 8)},
+            n=2,
+        )
         self.assertEqual(len(result), 2)
+        self.assertEqual([v["video_id"] for v in result], [7, 6])
 
     def test_returns_empty_for_no_seen_videos(self):
         self.assertEqual(user_metrics._get_top_videos([], {}, {}, {}), [])
 
     def test_description_defaults_to_empty_string_when_missing(self):
-        result = user_metrics._get_top_videos([1], {1: "SPD"}, {1: "alice"}, {}, n=1)
+        result = user_metrics._get_top_videos(
+            [1],
+            {1: "SPD"},
+            {1: "alice"},
+            {},
+            total_views_by_video={1: 10},
+            n=1,
+        )
         self.assertEqual(result[0]["description"], "")
 
     def test_username_defaults_to_empty_string_when_missing(self):
-        result = user_metrics._get_top_videos([1], {1: "SPD"}, {}, {}, n=1)
+        result = user_metrics._get_top_videos(
+            [1], {1: "SPD"}, {}, {}, total_views_by_video={1: 10}, n=1
+        )
         self.assertEqual(result[0]["username"], "")
+        self.assertFalse(result[0]["followed_author"])
 
 
 # ============================================================
@@ -702,6 +846,23 @@ class GetDescriptionsByVideoTests(TestCase):
         )
         result = user_metrics._get_descriptions_by_video([333])
         self.assertEqual(result[333], "neueste Beschreibung")
+
+
+class GetTotalViewsByVideoTests(TestCase):
+    def test_returns_latest_non_null_view_count(self):
+        video = TikTokVideo.objects.create(id_tiktok=444, added_by=DataOrigins.DONATION)
+        APIVideoStatistics.objects.create(video=video, view_count=100)
+        latest = APIVideoStatistics.objects.create(video=video, view_count=2500)
+        APIVideoStatistics.objects.filter(pk=latest.pk).update(
+            updated_at=datetime.now(tz=UTC) + timedelta(days=1)
+        )
+        result = user_metrics._get_total_views_by_video([444])
+        self.assertEqual(result[444], 2500)
+
+    def test_skips_videos_without_view_count(self):
+        video = TikTokVideo.objects.create(id_tiktok=445, added_by=DataOrigins.DONATION)
+        APIVideoStatistics.objects.create(video=video, view_count=None)
+        self.assertEqual(user_metrics._get_total_views_by_video([445]), {})
 
 
 # ============================================================
@@ -942,14 +1103,25 @@ class SyntheticFactoriesTests(TestCase):
         unique_dates = {r["date"] for r in result}
         self.assertEqual(len(unique_dates), days)
 
+    def test_daily_party_counts_favor_larger_parties(self):
+        totals = dict.fromkeys(factories.SYNTHETIC_PARTIES, 0)
+        for _ in range(40):
+            for row in factories._synthetic_daily_party_counts(days=14):
+                totals[row["party"]] += row["count"]
+        self.assertGreater(totals["AfD"], totals["FDP"])
+        self.assertGreater(totals["SPD"], totals[factories.NO_PARTY_KEY])
+
     def test_top_videos_use_synthetic_embed_urls(self):
         result = factories._synthetic_top_videos([])
-        self.assertEqual(len(result), 3)
+        self.assertEqual(len(result), 5)
         self.assertEqual(
             [video["tiktok_url"] for video in result],
             factories.SYNTHETIC_TOP_VIDEO_URLS,
         )
-        self.assertEqual(result[0]["username"], "alice_weidel_afd")
+        self.assertEqual(result[0]["username"], "sahra.wagenknecht")
+        self.assertEqual(result[1]["username"], "diegruenen")
+        self.assertIn("liked", result[0])
+        self.assertIn("watch_share", result[0])
 
     def test_descriptions_by_video_returns_one_entry_per_id(self):
         result = factories._synthetic_descriptions_by_video([1, 2, 3])
@@ -1003,6 +1175,34 @@ class SyntheticFactoriesTests(TestCase):
         metrics = {row["metric"] for row in comparisons}
         self.assertIn("frac_political_engagement", metrics)
 
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_synthetic_peak_hour_samples_hourly_curve_from_reference(self):
+        comparisons = factories._synthetic_behaviour_comparisons(frozenset())
+        peak = next(row for row in comparisons if row["metric"] == "peak_activity_hour")
+        hourly = peak.get("hourly_watch_means")
+        reference_hourly = peak.get("reference_hourly_watch_means")
+        self.assertIsNotNone(hourly)
+        self.assertEqual(len(hourly), 24)
+        self.assertIsNotNone(reference_hourly)
+        self.assertEqual(len(reference_hourly), 24)
+        # Sampled CSV curves are not the flat synthetic (i * 3) % 24 pattern.
+        self.assertGreater(max(hourly), min(hourly))
+        self.assertNotEqual(hourly, reference_hourly)
+
+        weekday = next(
+            row for row in comparisons if row["metric"] == "weekday_active_hours"
+        )
+        weekday_hours = weekday.get("weekday_active_hours")
+        reference_weekday = weekday.get("reference_weekday_active_hours")
+        self.assertIsNotNone(weekday_hours)
+        self.assertEqual(len(weekday_hours), 7)
+        self.assertIsNotNone(reference_weekday)
+        self.assertEqual(len(reference_weekday), 7)
+        self.assertGreater(max(weekday_hours), 0)
+
 
 class BehaviourProfileComparisonTests(TestCase):
     def _sample_comparison(self, percentile: float = 72.0) -> dict:
@@ -1034,7 +1234,7 @@ class BehaviourProfileComparisonTests(TestCase):
 
     def test_row_title_is_single_user_sentence_in_teal(self):
         text = user_plots._row_title_text(self._sample_comparison())
-        self.assertIn("color: #0cc4b6", text)
+        self.assertIn("color: #058076", text)
         self.assertIn("42.0 %", text)
         self.assertIn("scrollst du direkt weiter", text)
         self.assertNotIn("Teilnehmende", text)
@@ -1044,6 +1244,8 @@ class BehaviourProfileComparisonTests(TestCase):
         html = rows[0]["chart_html"]
         self.assertIn("#0cc4b6", html)
         self.assertIn("#ff587a", html)
+        self.assertIn("#058076", html)
+        self.assertIn("#b3004e", html)
         self.assertIn("42.0", html)
         self.assertIn("30.0", html)
 
@@ -1094,7 +1296,11 @@ class BehaviourProfileComparisonTests(TestCase):
         self.assertIn("3.0 Min.", title)
         self.assertIn("Sessions dauern", title)
 
-    def test_peak_hour_chart_uses_same_and_different_shares(self):
+    def test_peak_hour_chart_uses_ridge_of_hourly_means(self):
+        hourly = [0.1 * ((hour + 3) % 12) for hour in range(24)]
+        hourly[6] = 2.5
+        reference_hourly = [0.05 * ((hour + 5) % 12) for hour in range(24)]
+        reference_hourly[12] = 1.75
         peak = {
             **self._sample_comparison(),
             "metric": "peak_activity_hour",
@@ -1106,18 +1312,53 @@ class BehaviourProfileComparisonTests(TestCase):
             "chart_reference_value": 0.4,
             "chart_user_value_display": "60.0 %",
             "chart_reference_value_display": "40.0 %",
-            "is_fraction": True,
+            "hourly_watch_means": hourly,
+            "reference_hourly_watch_means": reference_hourly,
+            "is_fraction": False,
         }
         rows = user_plots.get_behaviour_profile_rows([peak])
         html = rows[0]["chart_html"]
-        self.assertIn("60.0", html)
-        self.assertIn("40.0", html)
+        self.assertIn("tozeroy", html)
+        self.assertIn("spline", html)
+        self.assertIn("2.5", html)
+        self.assertIn("1.75", html)
+        self.assertIn('"text":"2"', html.replace(" ", ""))
+        self.assertIn("6:00", html)
+        self.assertIn("Andere", html)
+        self.assertIn("Du: %{customdata[1]", html)
+        self.assertIn("Andere: %{customdata[2]", html)
+        self.assertIn('"showticklabels":true', html.replace(" ", ""))
+        self.assertIn('"tickformat":".0f"', html.replace(" ", ""))
+        self.assertIn('"ticklabelposition":"inside"', html.replace(" ", ""))
+        self.assertIn('"automargin":false', html.replace(" ", ""))
         title = user_plots._row_title_text(peak)
-        self.assertIn("6:00", title)
-        self.assertIn("60.0", title)
-        self.assertIn("40.0", title)
-        self.assertIn("gleichen Stunde", title)
-        self.assertIn("anderen Uhrzeit", title)
+        self.assertIn("So viele Videos schaust", title)
+        self.assertIn(">Du</span>", title)
+        self.assertIn("Vergleich zu", title)
+        self.assertIn("Anderen", title)
+
+    def test_weekday_chart_uses_ridge_with_inside_y_ticks(self):
+        weekdays = [1.2, 2.0, 1.5, 2.5, 3.0, 4.0, 2.0]
+        reference = [1.0, 1.5, 1.2, 1.8, 2.0, 2.5, 1.5]
+        row = {
+            **self._sample_comparison(),
+            "metric": "weekday_active_hours",
+            "value": 4.0,
+            "value_display": "4.00",
+            "weekday_active_hours": weekdays,
+            "reference_weekday_active_hours": reference,
+            "is_fraction": False,
+        }
+        rows = user_plots.get_behaviour_profile_rows([row])
+        html = rows[0]["chart_html"]
+        self.assertIn("tozeroy", html)
+        self.assertIn("Mo", html)
+        self.assertIn("So", html)
+        self.assertIn('"ticklabelposition":"inside"', html.replace(" ", ""))
+        self.assertIn('"tickformat":".0f"', html.replace(" ", ""))
+        self.assertIn('"automargin":false', html.replace(" ", ""))
+        self.assertIn('"text":"4"', html.replace(" ", ""))
+        self.assertIn('"text":"2"', html.replace(" ", ""))
 
     def test_chart_rows_include_all_behaviour_metrics(self):
         hours = {
@@ -1147,7 +1388,7 @@ class BehaviourProfileComparisonTests(TestCase):
         )
         self.assertEqual(len(rows), 3)
 
-    def test_slides_group_metrics_into_three_carousel_panels(self):
+    def test_slides_group_metrics_into_carousel_panels(self):
         comparisons = [
             {
                 **self._sample_comparison(),
@@ -1160,22 +1401,41 @@ class BehaviourProfileComparisonTests(TestCase):
                 "weekend_activity_frac",
                 "night_activity_frac",
                 "peak_activity_hour",
+                "weekday_active_hours",
                 "frac_instant_skip",
                 "rate_like",
                 "frac_political_engagement",
             )
         ]
         slides = user_plots.get_behaviour_profile_slides(comparisons)
-        self.assertEqual(len(slides), 3)
-        self.assertEqual(len(slides[0]["rows"]), 3)
-        self.assertEqual(len(slides[1]["rows"]), 3)
-        self.assertEqual(len(slides[2]["rows"]), 3)
+        self.assertEqual(len(slides), 4)
+        self.assertEqual(
+            [row["metric"] for row in slides[0]["rows"]],
+            [
+                "avg_active_hours_per_day",
+                "avg_videos_per_session",
+                "avg_session_length_sec",
+            ],
+        )
+        self.assertEqual(
+            [row["metric"] for row in slides[1]["rows"]],
+            ["frac_instant_skip", "rate_like", "frac_political_engagement"],
+        )
+        self.assertEqual(
+            [row["metric"] for row in slides[2]["rows"]],
+            ["peak_activity_hour", "night_activity_frac"],
+        )
+        self.assertEqual(
+            [row["metric"] for row in slides[3]["rows"]],
+            ["weekday_active_hours", "weekend_activity_frac"],
+        )
 
     def test_returns_rows_with_chart_and_title(self):
         rows = user_plots.get_behaviour_profile_rows([self._sample_comparison()])
         self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["metric"], "frac_instant_skip")
         self.assertIn("behaviour-plot-mount", rows[0]["chart_html"])
-        self.assertIn("color: #0cc4b6", rows[0]["title_html"])
+        self.assertIn("color: #058076", rows[0]["title_html"])
         self.assertIn("scrollst du direkt weiter", rows[0]["title_html"])
         self.assertNotIn("description_html", rows[0])
 
@@ -1764,13 +2024,57 @@ class GetReportViewTests(TestCase):
         self.assertEqual([v["video_id"] for v in result], [2, 3, 1])
 
 
+def _attach_session(request):
+    """Enable request.session for RequestFactory requests."""
+    middleware = SessionMiddleware(lambda req: None)
+    middleware.process_request(request)
+    request.session.save()
+    return request
+
+
 class GetSyntheticReportViewTests(TestCase):
     def test_setup_populates_synthetic_statistics(self):
-        request = RequestFactory().get("/report/get/synthetic/")
+        request = _attach_session(RequestFactory().get("/report/get/synthetic/"))
         view = views.GetSyntheticReportView()
         view.setup(request)
         self.assertIsNotNone(view.statistics.seen_pol_video_ids)
         self.assertIsNotNone(view.statistics.party_counts)
+        self.assertIn(
+            views._SYNTHETIC_BEHAVIOUR_SESSION_KEY,
+            request.session,
+        )
+
+    def test_filter_reuses_session_cached_behaviour_comparisons(self):
+        request = _attach_session(RequestFactory().get("/report/get/synthetic/"))
+        report_view = views.GetSyntheticReportView()
+        report_view.setup(request)
+        cached = request.session[views._SYNTHETIC_BEHAVIOUR_SESSION_KEY]
+        peak_hourly = next(
+            c["hourly_watch_means"]
+            for c in cached
+            if c["metric"] == "peak_activity_hour"
+        )
+
+        filter_request = _attach_session(
+            RequestFactory().get(
+                "/report/behaviour-profile/synthetic/",
+                {"age_group": "18-24", "gender": "female"},
+            )
+        )
+        filter_request.session[views._SYNTHETIC_BEHAVIOUR_SESSION_KEY] = cached
+        filter_view = views.BehaviourProfileFilterSyntheticView()
+        filter_view.setup(filter_request)
+
+        with patch("ddcs.reports.views.get_synthetic_report_statistics") as mock_stats:
+            context = filter_view.get_context_data()
+            mock_stats.assert_not_called()
+
+        peak_row = next(
+            c
+            for c in context["behaviour_comparisons"]
+            if c["metric"] == "peak_activity_hour"
+        )
+        self.assertEqual(peak_row["hourly_watch_means"], peak_hourly)
 
 
 class PublicPlotsDevViewAccessTests(TestCase):
