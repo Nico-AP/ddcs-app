@@ -53,12 +53,37 @@ def build_tiktok_embed_url(video_id: int) -> str:
     return f"https://www.tiktok.com/player/v1/{video_id}?autoplay=0"
 
 
+def format_total_views(total_views: int | None) -> str:
+    if total_views is None:
+        return "—"
+    return f"{total_views:,}".replace(",", ".")
+
+
 def enrich_top_videos_for_embed(videos: list[dict]) -> list[dict]:
-    return [
-        {
-            **video,
-            "tiktok_url": build_top_video_tiktok_url(video),
-            "embed_url": build_tiktok_embed_url(video["video_id"]),
-        }
-        for video in videos[:N_TOP_VIDEOS]
-    ]
+    enriched: list[dict] = []
+    for video in videos[:N_TOP_VIDEOS]:
+        avg_watch = video.get("avg_watch_sec")
+        total_views = video.get("total_views")
+        enriched.append(
+            {
+                **video,
+                "watch_share": float(video.get("watch_share") or 0.0),
+                "avg_watch_sec": (float(avg_watch) if avg_watch is not None else None),
+                "avg_watch_sec_display": (
+                    f"{float(avg_watch):.1f}".replace(".", ",") + " Sek."
+                    if avg_watch is not None
+                    else "—"
+                ),
+                "total_views": (int(total_views) if total_views is not None else None),
+                "total_views_display": format_total_views(
+                    int(total_views) if total_views is not None else None
+                ),
+                "liked": bool(video.get("liked", False)),
+                "shared": bool(video.get("shared", False)),
+                "saved": bool(video.get("saved", False)),
+                "followed_author": bool(video.get("followed_author", False)),
+                "tiktok_url": build_top_video_tiktok_url(video),
+                "embed_url": build_tiktok_embed_url(video["video_id"]),
+            }
+        )
+    return enriched

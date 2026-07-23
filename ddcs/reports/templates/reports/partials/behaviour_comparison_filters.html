@@ -39,7 +39,9 @@
 
     <div class="behaviour-comparison-filters__row">
       <span class="behaviour-comparison-filters__label"
-            id="behaviour-filter-gender-label">Geschlecht</span>
+            id="behaviour-filter-gender-label">
+        Geschlecht{% include "reports/partials/gender_filter_info_trigger.html" %}
+      </span>
       <div class="behaviour-comparison-filters__options"
            role="radiogroup"
            aria-labelledby="behaviour-filter-gender-label">

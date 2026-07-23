@@ -17,8 +17,21 @@
     return Boolean(element && element.offsetParent !== null);
   }
 
-  function behaviourChartHeight() {
-    return window.matchMedia("(max-width: 767.98px)").matches ? 96 : 112;
+  function isMobileViewport() {
+    return window.matchMedia("(max-width: 767.98px)").matches;
+  }
+
+  function behaviourChartHeight(layoutHeight) {
+    const desktopDefault = 112;
+    const mobileDefault = 96;
+    const resolved =
+      typeof layoutHeight === "number" && layoutHeight > 0
+        ? layoutHeight
+        : desktopDefault;
+    if (!isMobileViewport()) {
+      return resolved;
+    }
+    return Math.round(resolved * (mobileDefault / desktopDefault));
   }
 
   function initDeferredPlot(script) {
@@ -41,7 +54,7 @@
       return Promise.resolve();
     }
 
-    const height = behaviourChartHeight();
+    const height = behaviourChartHeight(spec.layout?.height);
     spec.layout = spec.layout || {};
     spec.layout.height = height;
     spec.layout.autosize = true;

@@ -30,8 +30,19 @@ class TopVideoRecord(TypedDict):
     video_id: int
     username: str
     party: str | None
+    # How often this video appears in the participant's watch history.
     view_count: int
     description: str
+    # Share of this participant's political watches that were this video.
+    watch_share: float
+    # Mean inferred dwell time (sec) across occurrences; None if unknown.
+    avg_watch_sec: float | None
+    # TikTok Research API total view count; used for viral ranking.
+    total_views: int | None
+    liked: bool
+    shared: bool
+    saved: bool
+    followed_author: bool
     tiktok_url: NotRequired[str]
     embed_url: NotRequired[str]
 
@@ -61,6 +72,12 @@ class BehaviourComparisonRecord(TypedDict):
     chart_reference_value: NotRequired[float]
     chart_user_value_display: NotRequired[str]
     chart_reference_value_display: NotRequired[str]
+    # Mean videos watched at each clock hour (0..23) across the donation window.
+    hourly_watch_means: NotRequired[list[float]]
+    reference_hourly_watch_means: NotRequired[list[float]]
+    # Mean active hours for Mon..Sun (Python weekday order).
+    weekday_active_hours: NotRequired[list[float]]
+    reference_weekday_active_hours: NotRequired[list[float]]
 
 
 class ReportStatistics(TypedDict):

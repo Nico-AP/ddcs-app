@@ -1,4 +1,32 @@
 (function () {
+  function yesNo(value) {
+    return value === "Ja" || value === "true" || value === "1" ? "Ja" : "Nein";
+  }
+
+  function updateMeta(carousel, slide) {
+    const meta = carousel.querySelector("#topVideoMeta");
+    if (!meta || !slide) {
+      return;
+    }
+
+    const setText = function (key, value) {
+      const target = meta.querySelector(`[data-meta="${key}"]`);
+      if (target) {
+        target.textContent = value ?? "";
+      }
+    };
+
+    setText("username", slide.dataset.username || "");
+    setText("description", slide.dataset.description || "");
+    setText("view-count", slide.dataset.viewCount || "0");
+    setText("total-views", slide.dataset.totalViews || "—");
+    setText("avg-watch", slide.dataset.avgWatch || "—");
+    setText("liked", yesNo(slide.dataset.liked));
+    setText("shared", yesNo(slide.dataset.shared));
+    setText("saved", yesNo(slide.dataset.saved));
+    setText("followed", yesNo(slide.dataset.followed));
+  }
+
   function loadSlideIntoIframe(slide, iframe) {
     const embedSrc = slide?.dataset?.embedSrc;
     if (!slide || !iframe || !embedSrc) {
@@ -23,6 +51,7 @@
     const targetSlide =
       slide || carousel.querySelector(".carousel-item.active");
     loadSlideIntoIframe(targetSlide, iframe);
+    updateMeta(carousel, targetSlide);
   }
 
   function bindTopVideosCarousel(carousel) {
