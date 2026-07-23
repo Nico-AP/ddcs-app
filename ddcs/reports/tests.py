@@ -361,10 +361,10 @@ class UserTypeAssignmentTests(TestCase):
     def _comparisons(
         self,
         *,
-        means: dict[str, float] | None = None,
+        percentiles: dict[str, float] | None = None,
         **metric_values: float,
     ) -> list[dict]:
-        ref_means = means or {}
+        pcts = percentiles or {}
         return [
             {
                 "metric": metric,
@@ -372,8 +372,8 @@ class UserTypeAssignmentTests(TestCase):
                 "radar_label": metric,
                 "value": value,
                 "value_display": str(value),
-                "percentile": 50.0,
-                "reference_mean": ref_means.get(metric, value),
+                "percentile": pcts.get(metric, 50.0),
+                "reference_mean": value,
                 "reference_mean_display": "0",
                 "reference_mean_percentile": 50.0,
                 "reference_median": 0.0,
@@ -394,15 +394,15 @@ class UserTypeAssignmentTests(TestCase):
     def test_returns_none_for_empty_comparisons(self):
         self.assertIsNone(assign_user_type([]))
 
-    def test_skip_above_mean_is_kolibri(self):
+    def test_high_skip_percentile_is_kolibri(self):
         user_type = assign_user_type(
             self._comparisons(
-                means={
-                    "frac_instant_skip": 0.4,
-                    "avg_session_length_sec": 180.0,
-                    "night_activity_frac": 0.3,
-                    "weekend_activity_frac": 0.3,
-                    "rate_like": 0.3,
+                percentiles={
+                    "frac_instant_skip": 90.0,
+                    "avg_session_length_sec": 50.0,
+                    "night_activity_frac": 50.0,
+                    "weekend_activity_frac": 50.0,
+                    "rate_like": 50.0,
                 },
                 frac_instant_skip=0.85,
                 avg_session_length_sec=180.0,
@@ -414,15 +414,15 @@ class UserTypeAssignmentTests(TestCase):
         self.assertEqual(user_type["id"], "kolibri")
         self.assertEqual(user_type["animal"], "Kolibri")
 
-    def test_session_above_mean_is_faultier(self):
+    def test_high_session_percentile_is_faultier(self):
         user_type = assign_user_type(
             self._comparisons(
-                means={
-                    "frac_instant_skip": 0.4,
-                    "avg_session_length_sec": 120.0,
-                    "night_activity_frac": 0.3,
-                    "weekend_activity_frac": 0.3,
-                    "rate_like": 0.3,
+                percentiles={
+                    "frac_instant_skip": 50.0,
+                    "avg_session_length_sec": 92.0,
+                    "night_activity_frac": 50.0,
+                    "weekend_activity_frac": 50.0,
+                    "rate_like": 50.0,
                 },
                 frac_instant_skip=0.4,
                 avg_session_length_sec=480.0,
@@ -433,15 +433,15 @@ class UserTypeAssignmentTests(TestCase):
         )
         self.assertEqual(user_type["id"], "faultier")
 
-    def test_skip_below_mean_is_luchs(self):
+    def test_low_skip_percentile_is_luchs(self):
         user_type = assign_user_type(
             self._comparisons(
-                means={
-                    "frac_instant_skip": 0.5,
-                    "avg_session_length_sec": 180.0,
-                    "night_activity_frac": 0.3,
-                    "weekend_activity_frac": 0.3,
-                    "rate_like": 0.3,
+                percentiles={
+                    "frac_instant_skip": 10.0,
+                    "avg_session_length_sec": 50.0,
+                    "night_activity_frac": 50.0,
+                    "weekend_activity_frac": 50.0,
+                    "rate_like": 50.0,
                 },
                 frac_instant_skip=0.1,
                 avg_session_length_sec=180.0,
@@ -452,19 +452,19 @@ class UserTypeAssignmentTests(TestCase):
         )
         self.assertEqual(user_type["id"], "luchs")
         self.assertEqual(user_type["trait_label"], "Der Beobachter")
-        self.assertIn("länger als die Meisten", user_type["description"])
+        self.assertIn("selten", user_type["intro_followup"])
         self.assertIn("Skip auch mal", user_type["attention"])
 
-    def test_strongest_relative_deviation_wins(self):
-        # Night is only slightly above mean; weekend is far above → Waschbär.
+    def test_strongest_percentile_extremity_wins(self):
+        # Night only slightly above median; weekend far above → Waschbär.
         user_type = assign_user_type(
             self._comparisons(
-                means={
-                    "frac_instant_skip": 0.4,
-                    "avg_session_length_sec": 180.0,
-                    "night_activity_frac": 0.3,
-                    "weekend_activity_frac": 0.3,
-                    "rate_like": 0.3,
+                percentiles={
+                    "frac_instant_skip": 50.0,
+                    "avg_session_length_sec": 50.0,
+                    "night_activity_frac": 55.0,
+                    "weekend_activity_frac": 95.0,
+                    "rate_like": 50.0,
                 },
                 frac_instant_skip=0.4,
                 avg_session_length_sec=180.0,
@@ -475,15 +475,15 @@ class UserTypeAssignmentTests(TestCase):
         )
         self.assertEqual(user_type["id"], "waschbaer")
 
-    def test_night_above_mean_is_eule(self):
+    def test_high_night_percentile_is_eule(self):
         user_type = assign_user_type(
             self._comparisons(
-                means={
-                    "frac_instant_skip": 0.4,
-                    "avg_session_length_sec": 180.0,
-                    "night_activity_frac": 0.25,
-                    "weekend_activity_frac": 0.3,
-                    "rate_like": 0.3,
+                percentiles={
+                    "frac_instant_skip": 50.0,
+                    "avg_session_length_sec": 50.0,
+                    "night_activity_frac": 88.0,
+                    "weekend_activity_frac": 50.0,
+                    "rate_like": 50.0,
                 },
                 frac_instant_skip=0.4,
                 avg_session_length_sec=180.0,
@@ -494,15 +494,15 @@ class UserTypeAssignmentTests(TestCase):
         )
         self.assertEqual(user_type["id"], "eule")
 
-    def test_high_like_above_mean_is_papagei(self):
+    def test_high_like_percentile_is_papagei(self):
         user_type = assign_user_type(
             self._comparisons(
-                means={
-                    "frac_instant_skip": 0.4,
-                    "avg_session_length_sec": 180.0,
-                    "night_activity_frac": 0.3,
-                    "weekend_activity_frac": 0.3,
-                    "rate_like": 0.2,
+                percentiles={
+                    "frac_instant_skip": 50.0,
+                    "avg_session_length_sec": 50.0,
+                    "night_activity_frac": 50.0,
+                    "weekend_activity_frac": 50.0,
+                    "rate_like": 97.0,
                 },
                 frac_instant_skip=0.4,
                 avg_session_length_sec=180.0,
@@ -513,16 +513,15 @@ class UserTypeAssignmentTests(TestCase):
         )
         self.assertEqual(user_type["id"], "papagei")
 
-    def test_no_deviation_from_mean_uses_absolute_fallback(self):
-        # All values equal their means → relative stage empty → absolute scores.
+    def test_all_median_percentiles_use_absolute_fallback(self):
         user_type = assign_user_type(
             self._comparisons(
-                means={
-                    "frac_instant_skip": 0.8,
-                    "avg_session_length_sec": 100.0,
-                    "night_activity_frac": 0.2,
-                    "weekend_activity_frac": 0.2,
-                    "rate_like": 0.2,
+                percentiles={
+                    "frac_instant_skip": 50.0,
+                    "avg_session_length_sec": 50.0,
+                    "night_activity_frac": 50.0,
+                    "weekend_activity_frac": 50.0,
+                    "rate_like": 50.0,
                 },
                 frac_instant_skip=0.8,
                 avg_session_length_sec=100.0,
@@ -536,12 +535,12 @@ class UserTypeAssignmentTests(TestCase):
     def test_balanced_absolute_fallback_is_luchs(self):
         user_type = assign_user_type(
             self._comparisons(
-                means={
-                    "frac_instant_skip": 0.35,
-                    "avg_session_length_sec": 120.0,
-                    "night_activity_frac": 0.25,
-                    "weekend_activity_frac": 0.3,
-                    "rate_like": 0.2,
+                percentiles={
+                    "frac_instant_skip": 50.0,
+                    "avg_session_length_sec": 50.0,
+                    "night_activity_frac": 50.0,
+                    "weekend_activity_frac": 50.0,
+                    "rate_like": 50.0,
                 },
                 frac_instant_skip=0.35,
                 avg_session_length_sec=120.0,
@@ -555,13 +554,13 @@ class UserTypeAssignmentTests(TestCase):
 
     def test_behaviour_profile_context_includes_stable_type(self):
         comparisons = self._comparisons(
-            means={
-                "frac_instant_skip": 0.4,
-                "avg_session_length_sec": 180.0,
-                "night_activity_frac": 0.3,
-                "weekend_activity_frac": 0.3,
-                "rate_like": 0.3,
-                "avg_active_hours_per_day": 2.0,
+            percentiles={
+                "frac_instant_skip": 90.0,
+                "avg_session_length_sec": 40.0,
+                "night_activity_frac": 40.0,
+                "weekend_activity_frac": 40.0,
+                "rate_like": 40.0,
+                "avg_active_hours_per_day": 50.0,
             },
             frac_instant_skip=0.85,
             avg_session_length_sec=180.0,
