@@ -12,8 +12,11 @@ from ddcs.core.types import (
     WatchHistoryRecord,
 )
 from ddcs.metadata.models import TikTokVideo
-from ddcs.metadata.research_api.models import APIVideoInfos
-from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
+from ddcs.metadata.research_api.models import APIVideoInfos, APIVideoStatistics
+from ddcs.reports.behaviour_metrics import (
+    avg_inferred_watch_sec_by_video,
+    compute_behaviour_comparisons,
+)
 from ddcs.reports.config import (
     N_TOP_VIDEOS,
     NO_PARTY_KEY,
@@ -175,6 +178,13 @@ def _first_non_empty_description(video: TikTokVideo) -> str:
     return ""
 
 
+def _latest_total_views(video: TikTokVideo) -> int | None:
+    for stats in video.statistics.all():
+        if stats.view_count is not None:
+            return int(stats.view_count)
+    return None
+
+
 def _get_descriptions_by_video(video_ids: list[int]) -> dict[int, str]:
     """Return a map of video id_tiktok -> description text for the given IDs."""
     if not video_ids:
@@ -190,28 +200,80 @@ def _get_descriptions_by_video(video_ids: list[int]) -> dict[int, str]:
     return {video.id_tiktok: _first_non_empty_description(video) for video in videos}
 
 
-def _get_top_videos(
+def _get_total_views_by_video(video_ids: list[int]) -> dict[int, int]:
+    """Return TikTok Research API view counts keyed by ``id_tiktok``."""
+    if not video_ids:
+        return {}
+
+    videos = TikTokVideo.objects.filter(id_tiktok__in=video_ids).prefetch_related(
+        Prefetch(
+            "statistics",
+            queryset=APIVideoStatistics.objects.order_by("-updated_at"),
+        ),
+    )
+    result: dict[int, int] = {}
+    for video in videos:
+        total_views = _latest_total_views(video)
+        if total_views is not None:
+            result[video.id_tiktok] = total_views
+    return result
+
+
+def _get_top_videos(  # noqa: PLR0913
     seen_pol_video_ids: list[int],
     video_party_map: dict[int, str],
     username_by_video: dict[int, str],
     descriptions_by_video: dict[int, str],
+    *,
+    liked_video_ids: set[int] | None = None,
+    shared_video_ids: set[int] | None = None,
+    saved_video_ids: set[int] | None = None,
+    followed_usernames: set[str] | None = None,
+    avg_watch_sec_by_video: dict[int, float] | None = None,
+    total_views_by_video: dict[int, int] | None = None,
     n: int = N_TOP_VIDEOS,
 ) -> list[TopVideoRecord]:
-    """Build top N political videos by appearance count in watch history.
+    """Build top N political videos by overall TikTok views (API).
 
-    Political videos are those with a monitored political keyword and/or from an
-    official party account (metadata DB or watch-history link).
+    Candidates are political videos that appear in the participant's watch
+    history. Ranking uses Research API ``view_count``; feed appearance count
+    and engagement flags are attached as metadata only.
     """
-    counts = Counter(seen_pol_video_ids)
+    liked = liked_video_ids or set()
+    shared = shared_video_ids or set()
+    saved = saved_video_ids or set()
+    followed = followed_usernames or set()
+    avg_watch = avg_watch_sec_by_video or {}
+    total_views = total_views_by_video or {}
+    feed_counts = Counter(seen_pol_video_ids)
+    total_watches = len(seen_pol_video_ids)
+    ranked_ids = sorted(
+        feed_counts.keys(),
+        key=lambda video_id: (
+            total_views.get(video_id) is not None,
+            total_views.get(video_id) or 0,
+            feed_counts[video_id],
+        ),
+        reverse=True,
+    )[:n]
     return [
         {
             "video_id": video_id,
             "username": username_by_video.get(video_id, ""),
-            "view_count": count,
+            "view_count": feed_counts[video_id],
             "party": video_party_map.get(video_id),
             "description": descriptions_by_video.get(video_id, ""),
+            "watch_share": (
+                feed_counts[video_id] / total_watches if total_watches else 0.0
+            ),
+            "avg_watch_sec": avg_watch.get(video_id),
+            "total_views": total_views.get(video_id),
+            "liked": video_id in liked,
+            "shared": video_id in shared,
+            "saved": video_id in saved,
+            "followed_author": username_by_video.get(video_id, "") in followed,
         }
-        for video_id, count in counts.most_common(n)
+        for video_id in ranked_ids
     ]
 
 
@@ -219,6 +281,8 @@ def compute_user_report_metrics(data: TikTokUserData) -> ReportStatistics:
     # User activities
     seen_video_ids = _get_video_id_list(data.watch_history)
     liked_video_ids = _get_video_id_list(data.liked_videos)
+    shared_video_ids = _get_video_id_list(data.shared_videos)
+    saved_video_ids = _get_video_id_list(data.video_bookmarks)
     followed_user_names = _get_username_list(data.followed_accounts)
 
     # Political content
@@ -268,6 +332,14 @@ def compute_user_report_metrics(data: TikTokUserData) -> ReportStatistics:
         video_party_map,
         video_username_map,
         descriptions_by_pol_video,
+        liked_video_ids=set(liked_video_ids),
+        shared_video_ids=set(shared_video_ids),
+        saved_video_ids=set(saved_video_ids),
+        followed_usernames=set(followed_user_names),
+        avg_watch_sec_by_video=avg_inferred_watch_sec_by_video(
+            data.watch_history or []
+        ),
+        total_views_by_video=_get_total_views_by_video(seen_pol_video_ids),
     )
 
     party_hashtags: list[str] = []

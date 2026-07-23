@@ -13,7 +13,10 @@ from random import choices, randint
 from ddm.participation.models import Participant
 
 from ddcs.core.types import TikTokUserData
-from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
+from ddcs.reports.behaviour_metrics import (
+    apply_sampled_reference_activity_profiles,
+    compute_behaviour_comparisons,
+)
 from ddcs.reports.config import (
     N_TOP_VIDEOS,
     NO_PARTY_KEY,
@@ -58,8 +61,35 @@ SYNTHETIC_DESCRIPTIONS = [
 ]
 
 
+# Relative feed volume for synthetic party plots (higher = more videos).
+_SYNTHETIC_PARTY_ACTIVITY = {
+    "AfD": 12,
+    "SPD": 9,
+    "CDU/CSU": 8,
+    "B90/GRÜNE": 6,
+    "Linke": 5,
+    "BSW": 4,
+    "FDP": 3,
+    "Sonstige": 2,
+    NO_PARTY_KEY: 1,
+}
+
+
+def _synthetic_party_count_for(party: str) -> int:
+    """Draw a non-zero-ish count scaled by party activity weight."""
+    weight = _SYNTHETIC_PARTY_ACTIVITY.get(party, 1)
+    # Keep small parties sparse; larger parties dominate the series.
+    return randint(0, weight)
+
+
 def _synthetic_party_counts() -> list[PartyCountRecord]:
-    return [{"party": party, "count": randint(1, 50)} for party in SYNTHETIC_PARTIES]
+    return [
+        {
+            "party": party,
+            "count": max(1, _synthetic_party_count_for(party) * randint(2, 4)),
+        }
+        for party in SYNTHETIC_PARTIES
+    ]
 
 
 def _synthetic_daily_party_counts(days: int = 30) -> list[DailyPartyCountRecord]:
@@ -68,7 +98,7 @@ def _synthetic_daily_party_counts(days: int = 30) -> list[DailyPartyCountRecord]
         {
             "date": (start + timedelta(days=i)).isoformat(),
             "party": party,
-            "count": randint(0, 10),
+            "count": _synthetic_party_count_for(party),
         }
         for i in range(days)
         for party in SYNTHETIC_PARTIES
@@ -109,12 +139,16 @@ def _synthetic_descriptions_by_video(video_ids: list[int]) -> dict[int, str]:
 
 
 SYNTHETIC_TOP_VIDEO_URLS: list[str] = [
+    "https://www.tiktok.com/@sahra.wagenknecht/video/7664658382707625248",
+    "https://www.tiktok.com/@diegruenen/photo/7655671745294257441",
     "https://www.tiktok.com/@alice_weidel_afd/video/7658941918302326048",
     "https://www.tiktok.com/@deinespd/video/7657187761883041057",
     "https://www.tiktok.com/@die.linke/photo/7623456044794055968",
 ]
 
 _SYNTHETIC_TOP_VIDEO_PARTIES = {
+    "sahra.wagenknecht": "BSW",
+    "diegruenen": "B90/GRÜNE",
     "alice_weidel_afd": "AfD",
     "deinespd": "SPD",
     "die.linke": "Linke",
@@ -124,9 +158,9 @@ _SYNTHETIC_TOP_VIDEO_PARTIES = {
 def _synthetic_top_videos(
     video_ids: list[int], n: int = N_TOP_VIDEOS
 ) -> list[TopVideoRecord]:
-    del video_ids, n
+    del video_ids
     videos: list[TopVideoRecord] = []
-    for index, url in enumerate(SYNTHETIC_TOP_VIDEO_URLS):
+    for index, url in enumerate(SYNTHETIC_TOP_VIDEO_URLS[:n]):
         video_id = parse_tiktok_video_id_from_url(url)
         username = parse_tiktok_username_from_url(url)
         if video_id is None or not username:
@@ -136,14 +170,27 @@ def _synthetic_top_videos(
                 "video_id": video_id,
                 "username": username,
                 "party": _SYNTHETIC_TOP_VIDEO_PARTIES.get(username, NO_PARTY_KEY),
-                "view_count": len(SYNTHETIC_TOP_VIDEO_URLS) - index,
+                # Feed appearances (metadata only — ranking uses total_views).
+                "view_count": randint(1, 6),
                 "description": SYNTHETIC_DESCRIPTIONS[
                     index % len(SYNTHETIC_DESCRIPTIONS)
                 ],
+                "watch_share": 0.0,
+                "avg_watch_sec": round(2.5 + index * 3.5 + randint(0, 4), 1),
+                # Descending overall views so synthetic order matches "viral".
+                "total_views": 2_500_000 - index * 400_000 - randint(0, 50_000),
+                "liked": index % 2 == 0,
+                "shared": index == 0,
+                "saved": index in {0, 2},
+                "followed_author": index in {0, 1},
                 "tiktok_url": url,
             }
         )
-    return videos
+    return sorted(
+        videos,
+        key=lambda video: video["total_views"] or 0,
+        reverse=True,
+    )
 
 
 def _synthetic_description_list() -> list[str]:
@@ -199,7 +246,7 @@ def _synthetic_behaviour_comparisons(
         else []
     )
 
-    return compute_behaviour_comparisons(
+    comparisons = compute_behaviour_comparisons(
         TikTokUserData(
             watch_history=watch_history,
             liked_videos=political_likes + other_likes,
@@ -207,6 +254,9 @@ def _synthetic_behaviour_comparisons(
         ),
         political_video_ids or frozenset(),
     )
+    # Ridge charts: sample the synthetic user's curves from one real CSV
+    # participant so comparisons look realistic (same source as reference).
+    return apply_sampled_reference_activity_profiles(comparisons)
 
 
 def get_synthetic_report_statistics(

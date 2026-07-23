@@ -29,11 +29,67 @@
               referrerpolicy="strict-origin-when-cross-origin"></iframe>
     </div>
 
+    <div id="topVideoMeta"
+         class="top-videos-carousel__meta"
+         aria-live="polite">
+      <p class="top-videos-carousel__meta-account mb-1">
+        @<span data-meta="username">{{ top_videos.0.username }}</span>
+      </p>
+      <p class="top-videos-carousel__meta-description mb-2"
+         data-meta="description">{{ top_videos.0.description }}</p>
+      <dl class="top-videos-carousel__meta-stats mb-2">
+        <div>
+          <dt>Aufrufe gesamt</dt>
+          <dd data-meta="total-views">{{ top_videos.0.total_views_display }}</dd>
+        </div>
+        <div>
+          <dt>In deinem Feed</dt>
+          <dd>
+            <span data-meta="view-count">{{ top_videos.0.view_count }}</span>× angesehen
+          </dd>
+        </div>
+        <div>
+          <dt>Ø Verweildauer</dt>
+          <dd data-meta="avg-watch">{{ top_videos.0.avg_watch_sec_display }}</dd>
+        </div>
+        <div>
+          <dt>Account gefolgt</dt>
+          <dd data-meta="followed">{% if top_videos.0.followed_author %}Ja{% else %}Nein{% endif %}</dd>
+        </div>
+      </dl>
+      <table class="top-videos-carousel__reactions"
+             aria-label="Deine Reaktionen">
+        <thead>
+          <tr>
+            <th scope="col">Geliked</th>
+            <th scope="col">Geteilt</th>
+            <th scope="col">Gespeichert</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td data-meta="liked">{% if top_videos.0.liked %}Ja{% else %}Nein{% endif %}</td>
+            <td data-meta="shared">{% if top_videos.0.shared %}Ja{% else %}Nein{% endif %}</td>
+            <td data-meta="saved">{% if top_videos.0.saved %}Ja{% else %}Nein{% endif %}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="carousel-inner top-videos-carousel__slides">
       {% for video in top_videos %}
         <div class="carousel-item{% if forloop.first %} active{% endif %}"
              data-embed-src="{{ video.embed_url }}"
-             data-video-title="TikTok-Video von @{{ video.username }}"></div>
+             data-video-title="TikTok-Video von @{{ video.username }}"
+             data-username="{{ video.username }}"
+             data-description="{{ video.description }}"
+             data-view-count="{{ video.view_count }}"
+             data-total-views="{{ video.total_views_display }}"
+             data-avg-watch="{{ video.avg_watch_sec_display }}"
+             data-liked="{% if video.liked %}Ja{% else %}Nein{% endif %}"
+             data-shared="{% if video.shared %}Ja{% else %}Nein{% endif %}"
+             data-saved="{% if video.saved %}Ja{% else %}Nein{% endif %}"
+             data-followed="{% if video.followed_author %}Ja{% else %}Nein{% endif %}"></div>
       {% endfor %}
     </div>
 
@@ -72,9 +128,9 @@
 
   <div class="description text-center fs-6 text-secondary">
     <p class="mb-0">
-      Viralste politische Videos: Die meistgesehenen politischen Inhalte aus
-      deinem Feed (basierend auf Gesamtaufrufen). Dazu zählen Videos mit
-      politischen Hashtags sowie Beiträge offizieller Partei-Accounts.
+      Viralste politische Videos: Die fünf meistgesehenen politischen Inhalte
+      aus deinem Feed (basierend auf Gesamtaufrufen auf TikTok). Dazu zählen
+      Videos mit politischen Hashtags sowie Beiträge offizieller Partei-Accounts.
     </p>
   </div>
 </div>

@@ -3,7 +3,7 @@
     Seit dem {{ start_date|date:"j.n.Y" }} hast du insgesamt
     <span class="report-highlight">{{ n_seen_total }}</span>
     {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %} auf TikTok
-    angesehen.
+    angesehen.{% include "reports/partials/viewed_info_trigger.html" %}
   </p>
   <p>
     {% if n_seen_pol_videos == 0 %}
@@ -22,6 +22,7 @@
   {% endif %}
 </div>
 
+{% include "reports/partials/viewed_info_modal.html" %}
 {% include "reports/partials/political_content_info_modal.html" %}
 
 <hr />
