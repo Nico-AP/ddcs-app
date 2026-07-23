@@ -9,11 +9,12 @@ if TYPE_CHECKING:
 
 _SESSION_LENGTH_NORM_SEC = 300.0
 _SPECIALTY_THRESHOLD = 0.45
+_MEDIAN_PERCENTILE = 50.0
 _TEASER = "Swipe zur Seite, um dein Nutzungsprofil im Detail zu sehen →"
 
 Direction = Literal["above", "below"]
 
-# (type_id, metric, direction vs reference mean)
+# (type_id, metric, direction vs reference distribution)
 _TYPE_RULES: tuple[tuple[str, str, Direction], ...] = (
     ("kolibri", "frac_instant_skip", "above"),
     ("faultier", "avg_session_length_sec", "above"),
@@ -31,6 +32,7 @@ class UserTypeRecord(TypedDict):
     headline: str
     description: str
     attention: str
+    intro_followup: str
     teaser: str
     image_static: str
 
@@ -48,6 +50,10 @@ USER_TYPES: dict[str, UserTypeRecord] = {
             "Bei politischen Videos lohnt sich manchmal der zweite Blick, "
             "bevor du weiter wischst."
         ),
+        "intro_followup": (
+            "Dabei hast du im Vergleich zu anderen Nutzenden besonders viele "
+            "der Videos \u00fcbersprungen!"
+        ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/kolibri.svg",
     },
@@ -60,6 +66,10 @@ USER_TYPES: dict[str, UserTypeRecord] = {
         "attention": (
             "Pass auf, dass du dich nicht zu sehr treiben lässt. "
             "Entscheide dich öfters dazu, die App zu schließen."
+        ),
+        "intro_followup": (
+            "Dabei warst du im Vergleich zu anderen Nutzenden besonders lange "
+            "am Stück auf TikTok!"
         ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/faultier.svg",
@@ -77,6 +87,10 @@ USER_TYPES: dict[str, UserTypeRecord] = {
             "Nachts triffst du Entscheidungen lockerer, auch beim Liken "
             "und Teilen politischer Inhalte."
         ),
+        "intro_followup": (
+            "Dabei hast du im Vergleich zu anderen Nutzenden besonders viele "
+            "Videos nachts angeschaut!"
+        ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/eule.svg",
     },
@@ -92,6 +106,10 @@ USER_TYPES: dict[str, UserTypeRecord] = {
         "attention": (
             "In langen Wochenend-Sessions ähneln sich die Inhalte schnell. "
             "Bewusst mal ausschalten und das Wochenende richtig genießen."
+        ),
+        "intro_followup": (
+            "Dabei hast du im Vergleich zu anderen Nutzenden besonders viele "
+            "Videos am Wochenende angeschaut!"
         ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/waschbaer.svg",
@@ -109,6 +127,10 @@ USER_TYPES: dict[str, UserTypeRecord] = {
             "Jeder Like formt deinen Feed. Achte darauf, auch mal auf Neues "
             "zu reagieren, um das immer Gleiche zu durchbrechen."
         ),
+        "intro_followup": (
+            "Dabei hast du im Vergleich zu anderen Nutzenden besonders viele "
+            "der Videos geliked!"
+        ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/papagei.svg",
     },
@@ -119,6 +141,10 @@ USER_TYPES: dict[str, UserTypeRecord] = {
         "headline": "Du bist der Luchs",
         "description": "Du schaust Videos länger als die Meisten.",
         "attention": "Skip auch mal was dir nicht gefällt.",
+        "intro_followup": (
+            "Dabei hast du im Vergleich zu anderen Nutzenden besonders selten "
+            "Videos \u00fcbersprungen!"
+        ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/luchs.svg",
     },
@@ -135,45 +161,32 @@ def _metric_rows(
     return {row["metric"]: row for row in comparisons}
 
 
-def _relative_deviation(
-    value: float,
-    average: float,
-    direction: Direction,
-) -> float | None:
-    """One-sided relative deviation from the mean, or None if not qualifying."""
+def _percentile_extremity(percentile: float, direction: Direction) -> float | None:
+    """How far the percentile sits past the median in ``direction`` (0..50)."""
     if direction == "above":
-        if value <= average:
+        if percentile <= _MEDIAN_PERCENTILE:
             return None
-        span = value - average
-    else:
-        if value >= average:
-            return None
-        span = average - value
-
-    # Normalize by |avg| so seconds and fractions are comparable; avoid /0.
-    scale = abs(average) if average != 0.0 else 1.0
-    return span / scale
+        return percentile - _MEDIAN_PERCENTILE
+    if percentile >= _MEDIAN_PERCENTILE:
+        return None
+    return _MEDIAN_PERCENTILE - percentile
 
 
-def _strongest_relative_type(
+def _strongest_percentile_type(
     rows: dict[str, BehaviourComparisonRecord],
 ) -> str | None:
-    """Pick the type with the largest one-sided deviation from the mean."""
+    """Pick the type with the largest one-sided distance from the median percentile."""
     best_id: str | None = None
-    best_dev = -1.0
+    best_score = -1.0
     for type_id, metric, direction in _TYPE_RULES:
         row = rows.get(metric)
         if row is None:
             continue
-        deviation = _relative_deviation(
-            float(row["value"]),
-            float(row["reference_mean"]),
-            direction,
-        )
-        if deviation is None:
+        score = _percentile_extremity(float(row["percentile"]), direction)
+        if score is None:
             continue
-        if deviation > best_dev:
-            best_dev = deviation
+        if score > best_score:
+            best_score = score
             best_id = type_id
     return best_id
 
@@ -214,10 +227,10 @@ def _absolute_specialty_scores(
 def assign_user_type(
     comparisons: list[BehaviourComparisonRecord],
 ) -> UserTypeRecord | None:
-    """Assign a typology from comparison rows (filter-stable if unfiltered means).
+    """Assign a typology from comparison rows (filter-stable if unfiltered).
 
-    1. Prefer the type whose defining metric most strongly beats the reference
-       mean in the expected direction (above or below).
+    1. Prefer the type whose defining metric is farthest past the median
+       percentile in the expected direction (shared 0-50 scale).
     2. If none qualify, fall back to absolute specialty scores; if the best
        absolute score is still weak, assign Luchs.
     """
@@ -225,9 +238,9 @@ def assign_user_type(
         return None
 
     rows = _metric_rows(comparisons)
-    relative_id = _strongest_relative_type(rows)
-    if relative_id is not None:
-        return USER_TYPES[relative_id]
+    percentile_id = _strongest_percentile_type(rows)
+    if percentile_id is not None:
+        return USER_TYPES[percentile_id]
 
     scores = _absolute_specialty_scores(rows)
     best_id = max(scores, key=scores.get)
