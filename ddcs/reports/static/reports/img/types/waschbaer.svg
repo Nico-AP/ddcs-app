@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <defs><clipPath id="c_waschbaer"><circle cx="150" cy="150" r="150"></circle></clipPath></defs>
+  <g clip-path="url(#c_waschbaer)"><rect width="300" height="300" fill="#e6e9ec"></rect>
+  <ellipse cx="150" cy="256" rx="116" ry="84" fill="#7d8794"></ellipse>
+  <circle cx="98" cy="86" r="30" fill="#7d8794"></circle><circle cx="202" cy="86" r="30" fill="#7d8794"></circle>
+  <circle cx="98" cy="88" r="14" fill="#4a525c"></circle><circle cx="202" cy="88" r="14" fill="#4a525c"></circle>
+  <circle cx="150" cy="140" r="92" fill="#7d8794"></circle>
+  <path d="M84 128 Q150 100 216 128 Q218 168 176 172 Q150 156 124 172 Q82 168 84 128 Z" fill="#2a2f3a"></path>
+  <path d="M150 74 Q138 108 150 136 Q162 108 150 74 Z" fill="#eef0f2"></path>
+  <ellipse cx="150" cy="180" rx="46" ry="34" fill="#f4f5f6"></ellipse>
+  <circle cx="124" cy="138" r="11" fill="#f4f5f6"></circle><circle cx="176" cy="138" r="11" fill="#f4f5f6"></circle>
+  <circle cx="124" cy="139" r="6" fill="#2a2f3a"></circle><circle cx="176" cy="139" r="6" fill="#2a2f3a"></circle>
+  <path d="M150 164 Q166 166 159 178 Q150 186 141 178 Q134 166 150 164 Z" fill="#2a2f3a"></path></g>
+</svg>
