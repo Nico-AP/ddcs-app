@@ -1,36 +1,45 @@
 {% load static %}
-<div class="report-block text-hero-lead">
-  {% if behaviour_user_type %}
+{% if behaviour_user_type %}
+  <div class="report-block text-hero-lead">
     <div class="behaviour-type-card behaviour-type-card--intro mb-4">
-      <p class="behaviour-type-card__eyebrow mb-2">Dein TikTok-Typ</p>
-      <div class="behaviour-type-card__media mx-auto mb-3">
-        <img src="{% static behaviour_user_type.image_static %}"
-             alt="{{ behaviour_user_type.animal }}"
-             class="behaviour-type-card__image"
-             width="180"
-             height="180" />
-      </div>
+      <p class="behaviour-type-card__eyebrow mb-2">Dein TikTok-Tierzeichen</p>
       <h2 class="behaviour-type-card__title h3 mb-1">
         {{ behaviour_user_type.headline }}{% include "reports/partials/user_type_info_trigger.html" %}
       </h2>
-      <p class="behaviour-type-card__trait text-muted mb-0">
+      <p class="behaviour-type-card__trait text-muted mb-3">
         {{ behaviour_user_type.trait_label }}
       </p>
+      <div class="behaviour-type-card__body">
+        <div class="behaviour-type-card__media">
+          <img src="{% static behaviour_user_type.image_static %}"
+               alt="{{ behaviour_user_type.animal }}"
+               class="behaviour-type-card__image"
+               width="180"
+               height="180" />
+        </div>
+        <div class="behaviour-type-card__copy">
+          <div class="behaviour-type-card__section text-start mb-3">
+            <p class="behaviour-type-card__section-label behaviour-type-card__section-label--tick mb-1">
+              So tickst du
+            </p>
+            <p class="behaviour-type-card__description mb-0">
+              {{ behaviour_user_type.intro_followup }}
+            </p>
+          </div>
+          <div class="behaviour-type-card__section text-start mb-0">
+            <p class="behaviour-type-card__section-label behaviour-type-card__section-label--attention mb-1">
+              Darauf solltest du achten
+            </p>
+            <p class="behaviour-type-card__attention mb-0">
+              {{ behaviour_user_type.attention }}
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
-  {% endif %}
+  </div>
 
-  <p>
-    Seit dem {{ start_date|date:"j.n.Y" }} hast du insgesamt
-    <span class="report-highlight">{{ n_seen_total }}</span>
-    {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %} auf TikTok
-    angesehen.{% include "reports/partials/viewed_info_trigger.html" %}
-  </p>
-  {% if behaviour_user_type %}
-    <p>{{ behaviour_user_type.intro_followup }}</p>
-  {% endif %}
-</div>
+  {% include "reports/partials/user_type_info_modal.html" %}
 
-{% include "reports/partials/viewed_info_modal.html" %}
-{% include "reports/partials/user_type_info_modal.html" %}
-
-<hr />
+  <hr />
+{% endif %}

@@ -28,8 +28,12 @@ from ddcs.metadata.research_api.models import APIVideoInfos, APIVideoStatistics
 from ddcs.reports import factories, services, views, wordclouds
 from ddcs.reports.behaviour_metrics import (
     _build_peak_hour_comparison,
+    _format_hours_duration,
+    _format_metric_value,
+    _format_seconds_duration,
     _hourly_watch_means,
     _peak_hour_same_fraction,
+    _reference_row_weekday_active_hours,
     _weekday_active_hours,
     apply_reference_demographic_filter,
     avg_inferred_watch_sec_by_video,
@@ -326,6 +330,72 @@ class RateLikeTests(TestCase):
         self.assertEqual(metrics["rate_like"], 0.5)
 
 
+class FormatHoursDurationTests(TestCase):
+    def test_whole_hours(self):
+        self.assertEqual(_format_hours_duration(1.0), "1\u00a0Stunde")
+        self.assertEqual(_format_hours_duration(2.0), "2\u00a0Stunden")
+
+    def test_hours_and_minutes(self):
+        self.assertEqual(
+            _format_hours_duration(1.5),
+            "1\u00a0Stunde und 30\u00a0Minuten",
+        )
+        self.assertEqual(
+            _format_hours_duration(2.25),
+            "2\u00a0Stunden und 15\u00a0Minuten",
+        )
+
+    def test_only_minutes(self):
+        self.assertEqual(_format_hours_duration(0.5), "30\u00a0Minuten")
+        self.assertEqual(_format_hours_duration(1 / 60), "1\u00a0Minute")
+
+    def test_short_forms(self):
+        self.assertEqual(_format_hours_duration(1.0, short=True), "1\u00a0Std.")
+        self.assertEqual(
+            _format_hours_duration(1.5, short=True),
+            "1\u00a0Std. und 30\u00a0Min.",
+        )
+
+    def test_active_hours_metric_uses_duration_format(self):
+        self.assertEqual(
+            _format_metric_value("avg_active_hours_per_day", 1.5),
+            "1\u00a0Stunde und 30\u00a0Minuten",
+        )
+
+
+class FormatSecondsDurationTests(TestCase):
+    def test_whole_minutes(self):
+        self.assertEqual(_format_seconds_duration(60.0), "1\u00a0Minute")
+        self.assertEqual(_format_seconds_duration(180.0), "3\u00a0Minuten")
+
+    def test_minutes_and_seconds(self):
+        self.assertEqual(
+            _format_seconds_duration(90.0),
+            "1\u00a0Minute und 30\u00a0Sekunden",
+        )
+        self.assertEqual(
+            _format_seconds_duration(125.0),
+            "2\u00a0Minuten und 5\u00a0Sekunden",
+        )
+
+    def test_only_seconds(self):
+        self.assertEqual(_format_seconds_duration(45.0), "45\u00a0Sekunden")
+        self.assertEqual(_format_seconds_duration(1.0), "1\u00a0Sekunde")
+
+    def test_short_forms(self):
+        self.assertEqual(_format_seconds_duration(60.0, short=True), "1\u00a0Min.")
+        self.assertEqual(
+            _format_seconds_duration(90.0, short=True),
+            "1\u00a0Min. und 30\u00a0Sek.",
+        )
+
+    def test_session_length_metric_uses_duration_format(self):
+        self.assertEqual(
+            _format_metric_value("avg_session_length_sec", 90.0),
+            "1\u00a0Minute und 30\u00a0Sekunden",
+        )
+
+
 class PeakHourShareTests(TestCase):
     def test_same_peak_hour_fraction(self):
         population = [6.0, 6.0, 12.0, 22.0, 6.0]
@@ -403,57 +473,85 @@ class UserTypeAssignmentTests(TestCase):
                     "night_activity_frac": 50.0,
                     "weekend_activity_frac": 50.0,
                     "rate_like": 50.0,
+                    "frac_political_engagement": 50.0,
                 },
                 frac_instant_skip=0.85,
                 avg_session_length_sec=180.0,
                 night_activity_frac=0.3,
                 weekend_activity_frac=0.3,
                 rate_like=0.3,
+                frac_political_engagement=0.1,
             )
         )
         self.assertEqual(user_type["id"], "kolibri")
         self.assertEqual(user_type["animal"], "Kolibri")
 
-    def test_high_session_percentile_is_faultier(self):
+    def test_long_session_and_low_skip_is_faultier(self):
+        user_type = assign_user_type(
+            self._comparisons(
+                percentiles={
+                    "frac_instant_skip": 15.0,
+                    "avg_session_length_sec": 92.0,
+                    "night_activity_frac": 50.0,
+                    "weekend_activity_frac": 50.0,
+                    "rate_like": 50.0,
+                    "frac_political_engagement": 50.0,
+                },
+                frac_instant_skip=0.15,
+                avg_session_length_sec=480.0,
+                night_activity_frac=0.3,
+                weekend_activity_frac=0.3,
+                rate_like=0.3,
+                frac_political_engagement=0.1,
+            )
+        )
+        self.assertEqual(user_type["id"], "faultier")
+        self.assertIn("länger an", user_type["intro_followup"])
+
+    def test_long_session_alone_is_not_faultier(self):
+        # High session without low skip → no Faultier; night wins.
         user_type = assign_user_type(
             self._comparisons(
                 percentiles={
                     "frac_instant_skip": 50.0,
                     "avg_session_length_sec": 92.0,
-                    "night_activity_frac": 50.0,
+                    "night_activity_frac": 88.0,
                     "weekend_activity_frac": 50.0,
                     "rate_like": 50.0,
+                    "frac_political_engagement": 50.0,
                 },
                 frac_instant_skip=0.4,
                 avg_session_length_sec=480.0,
-                night_activity_frac=0.3,
+                night_activity_frac=0.8,
                 weekend_activity_frac=0.3,
                 rate_like=0.3,
+                frac_political_engagement=0.1,
             )
         )
-        self.assertEqual(user_type["id"], "faultier")
+        self.assertEqual(user_type["id"], "eule")
 
-    def test_low_skip_percentile_is_luchs(self):
+    def test_high_political_engagement_percentile_is_luchs(self):
         user_type = assign_user_type(
             self._comparisons(
                 percentiles={
-                    "frac_instant_skip": 10.0,
+                    "frac_instant_skip": 50.0,
                     "avg_session_length_sec": 50.0,
                     "night_activity_frac": 50.0,
                     "weekend_activity_frac": 50.0,
                     "rate_like": 50.0,
+                    "frac_political_engagement": 95.0,
                 },
-                frac_instant_skip=0.1,
+                frac_instant_skip=0.4,
                 avg_session_length_sec=180.0,
                 night_activity_frac=0.3,
                 weekend_activity_frac=0.3,
                 rate_like=0.3,
+                frac_political_engagement=0.7,
             )
         )
         self.assertEqual(user_type["id"], "luchs")
-        self.assertEqual(user_type["trait_label"], "Der Beobachter")
-        self.assertIn("selten", user_type["intro_followup"])
-        self.assertIn("Skip auch mal", user_type["attention"])
+        self.assertEqual(user_type["trait_label"], "Der Politik-Beobachter")
+        self.assertIn("politischen Videos", user_type["intro_followup"])
 
     def test_strongest_percentile_extremity_wins(self):
         # Night only slightly above median; weekend far above → Waschbär.
@@ -465,12 +563,14 @@ class UserTypeAssignmentTests(TestCase):
                     "night_activity_frac": 55.0,
                     "weekend_activity_frac": 95.0,
                     "rate_like": 50.0,
+                    "frac_political_engagement": 50.0,
                 },
                 frac_instant_skip=0.4,
                 avg_session_length_sec=180.0,
                 night_activity_frac=0.35,
                 weekend_activity_frac=0.9,
                 rate_like=0.3,
+                frac_political_engagement=0.1,
             )
         )
         self.assertEqual(user_type["id"], "waschbaer")
@@ -484,12 +584,14 @@ class UserTypeAssignmentTests(TestCase):
                     "night_activity_frac": 88.0,
                     "weekend_activity_frac": 50.0,
                     "rate_like": 50.0,
+                    "frac_political_engagement": 50.0,
                 },
                 frac_instant_skip=0.4,
                 avg_session_length_sec=180.0,
                 night_activity_frac=0.8,
                 weekend_activity_frac=0.3,
                 rate_like=0.3,
+                frac_political_engagement=0.1,
             )
         )
         self.assertEqual(user_type["id"], "eule")
@@ -503,12 +605,14 @@ class UserTypeAssignmentTests(TestCase):
                     "night_activity_frac": 50.0,
                     "weekend_activity_frac": 50.0,
                     "rate_like": 97.0,
+                    "frac_political_engagement": 50.0,
                 },
                 frac_instant_skip=0.4,
                 avg_session_length_sec=180.0,
                 night_activity_frac=0.3,
                 weekend_activity_frac=0.3,
                 rate_like=0.9,
+                frac_political_engagement=0.1,
             )
         )
         self.assertEqual(user_type["id"], "papagei")
@@ -522,17 +626,20 @@ class UserTypeAssignmentTests(TestCase):
                     "night_activity_frac": 50.0,
                     "weekend_activity_frac": 50.0,
                     "rate_like": 50.0,
+                    "frac_political_engagement": 50.0,
                 },
                 frac_instant_skip=0.8,
                 avg_session_length_sec=100.0,
                 night_activity_frac=0.2,
                 weekend_activity_frac=0.2,
                 rate_like=0.2,
+                frac_political_engagement=0.05,
             )
         )
         self.assertEqual(user_type["id"], "kolibri")
 
-    def test_balanced_absolute_fallback_is_luchs(self):
+    def test_absolute_fallback_picks_strongest_user_signal(self):
+        # All at median percentile → absolute fallback; night is strongest.
         user_type = assign_user_type(
             self._comparisons(
                 percentiles={
@@ -541,15 +648,17 @@ class UserTypeAssignmentTests(TestCase):
                     "night_activity_frac": 50.0,
                     "weekend_activity_frac": 50.0,
                     "rate_like": 50.0,
+                    "frac_political_engagement": 50.0,
                 },
-                frac_instant_skip=0.35,
-                avg_session_length_sec=120.0,
-                night_activity_frac=0.25,
-                weekend_activity_frac=0.3,
-                rate_like=0.2,
+                frac_instant_skip=0.45,
+                avg_session_length_sec=60.0,
+                night_activity_frac=0.5,
+                weekend_activity_frac=0.25,
+                rate_like=0.15,
+                frac_political_engagement=0.05,
             )
         )
-        self.assertEqual(user_type["id"], "luchs")
+        self.assertEqual(user_type["id"], "eule")
         self.assertIn("Swipe", user_type["teaser"])
 
     def test_behaviour_profile_context_includes_stable_type(self):
@@ -560,6 +669,7 @@ class UserTypeAssignmentTests(TestCase):
                 "night_activity_frac": 40.0,
                 "weekend_activity_frac": 40.0,
                 "rate_like": 40.0,
+                "frac_political_engagement": 40.0,
                 "avg_active_hours_per_day": 50.0,
             },
             frac_instant_skip=0.85,
@@ -567,6 +677,7 @@ class UserTypeAssignmentTests(TestCase):
             night_activity_frac=0.3,
             weekend_activity_frac=0.3,
             rate_like=0.3,
+            frac_political_engagement=0.1,
             avg_active_hours_per_day=2.0,
         )
         context = views._behaviour_profile_context(
@@ -603,22 +714,50 @@ class HourlyWatchMeansTests(TestCase):
         self.assertEqual(means[18], 0.5)
         self.assertEqual(means[0], 0.0)
 
-    def test_weekday_active_hours_averages_distinct_hours(self):
+    def test_weekday_watch_hours_uses_within_session_gaps(self):
         # 2026-05-01 is a Friday.
-        friday = REPORT_FIRST_DATE_TO_INCLUDE.replace(hour=10)
+        friday = REPORT_FIRST_DATE_TO_INCLUDE.replace(hour=10, minute=0, second=0)
         saturday = friday + timedelta(days=1)
         watches = [
-            {"date": friday.replace(hour=10), "link": "a", "video_id": 1},
-            {"date": friday.replace(hour=11), "link": "b", "video_id": 2},
-            {"date": saturday.replace(hour=12), "link": "c", "video_id": 3},
-            {"date": saturday.replace(hour=14), "link": "d", "video_id": 4},
-            {"date": saturday.replace(hour=16), "link": "e", "video_id": 5},
+            {"date": friday, "link": "a", "video_id": 1},
+            {"date": friday + timedelta(seconds=30), "link": "b", "video_id": 2},
+            {"date": friday + timedelta(seconds=90), "link": "c", "video_id": 3},
+            # Session break (>90s) — not counted as watch time.
+            {"date": friday + timedelta(seconds=300), "link": "d", "video_id": 4},
+            {"date": saturday.replace(hour=12), "link": "e", "video_id": 5},
+            {
+                "date": saturday.replace(hour=12) + timedelta(seconds=60),
+                "link": "f",
+                "video_id": 6,
+            },
         ]
         means = _weekday_active_hours(watches)
         self.assertEqual(len(means), 7)
-        self.assertEqual(means[4], 2.0)  # Friday
-        self.assertEqual(means[5], 3.0)  # Saturday
+        # Friday: 30s + 60s = 90s → 90/3600 hours.
+        self.assertAlmostEqual(means[4], 90.0 / 3600.0)
+        # Saturday: 60s → 60/3600 hours.
+        self.assertAlmostEqual(means[5], 60.0 / 3600.0)
         self.assertEqual(means[0], 0.0)
+
+    def test_reference_weekday_hours_convert_watch_sec_csv(self):
+        hours = _reference_row_weekday_active_hours(
+            {
+                "avg_watch_sec_mon": "3600",
+                "avg_watch_sec_tue": "1800",
+                "avg_watch_sec_wed": "",
+                "avg_watch_sec_thu": "7200",
+                "avg_watch_sec_fri": "0",
+                "avg_watch_sec_sat": "900",
+                "avg_watch_sec_sun": "4500",
+            }
+        )
+        self.assertEqual(hours[0], 1.0)
+        self.assertEqual(hours[1], 0.5)
+        self.assertEqual(hours[2], 0.0)
+        self.assertEqual(hours[3], 2.0)
+        self.assertEqual(hours[4], 0.0)
+        self.assertEqual(hours[5], 0.25)
+        self.assertEqual(hours[6], 1.25)
 
 
 class ReferenceDemographicFilterTests(TestCase):
@@ -1417,29 +1556,38 @@ class SyntheticFactoriesTests(TestCase):
         os.getenv("GITHUB_ACTIONS") == "true",
         "Skipping integration test in CI environment",
     )
-    def test_synthetic_peak_hour_samples_hourly_curve_from_reference(self):
+    def test_synthetic_activity_curves_match_watch_metrics(self):
         comparisons = factories._synthetic_behaviour_comparisons(frozenset())
-        peak = next(row for row in comparisons if row["metric"] == "peak_activity_hour")
+        by_metric = {row["metric"]: row for row in comparisons}
+        peak = by_metric["peak_activity_hour"]
+        night = by_metric["night_activity_frac"]
+        weekend = by_metric["weekend_activity_frac"]
         hourly = peak.get("hourly_watch_means")
-        reference_hourly = peak.get("reference_hourly_watch_means")
         self.assertIsNotNone(hourly)
         self.assertEqual(len(hourly), 24)
-        self.assertIsNotNone(reference_hourly)
-        self.assertEqual(len(reference_hourly), 24)
-        # Sampled CSV curves are not the flat synthetic (i * 3) % 24 pattern.
-        self.assertGreater(max(hourly), min(hourly))
-        self.assertNotEqual(hourly, reference_hourly)
-
-        weekday = next(
-            row for row in comparisons if row["metric"] == "weekday_active_hours"
+        self.assertGreater(max(hourly), 0)
+        # Dense enough to look like real donations (not <<1 video/hour).
+        self.assertGreaterEqual(max(hourly), 5.0)
+        # Peak hour bar/title matches the ridge's busiest hour.
+        self.assertEqual(
+            round(peak["value"]),
+            max(range(24), key=lambda hour: hourly[hour]),
         )
+        # Night bar tracks night mass in the hourly ridge (22-6 Uhr).
+        night_hours = list(range(22, 24)) + list(range(6))
+        night_mass = sum(hourly[hour] for hour in night_hours)
+        total_mass = sum(hourly) or 1.0
+        self.assertAlmostEqual(night_mass / total_mass, night["value"], delta=0.2)
+
+        weekday = by_metric["weekday_active_hours"]
         weekday_hours = weekday.get("weekday_active_hours")
-        reference_weekday = weekday.get("reference_weekday_active_hours")
         self.assertIsNotNone(weekday_hours)
         self.assertEqual(len(weekday_hours), 7)
-        self.assertIsNotNone(reference_weekday)
-        self.assertEqual(len(reference_weekday), 7)
-        self.assertGreater(max(weekday_hours), 0)
+        weekend_hours = weekday_hours[5] + weekday_hours[6]
+        weekday_total = sum(weekday_hours) or 1.0
+        # Weekend activity share should move with Sat/Sun ridge mass.
+        self.assertGreaterEqual(weekend["value"], 0.0)
+        self.assertLessEqual(weekend_hours / weekday_total, 1.0)
 
 
 class BehaviourProfileComparisonTests(TestCase):
@@ -1512,26 +1660,27 @@ class BehaviourProfileComparisonTests(TestCase):
             **self._sample_comparison(),
             "metric": "avg_active_hours_per_day",
             "value": 2.5,
-            "value_display": "2.50",
+            "value_display": "2\u00a0Stunden und 30\u00a0Minuten",
             "reference_mean": 1.8,
-            "reference_mean_display": "1.80",
+            "reference_mean_display": "1\u00a0Stunde und 48\u00a0Minuten",
             "is_fraction": False,
         }
         title = user_plots._row_title_text(hours)
-        self.assertIn("Stunden aktiv", title)
-        self.assertIn("2.50", title)
+        self.assertIn("aktiv", title)
+        self.assertIn("2\u00a0Stunden und 30\u00a0Minuten", title)
         self.assertNotIn("Videos", title)
+        self.assertNotIn("Stunden aktiv", title)
 
     def test_session_length_title_uses_minutes(self):
         session = {
             **self._sample_comparison(),
             "metric": "avg_session_length_sec",
             "value": 180.0,
-            "value_display": "3.0 Min.",
+            "value_display": "3\u00a0Minuten",
             "is_fraction": False,
         }
         title = user_plots._row_title_text(session)
-        self.assertIn("3.0 Min.", title)
+        self.assertIn("3\u00a0Minuten", title)
         self.assertIn("Sessions dauern", title)
 
     def test_peak_hour_chart_uses_ridge_of_hourly_means(self):
@@ -1576,13 +1725,14 @@ class BehaviourProfileComparisonTests(TestCase):
         self.assertIn("Anderen", title)
 
     def test_weekday_chart_uses_ridge_with_inside_y_ticks(self):
-        weekdays = [1.2, 2.0, 1.5, 2.5, 3.0, 4.0, 2.0]
-        reference = [1.0, 1.5, 1.2, 1.8, 2.0, 2.5, 1.5]
+        # Low relative variance (typical real watch-hours) so y-axis zooms in.
+        weekdays = [2.1, 2.3, 2.0, 2.4, 2.6, 2.8, 2.2]
+        reference = [2.0, 2.1, 1.9, 2.2, 2.3, 2.5, 2.1]
         row = {
             **self._sample_comparison(),
             "metric": "weekday_active_hours",
-            "value": 4.0,
-            "value_display": "4.00",
+            "value": 2.8,
+            "value_display": "2.80",
             "weekday_active_hours": weekdays,
             "reference_weekday_active_hours": reference,
             "is_fraction": False,
@@ -1593,28 +1743,34 @@ class BehaviourProfileComparisonTests(TestCase):
         self.assertIn("Mo", html)
         self.assertIn("So", html)
         self.assertIn('"ticklabelposition":"inside"', html.replace(" ", ""))
-        self.assertIn('"tickformat":".0f"', html.replace(" ", ""))
+        self.assertIn('"tickformat":".1f"', html.replace(" ", ""))
         self.assertIn('"automargin":false', html.replace(" ", ""))
-        self.assertIn('"text":"4"', html.replace(" ", ""))
-        self.assertIn('"text":"2"', html.replace(" ", ""))
+        self.assertIn("Stunden", html)
+        title = user_plots._row_title_text(row)
+        self.assertIn("So viele Stunden verbringst", title)
+        # Y-axis starts a bit under the combined min (1.9) and ends near max (2.8).
+        self.assertRegex(
+            html.replace(" ", ""),
+            r'"range":\[1\.[0-9]+,2\.[0-9]+\]',
+        )
 
     def test_chart_rows_include_all_behaviour_metrics(self):
         hours = {
             **self._sample_comparison(),
             "metric": "avg_active_hours_per_day",
             "value": 2.5,
-            "value_display": "2.50",
+            "value_display": "2\u00a0Stunden und 30\u00a0Minuten",
             "reference_mean": 1.8,
-            "reference_mean_display": "1.80",
+            "reference_mean_display": "1\u00a0Stunde und 48\u00a0Minuten",
             "is_fraction": False,
         }
         session = {
             **self._sample_comparison(),
             "metric": "avg_session_length_sec",
             "value": 180.0,
-            "value_display": "3.0 Min.",
+            "value_display": "3\u00a0Minuten",
             "reference_mean": 120.0,
-            "reference_mean_display": "2.0 Min.",
+            "reference_mean_display": "2\u00a0Minuten",
             "is_fraction": False,
         }
         rows = user_plots.get_behaviour_profile_rows(

@@ -1,6 +1,6 @@
-<div class="report-block text-hero-lead">
+<div class="report-block">
   <h2 class="h4 mb-3">Politik in deinem Feed</h2>
-  <p>
+  <p class="text-muted">
     {% if n_seen_total == 0 %}
       Von den Videos, die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
       hatten <span class="report-highlight">keine</span> ein politisches Schlagwort
@@ -32,7 +32,7 @@
     {% endif %}
   </p>
   {% if n_seen_pol_videos > 0 %}
-    <p>
+    <p class="text-muted">
       Das entspricht <span class="report-highlight">{{ share_political }}%</span> der Videos,
       die du gesehen hast.
     </p>
@@ -40,3 +40,5 @@
 </div>
 
 {% include "reports/partials/political_content_info_modal.html" %}
+
+<hr />
