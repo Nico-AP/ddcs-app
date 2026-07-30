@@ -7,6 +7,8 @@ from plotly import graph_objects as go
 from ddcs.reports.behaviour_metrics import (
     BEHAVIOUR_CHART_METRICS,
     BEHAVIOUR_CHART_SLIDES,
+    _format_hours_duration,
+    _format_seconds_duration,
 )
 from ddcs.reports.config import NO_PARTY_KEY, PARTIES_ORDER
 from ddcs.reports.plots.utils import (
@@ -84,7 +86,7 @@ _USER_SUBTITLE_SENTENCES: dict[str, str] = {
     "avg_session_length_sec": ("Deine TikTok-Sessions dauern im Schnitt {value}."),
     "avg_videos_per_session": ("Pro Session schaust du im Schnitt {value} Videos."),
     "avg_active_hours_per_day": (
-        "An Tagen, an denen du TikTok nutzt, bist du im Schnitt {value} Stunden aktiv."
+        "An Tagen, an denen du TikTok nutzt, bist du im Schnitt {value} aktiv."
     ),
     "weekend_activity_frac": (
         "Das heißt, {value} deiner TikTok-Zeit verbringst du am Wochenende."
@@ -99,9 +101,9 @@ _USER_SUBTITLE_SENTENCES: dict[str, str] = {
         '<span style="color: {_mean}; font-weight: 600;">Anderen</span>.'
     ),
     "weekday_active_hours": (
-        "So viele Stunden bist "
+        "So viele Stunden verbringst "
         '<span style="color: {_user}; font-weight: 600;">Du</span> '
-        "an den Wochentagen im Schnitt aktiv im Vergleich zu "
+        "an den Wochentagen im Schnitt auf TikTok im Vergleich zu "
         '<span style="color: {_mean}; font-weight: 600;">Anderen</span>.'
     ),
     "frac_instant_skip": ("Bei {value} der Videos scrollst du direkt weiter."),
@@ -160,8 +162,6 @@ def _behaviour_hover_value_display(metric: str, value_display: str) -> str:
         return value_display
     if metric == "avg_videos_per_session":
         return f"{value_display}\u00a0Videos"
-    if metric == "avg_active_hours_per_day":
-        return f"{value_display}\u00a0Stunden"
     return value_display
 
 
@@ -175,9 +175,25 @@ def _comparison_chart_values(
             row.get("chart_user_value_display", row["value_display"]),
             row.get("chart_reference_value_display", row["reference_mean_display"]),
         )
+    user_value = row["value"]
+    mean_value = row["reference_mean"]
+    if row["metric"] == "avg_active_hours_per_day":
+        return (
+            user_value,
+            mean_value,
+            _format_hours_duration(user_value, short=True),
+            _format_hours_duration(mean_value, short=True),
+        )
+    if row["metric"] == "avg_session_length_sec":
+        return (
+            user_value,
+            mean_value,
+            _format_seconds_duration(user_value, short=True),
+            _format_seconds_duration(mean_value, short=True),
+        )
     return (
-        row["value"],
-        row["reference_mean"],
+        user_value,
+        mean_value,
         row["value_display"],
         row["reference_mean_display"],
     )
@@ -297,6 +313,34 @@ def _add_ridge_max_label(
     )
 
 
+def _ridge_y_axis_range(
+    series_values: list[float],
+    *,
+    tighten: bool = False,
+) -> list[float]:
+    """Y-axis range for ridge charts.
+
+    With ``tighten``, zoom to just under the series minimum through the
+    series maximum (small top pad only so peak labels stay visible).
+    """
+    if not series_values:
+        return [0.0, 1.0]
+    series_max = max(series_values)
+    if series_max <= 0:
+        return [0.0, 1.0]
+    if not tighten:
+        return [0.0, series_max * 1.28]
+    series_min = min(series_values)
+    span = max(series_max - series_min, series_max * 0.05, 0.05)
+    below = max(span * 0.2, series_min * 0.05, 0.05)
+    y_lo = max(0.0, series_min - below)
+    # End at the data maximum; tiny headroom keeps max-value labels inside.
+    y_hi = series_max + max(span * 0.08, 0.02)
+    if y_hi <= y_lo:
+        y_hi = y_lo + 0.1
+    return [y_lo, y_hi]
+
+
 def _build_dual_ridge_chart(  # noqa: PLR0913
     *,
     user_series: list[float],
@@ -307,6 +351,8 @@ def _build_dual_ridge_chart(  # noqa: PLR0913
     point_labels: list[str],
     value_unit: str,
     marker_x: int | None = None,
+    tighten_y_axis: bool = False,
+    y_tickformat: str = ".0f",
 ) -> str | None:
     """Filled dual ridge (user + optional reference) for behaviour slides."""
     if not user_series or len(point_labels) != len(user_series):
@@ -316,8 +362,7 @@ def _build_dual_ridge_chart(  # noqa: PLR0913
     series_values = list(user_series)
     if has_reference and reference_series is not None:
         series_values.extend(reference_series)
-    series_max = max(series_values)
-    y_max = series_max if series_max > 0 else 1.0
+    y_range = _ridge_y_axis_range(series_values, tighten=tighten_y_axis)
 
     hover_rows: list[list[str | float]] = []
     for index, label in enumerate(point_labels):
@@ -449,14 +494,14 @@ def _build_dual_ridge_chart(  # noqa: PLR0913
         },
         yaxis={
             "title": "",
-            "range": [0, y_max * 1.28],
+            "range": y_range,
             "fixedrange": True,
             "automargin": False,
             "showticklabels": True,
             "ticks": "",
             "ticklabelposition": "inside",
             "nticks": 4,
-            "tickformat": ".0f",
+            "tickformat": y_tickformat,
             "tickfont": {"size": 11, "color": "black"},
             "showgrid": False,
             "zeroline": False,
@@ -503,7 +548,7 @@ def _build_peak_hour_ridge_chart(row: BehaviourComparisonRecord) -> str | None:
 def _build_weekday_active_hours_ridge_chart(
     row: BehaviourComparisonRecord,
 ) -> str | None:
-    """Ridge-style density of mean active hours by weekday."""
+    """Ridge-style mean watch hours by weekday."""
     weekdays = row.get("weekday_active_hours")
     if not weekdays or len(weekdays) != _WEEKDAYS_PER_WEEK:
         return None
@@ -514,7 +559,9 @@ def _build_weekday_active_hours_ridge_chart(
         tick_vals=_WEEKDAYS,
         tick_text=_WEEKDAY_TICK_LABELS,
         point_labels=_WEEKDAY_TICK_LABELS,
-        value_unit="aktive Stunden (⌀)",
+        value_unit="Stunden (⌀)",
+        tighten_y_axis=True,
+        y_tickformat=".1f",
     )
 
 

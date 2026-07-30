@@ -76,7 +76,7 @@ RADAR_LABELS: dict[str, str] = {
     "weekend_activity_frac": ("Anteil TikTok-Zeit am Wochenende"),
     "night_activity_frac": "Anteil TikTok-Zeit nachts",
     "peak_activity_hour": "Aktivste Nutzungsstunde",
-    "weekday_active_hours": "Aktive Stunden nach Wochentag",
+    "weekday_active_hours": "Watch-Zeit nach Wochentag",
     "frac_instant_skip": ("Anteil Instant-Skips"),
     "rate_like": "Anteil gelikter Videos",
     "frac_political_engagement": ("Anteil politische Interaktionen"),
@@ -89,7 +89,7 @@ METRIC_LABELS: dict[str, str] = {
     "weekend_activity_frac": "Anteil Wochenend-Wiedergaben",
     "night_activity_frac": "Anteil Nacht-Wiedergaben (22-6 Uhr)",
     "peak_activity_hour": "Aktivste Nutzungsstunde",
-    "weekday_active_hours": "Ø aktive Stunden nach Wochentag",
+    "weekday_active_hours": "Ø Watch-Zeit nach Wochentag",
     "frac_instant_skip": "Anteil Instant-Skips (< 1 Sek. bis zum nächsten Video)",
     "rate_like": "Anteil gelikter Videos (Likes pro Ansicht)",
     "frac_political_engagement": "Anteil politische Interaktionen",
@@ -103,15 +103,16 @@ FRACTION_METRICS = {
     "frac_political_engagement",
 }
 
-_WEEKDAY_ACTIVE_HOURS_CSV_KEYS = (
-    "avg_active_hours_mon",
-    "avg_active_hours_tue",
-    "avg_active_hours_wed",
-    "avg_active_hours_thu",
-    "avg_active_hours_fri",
-    "avg_active_hours_sat",
-    "avg_active_hours_sun",
+_WEEKDAY_WATCH_SEC_CSV_KEYS = (
+    "avg_watch_sec_mon",
+    "avg_watch_sec_tue",
+    "avg_watch_sec_wed",
+    "avg_watch_sec_thu",
+    "avg_watch_sec_fri",
+    "avg_watch_sec_sat",
+    "avg_watch_sec_sun",
 )
+_SECONDS_PER_HOUR = 3600.0
 _HOURS_PER_DAY = 24
 _WEEKDAYS_PER_WEEK = 7
 
@@ -204,13 +205,65 @@ def _distribution_stats(sorted_values: list[float]) -> dict[str, float]:
     }
 
 
+def _format_hours_duration(hours: float, *, short: bool = False) -> str:
+    """Format fractional hours as German Stunde(n) und Minute(n)."""
+    total_minutes = max(0, round(hours * 60))
+    whole_hours, minutes = divmod(total_minutes, 60)
+    if short:
+        hour_unit = "Std."
+        minute_unit = "Min."
+    else:
+        hour_unit = "Stunde" if whole_hours == 1 else "Stunden"
+        minute_unit = "Minute" if minutes == 1 else "Minuten"
+    if whole_hours == 0:
+        if not short and minutes == 1:
+            return "1\u00a0Minute"
+        return f"{minutes}\u00a0{minute_unit}"
+    hour_label = f"{whole_hours}\u00a0{hour_unit}"
+    if not short and whole_hours == 1:
+        hour_label = "1\u00a0Stunde"
+    if minutes == 0:
+        return hour_label
+    minute_label = f"{minutes}\u00a0{minute_unit}"
+    if not short and minutes == 1:
+        minute_label = "1\u00a0Minute"
+    return f"{hour_label} und {minute_label}"
+
+
+def _format_seconds_duration(seconds: float, *, short: bool = False) -> str:
+    """Format seconds as German Minute(n) und Sekunde(n)."""
+    total_seconds = max(0, round(seconds))
+    minutes, secs = divmod(total_seconds, 60)
+    if short:
+        minute_unit = "Min."
+        second_unit = "Sek."
+    else:
+        minute_unit = "Minute" if minutes == 1 else "Minuten"
+        second_unit = "Sekunde" if secs == 1 else "Sekunden"
+    if minutes == 0:
+        if not short and secs == 1:
+            return "1\u00a0Sekunde"
+        return f"{secs}\u00a0{second_unit}"
+    minute_label = f"{minutes}\u00a0{minute_unit}"
+    if not short and minutes == 1:
+        minute_label = "1\u00a0Minute"
+    if secs == 0:
+        return minute_label
+    second_label = f"{secs}\u00a0{second_unit}"
+    if not short and secs == 1:
+        second_label = "1\u00a0Sekunde"
+    return f"{minute_label} und {second_label}"
+
+
 def _format_metric_value(metric: str, value: float) -> str:
     if metric in FRACTION_METRICS:
         return f"{value * 100:.1f}\u00a0%"
     if metric == "avg_session_length_sec":
-        return f"{value / 60:.1f}\u00a0Min."
+        return _format_seconds_duration(value)
     if metric == "peak_activity_hour":
         return f"{round(value)}:00"
+    if metric == "avg_active_hours_per_day":
+        return _format_hours_duration(value)
     return f"{value:.2f}"
 
 
@@ -232,19 +285,37 @@ def _hourly_watch_means(watches: list[WatchHistoryRecord]) -> list[float]:
 
 
 def _weekday_active_hours(watches: list[WatchHistoryRecord]) -> list[float]:
-    """Mean distinct active hours for each weekday (Mon=0 .. Sun=6)."""
+    """Mean inferred watch hours for each weekday (Mon=0 .. Sun=6).
+
+    Donated data has no true watch duration. For each consecutive watch pair,
+    the gap is counted as watch time for the earlier event's calendar day when
+    it is within a session (≤ ``_SESSION_BREAK_SEC``). Longer gaps are session
+    breaks and are ignored. Daily totals are averaged per weekday.
+    """
     if not watches:
         return [0.0] * _WEEKDAYS_PER_WEEK
 
-    daily_hours: dict[date, set[int]] = defaultdict(set)
+    dated: list[datetime] = []
+    days_with_watches: set[date] = set()
     for record in watches:
-        ts = record["date"]
-        assert isinstance(ts, datetime)
-        daily_hours[ts.date()].add(ts.hour)
+        ts = record.get("date")
+        if not isinstance(ts, datetime):
+            continue
+        dated.append(ts)
+        days_with_watches.add(ts.date())
+    if len(dated) < _MIN_WATCH_EVENTS_FOR_GAP:
+        return [0.0] * _WEEKDAYS_PER_WEEK
 
-    hours_by_weekday: dict[int, list[int]] = defaultdict(list)
-    for day, hours in daily_hours.items():
-        hours_by_weekday[day.weekday()].append(len(hours))
+    dated.sort()
+    daily_sec: dict[date, float] = dict.fromkeys(days_with_watches, 0.0)
+    for prev_ts, next_ts in pairwise(dated):
+        gap = (next_ts - prev_ts).total_seconds()
+        if 0 <= gap <= _SESSION_BREAK_SEC:
+            daily_sec[prev_ts.date()] += gap
+
+    hours_by_weekday: dict[int, list[float]] = defaultdict(list)
+    for day, seconds in daily_sec.items():
+        hours_by_weekday[day.weekday()].append(seconds / _SECONDS_PER_HOUR)
 
     return [
         (
@@ -265,10 +336,13 @@ def _reference_row_hourly_watch_means(row: dict[str, str | None]) -> list[float]
 
 
 def _reference_row_weekday_active_hours(row: dict[str, str | None]) -> list[float]:
+    """Reference mean watch hours per weekday from ``avg_watch_sec_*`` CSV cols."""
     weekday_hours: list[float] = []
-    for key in _WEEKDAY_ACTIVE_HOURS_CSV_KEYS:
-        value = _parse_float(row.get(key))
-        weekday_hours.append(value if value is not None else 0.0)
+    for key in _WEEKDAY_WATCH_SEC_CSV_KEYS:
+        seconds = _parse_float(row.get(key))
+        weekday_hours.append(
+            (seconds / _SECONDS_PER_HOUR) if seconds is not None else 0.0
+        )
     return weekday_hours
 
 
