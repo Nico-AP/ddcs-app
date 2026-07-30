@@ -1,4 +1,4 @@
-"""Fun TikTok usage typologies for the behaviour-profile intro slide / merch."""
+"""Fun TikTok usage typologies for the behaviour-profile intro / merch."""
 
 from __future__ import annotations
 
@@ -7,18 +7,18 @@ from typing import TYPE_CHECKING, Literal, TypedDict
 if TYPE_CHECKING:
     from ddcs.reports.types import BehaviourComparisonRecord
 
+
 _SESSION_LENGTH_NORM_SEC = 300.0
-_SPECIALTY_THRESHOLD = 0.45
 _MEDIAN_PERCENTILE = 50.0
 _TEASER = "Swipe zur Seite, um dein Nutzungsprofil im Detail zu sehen →"
 
 Direction = Literal["above", "below"]
 
-# (type_id, metric, direction vs reference distribution)
+# Single-metric types: (type_id, metric, direction vs reference distribution).
+# Faultier is scored separately (long sessions + low skip rate).
 _TYPE_RULES: tuple[tuple[str, str, Direction], ...] = (
     ("kolibri", "frac_instant_skip", "above"),
-    ("faultier", "avg_session_length_sec", "above"),
-    ("luchs", "frac_instant_skip", "below"),
+    ("luchs", "frac_political_engagement", "above"),
     ("eule", "night_activity_frac", "above"),
     ("waschbaer", "weekend_activity_frac", "above"),
     ("papagei", "rate_like", "above"),
@@ -30,7 +30,6 @@ class UserTypeRecord(TypedDict):
     animal: str
     trait_label: str
     headline: str
-    description: str
     attention: str
     intro_followup: str
     teaser: str
@@ -43,16 +42,12 @@ USER_TYPES: dict[str, UserTypeRecord] = {
         "animal": "Kolibri",
         "trait_label": "Der Skip-Spezialist",
         "headline": "Du bist der Kolibri",
-        "description": (
-            "Du fliegst von Clip zu Clip. Was dich reizt, erkennst du in Sekunden."
-        ),
         "attention": (
             "Bei politischen Videos lohnt sich manchmal der zweite Blick, "
             "bevor du weiter wischst."
         ),
         "intro_followup": (
-            "Dabei hast du im Vergleich zu anderen Nutzenden besonders viele "
-            "der Videos \u00fcbersprungen!"
+            "Du fliegst von Clip zu Clip. Was dich reizt, erkennst du in Sekunden."
         ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/kolibri.svg",
@@ -62,14 +57,13 @@ USER_TYPES: dict[str, UserTypeRecord] = {
         "animal": "Faultier",
         "trait_label": "Der chillige Watcher",
         "headline": "Du bist das Faultier",
-        "description": ("Du bist auf TikTok länger am Stück als die Meisten."),
         "attention": (
             "Pass auf, dass du dich nicht zu sehr treiben lässt. "
             "Entscheide dich öfters dazu, die App zu schließen."
         ),
         "intro_followup": (
-            "Dabei warst du im Vergleich zu anderen Nutzenden besonders lange "
-            "am Stück auf TikTok!"
+            "Du verbringst mehr Zeit am Stück auf TikTok und schaust dir die "
+            "Videos länger an als die meisten."
         ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/faultier.svg",
@@ -79,17 +73,12 @@ USER_TYPES: dict[str, UserTypeRecord] = {
         "animal": "Eule",
         "trait_label": "Die Nachteule",
         "headline": "Du bist die Eule",
-        "description": (
-            "Deine Prime Time ist spät - ein großer Teil deiner TikToks "
-            "läuft nach Mitternacht."
-        ),
         "attention": (
             "Nachts triffst du Entscheidungen lockerer, auch beim Liken "
             "und Teilen politischer Inhalte."
         ),
         "intro_followup": (
-            "Dabei hast du im Vergleich zu anderen Nutzenden besonders viele "
-            "Videos nachts angeschaut!"
+            "Deine Prime Time ist spät - ein großer Teil deiner TikToks läuft nachts."
         ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/eule.svg",
@@ -99,17 +88,13 @@ USER_TYPES: dict[str, UserTypeRecord] = {
         "animal": "Waschbär",
         "trait_label": "Der Wochenend-Gucker",
         "headline": "Du bist der Waschbär",
-        "description": (
-            "Unter der Woche ruhig, am Wochenende drehst du auf. "
-            "Dein Feed ballt sich auf Samstag und Sonntag."
-        ),
         "attention": (
             "In langen Wochenend-Sessions ähneln sich die Inhalte schnell. "
             "Bewusst mal ausschalten und das Wochenende richtig genießen."
         ),
         "intro_followup": (
-            "Dabei hast du im Vergleich zu anderen Nutzenden besonders viele "
-            "Videos am Wochenende angeschaut!"
+            "Unter der Woche ruhig, am Wochenende drehst du auf. "
+            "Dein Feed ballt sich auf Samstag und Sonntag."
         ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/waschbaer.svg",
@@ -119,17 +104,13 @@ USER_TYPES: dict[str, UserTypeRecord] = {
         "animal": "Papagei",
         "trait_label": "Der Fan",
         "headline": "Du bist der Papagei",
-        "description": (
-            "Du gibst gerne Likes und interagierst viel. Das heißt, du zeigst "
-            "deinem Feed genau, was du magst."
-        ),
         "attention": (
             "Jeder Like formt deinen Feed. Achte darauf, auch mal auf Neues "
             "zu reagieren, um das immer Gleiche zu durchbrechen."
         ),
         "intro_followup": (
-            "Dabei hast du im Vergleich zu anderen Nutzenden besonders viele "
-            "der Videos geliked!"
+            "Du gibst gerne Likes. Das heißt, du zeigst deinem Feed genau, "
+            "was du magst."
         ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/papagei.svg",
@@ -137,13 +118,15 @@ USER_TYPES: dict[str, UserTypeRecord] = {
     "luchs": {
         "id": "luchs",
         "animal": "Luchs",
-        "trait_label": "Der Beobachter",
+        "trait_label": "Der Politik-Beobachter",
         "headline": "Du bist der Luchs",
-        "description": "Du schaust Videos länger als die Meisten.",
-        "attention": "Skip auch mal was dir nicht gefällt.",
+        "attention": (
+            "Achte darauf, aus welchen Quellen politische Clips kommen — "
+            "auch ein scharfer Blick braucht Kontext."
+        ),
         "intro_followup": (
-            "Dabei hast du im Vergleich zu anderen Nutzenden besonders selten "
-            "Videos \u00fcbersprungen!"
+            "Du interessierst dich dafür was in der Welt passiert - "
+            "und hast besonders oft mit politischen Videos interagiert."
         ),
         "teaser": _TEASER,
         "image_static": "reports/img/types/luchs.svg",
@@ -172,6 +155,22 @@ def _percentile_extremity(percentile: float, direction: Direction) -> float | No
     return _MEDIAN_PERCENTILE - percentile
 
 
+def _faultier_percentile_score(
+    rows: dict[str, BehaviourComparisonRecord],
+) -> float | None:
+    """Faultier needs long sessions and below-average skip rate."""
+    session_row = rows.get("avg_session_length_sec")
+    skip_row = rows.get("frac_instant_skip")
+    if session_row is None or skip_row is None:
+        return None
+    session_score = _percentile_extremity(float(session_row["percentile"]), "above")
+    skip_score = _percentile_extremity(float(skip_row["percentile"]), "below")
+    if session_score is None or skip_score is None:
+        return None
+    # Strength is limited by the weaker of the two traits.
+    return min(session_score, skip_score)
+
+
 def _strongest_percentile_type(
     rows: dict[str, BehaviourComparisonRecord],
 ) -> str | None:
@@ -188,6 +187,10 @@ def _strongest_percentile_type(
         if score > best_score:
             best_score = score
             best_id = type_id
+
+    faultier_score = _faultier_percentile_score(rows)
+    if faultier_score is not None and faultier_score > best_score:
+        return "faultier"
     return best_id
 
 
@@ -213,11 +216,12 @@ def _absolute_specialty_scores(
     night = _clamp01(_row_value(rows, "night_activity_frac"))
     weekend = _clamp01(_row_value(rows, "weekend_activity_frac"))
     like_rate = _clamp01(_row_value(rows, "rate_like"))
+    political = _clamp01(_row_value(rows, "frac_political_engagement"))
 
     return {
         "kolibri": skip,
-        "faultier": session,
-        "luchs": 1.0 - skip,
+        "faultier": (session + (1.0 - skip)) / 2.0,
+        "luchs": political,
         "eule": night,
         "waschbaer": weekend,
         "papagei": like_rate,
@@ -229,10 +233,10 @@ def assign_user_type(
 ) -> UserTypeRecord | None:
     """Assign a typology from comparison rows (filter-stable if unfiltered).
 
-    1. Prefer the type whose defining metric is farthest past the median
-       percentile in the expected direction (shared 0-50 scale).
-    2. If none qualify, fall back to absolute specialty scores; if the best
-       absolute score is still weak, assign Luchs.
+    1. Prefer the type whose defining metric(s) are farthest past the median
+       percentile in the expected direction (shared 0-50 scale). Faultier
+       requires both long sessions and below-average skip rate.
+    2. If none qualify, fall back to the strongest absolute within-user signal.
     """
     if not comparisons:
         return None
@@ -244,6 +248,4 @@ def assign_user_type(
 
     scores = _absolute_specialty_scores(rows)
     best_id = max(scores, key=scores.get)
-    if scores[best_id] < _SPECIALTY_THRESHOLD:
-        best_id = "luchs"
     return USER_TYPES[best_id]

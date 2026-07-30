@@ -116,6 +116,10 @@
   &--intro {
     padding-top: 0;
   }
+
+  @media (min-width: 768px) {
+    max-width: 42rem;
+  }
 }
 
 .behaviour-type-card__eyebrow {
@@ -126,9 +130,28 @@
   font-weight: var(--font-weight-600);
 }
 
+.behaviour-type-card__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: var(--space-3);
+
+  @media (min-width: 768px) {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--space-5);
+  }
+}
+
 .behaviour-type-card__media {
+  flex-shrink: 0;
   width: 11rem;
   height: 11rem;
+
+  @media (min-width: 768px) {
+    margin-bottom: 0;
+  }
 }
 
 .behaviour-type-card__image {
@@ -136,6 +159,15 @@
   height: 100%;
   object-fit: contain;
   border-radius: var(--radius-md, 12px);
+}
+
+.behaviour-type-card__copy {
+  width: 100%;
+  min-width: 0;
+
+  @media (min-width: 768px) {
+    text-align: left;
+  }
 }
 
 .behaviour-type-card__title {

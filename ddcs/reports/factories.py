@@ -13,10 +13,7 @@ from random import choice, choices, randint, random, uniform
 from ddm.participation.models import Participant
 
 from ddcs.core.types import TikTokUserData
-from ddcs.reports.behaviour_metrics import (
-    apply_sampled_reference_activity_profiles,
-    compute_behaviour_comparisons,
-)
+from ddcs.reports.behaviour_metrics import compute_behaviour_comparisons
 from ddcs.reports.config import (
     N_TOP_VIDEOS,
     NO_PARTY_KEY,
@@ -222,72 +219,76 @@ _SYNTHETIC_BEHAVIOUR_PERSONAS = (
 def _synthetic_persona_hour(persona: str) -> int:
     if persona == "eule":
         return choice([22, 23, 0, 1, 2, 3, 4, 5])
-    if persona == "luchs":
-        return randint(9, 20)
+    if persona == "waschbaer":
+        return choice([10, 11, 12, 14, 15, 16, 18, 19, 20, 21])
     return randint(8, 22)
 
 
-def _synthetic_persona_day_offset(persona: str, index: int) -> int:
-    """Spread watches over ~30 days; bias weekends for Waschbär."""
-    # 2026-05-01 is Friday → weekday = (4 + offset) % 7; Sat=5, Sun=6.
+def _synthetic_day_is_active(persona: str, day: datetime) -> bool:
+    """Most users are active on ~2/3 of days; Waschbär leans weekend."""
     if persona == "waschbaer":
-        # Prefer Sat/Sun offsets: Fri+1=Sat, Fri+2=Sun, then +7 cycles.
-        weekend_offsets = [1 + 7 * week + choice([0, 1]) for week in range(5)]
-        if random() < 0.75:
-            return choice(weekend_offsets)
-    if persona == "luchs":
-        return index % 28
-    return randint(0, 29)
+        return random() < (0.9 if day.weekday() >= 5 else 0.35)
+    if persona == "eule":
+        return random() < 0.65
+    return random() < 0.72
 
 
-def _synthetic_gap_seconds(persona: str) -> float:
-    """Gap to next watch; <1s counts as instant skip, >90s starts a new session."""
+def _synthetic_in_session_gap_seconds(persona: str) -> float:
+    """Gap to next watch within a session (<90s so the session stays open)."""
     if persona == "kolibri":
-        return uniform(0.2, 0.9) if random() < 0.85 else uniform(2.0, 8.0)
+        return uniform(0.2, 0.9) if random() < 0.85 else uniform(1.5, 8.0)
     if persona == "faultier":
-        # Long in-session dwell, occasional session breaks.
-        return uniform(12.0, 55.0) if random() < 0.9 else uniform(120.0, 300.0)
-    if persona == "luchs":
-        return uniform(2.0, 25.0) if random() < 0.85 else uniform(100.0, 200.0)
-    # Default / eule / waschbaer / papagei: mixed pacing.
+        return uniform(12.0, 55.0)
     roll = random()
     if roll < 0.25:
         return uniform(0.2, 0.9)
-    if roll < 0.85:
-        return uniform(3.0, 40.0)
-    return uniform(100.0, 240.0)
+    return uniform(2.0, 45.0)
+
+
+def _synthetic_session_length(persona: str) -> int:
+    """Videos per session — sized so daily volume looks like real donations."""
+    if persona == "kolibri":
+        return randint(50, 110)
+    if persona == "faultier":
+        return randint(35, 80)
+    if persona == "eule":
+        return randint(40, 95)
+    return randint(40, 100)
 
 
 def _synthetic_watch_history(persona: str) -> list[dict]:
-    """Build a randomised watch timeline biased toward ``persona``."""
+    """Build a dense, persona-biased watch timeline (~real donation volume)."""
     start = REPORT_FIRST_DATE_TO_INCLUDE
-    n_watches = randint(90, 140)
-    watches: list[dict] = []
-    cursor = start + timedelta(
-        days=_synthetic_persona_day_offset(persona, 0),
-        hours=_synthetic_persona_hour(persona),
-        minutes=randint(0, 40),
-    )
-    for i in range(n_watches):
-        watches.append(
-            {
-                "date": cursor,
-                "link": f"https://www.tiktok.com/@user/video/{i}",
-                "video_id": i,
-            }
-        )
-        gap = _synthetic_gap_seconds(persona)
-        if gap >= 90 or (i > 0 and i % 12 == 0):
-            # Jump forward into a new session with persona-typical timing.
-            jump_days = max(1, _synthetic_persona_day_offset(persona, i + 1) % 4)
-            cursor = cursor + timedelta(
-                days=jump_days,
-                hours=(_synthetic_persona_hour(persona) - cursor.hour) % 24,
-                minutes=randint(0, 40),
-                seconds=randint(0, 50),
-            )
-        else:
-            cursor = cursor + timedelta(seconds=gap)
+    n_calendar_days = 30
+
+    for _ in range(5):
+        watches: list[dict] = []
+        video_id = 0
+        for day_offset in range(n_calendar_days):
+            day = start + timedelta(days=day_offset)
+            if not _synthetic_day_is_active(persona, day):
+                continue
+            n_sessions = randint(2, 5)
+            for _session in range(n_sessions):
+                cursor = day + timedelta(
+                    hours=_synthetic_persona_hour(persona),
+                    minutes=randint(0, 45),
+                    seconds=randint(0, 50),
+                )
+                for _video in range(_synthetic_session_length(persona)):
+                    watches.append(
+                        {
+                            "date": cursor,
+                            "link": (f"https://www.tiktok.com/@user/video/{video_id}"),
+                            "video_id": video_id,
+                        }
+                    )
+                    video_id += 1
+                    cursor = cursor + timedelta(
+                        seconds=_synthetic_in_session_gap_seconds(persona)
+                    )
+        if len(watches) >= 200:
+            return watches
     return watches
 
 
@@ -301,19 +302,26 @@ def _synthetic_behaviour_comparisons(
     non_pol_ids = [randint(1000000, 9999999) for _ in range(20)]
     watch_history = _synthetic_watch_history(persona)
 
+    # Luchs: high share of engagements on political content.
+    if persona == "luchs" and pol_ids:
+        n_pol_likes = min(len(pol_ids), randint(12, 18))
+        n_pol_shares = min(len(pol_ids), randint(6, 10))
+    else:
+        n_pol_likes = min(10, len(pol_ids)) if pol_ids else 0
+        n_pol_shares = min(4, len(pol_ids)) if pol_ids else 0
     political_likes = (
         [
             _synthetic_engagement_record(video_id, day_offset=i % 20)
-            for i, video_id in enumerate(choices(pol_ids, k=min(10, len(pol_ids))))
+            for i, video_id in enumerate(choices(pol_ids, k=n_pol_likes))
         ]
-        if pol_ids
+        if n_pol_likes
         else []
     )
-    # Papagei: like almost everything; others: sparse likes.
+    # Papagei: like almost everything; others: sparse non-political likes.
     if persona == "papagei":
         like_ids = [w["video_id"] for w in watch_history if random() < 0.85]
     elif persona == "luchs":
-        like_ids = [w["video_id"] for w in watch_history if random() < 0.12]
+        like_ids = list(non_pol_ids[: randint(1, 3)])
     else:
         like_ids = list(non_pol_ids[: randint(3, 10)])
     other_likes = [
@@ -323,13 +331,13 @@ def _synthetic_behaviour_comparisons(
     political_shares = (
         [
             _synthetic_engagement_record(video_id, day_offset=i % 15)
-            for i, video_id in enumerate(choices(pol_ids, k=min(4, len(pol_ids))))
+            for i, video_id in enumerate(choices(pol_ids, k=n_pol_shares))
         ]
-        if pol_ids
+        if n_pol_shares
         else []
     )
 
-    comparisons = compute_behaviour_comparisons(
+    return compute_behaviour_comparisons(
         TikTokUserData(
             watch_history=watch_history,
             liked_videos=political_likes + other_likes,
@@ -337,9 +345,6 @@ def _synthetic_behaviour_comparisons(
         ),
         political_video_ids or frozenset(),
     )
-    # Ridge charts: sample the synthetic user's curves from one real CSV
-    # participant so comparisons look realistic (same source as reference).
-    return apply_sampled_reference_activity_profiles(comparisons)
 
 
 def get_synthetic_report_statistics(
