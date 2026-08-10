@@ -76,6 +76,7 @@ THIRD_PARTY_APPS = [
     "rest_framework.authtoken",
     "django_filters",
     "drf_spectacular",
+    "drf_spectacular_sidecar",
     # Admin 2FA
     "django_otp",
     "django_otp.plugins.otp_static",
@@ -580,4 +581,7 @@ SPECTACULAR_SETTINGS = {
     "DESCRIPTION": "API for TikTok video metadata",
     "VERSION": "1.0",
     "SERVE_URLCONF": "config.api_urls",
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }
