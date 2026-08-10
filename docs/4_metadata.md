@@ -165,7 +165,7 @@ Semantics:
 
 ### Per-object monitoring controls
 
-`TikTokUser` and `TikTokHashtag` inherit `APIMonitoredMixin`, which adds:
+`TikTokUser`, `Keyword` and `TikTokHashtag` inherit `APIMonitoredMixin`, which adds:
 
 | Field                     | Purpose                                                                                                 |
 |---------------------------|---------------------------------------------------------------------------------------------------------|
@@ -175,6 +175,12 @@ Semantics:
 Coverage per `(item, target_date)` is tracked in `SyncAttempt`. 
 "Was this item synced for date D?" is answered by `SyncAttempt.filter(<item>, target_date=D,
 status=SUCCESS).exists()`.
+
+> **Note:**
+> Hashtags have the monitoring controls, because the initial version of the application
+> monitored by hashtag. This has since been changed to be monitored explicitly by
+> _Keyword_, because the ResearchAPI is queried by looking for the keyword in the 
+> description, making monitoring by Hashtag misleading.
 
 ### The sync tasks
 

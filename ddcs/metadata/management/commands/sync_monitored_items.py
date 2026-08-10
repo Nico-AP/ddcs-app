@@ -36,7 +36,8 @@ from typing import TYPE_CHECKING
 
 from django.core.management.base import BaseCommand, CommandError
 
-from ddcs.metadata.models import DataOrigins, TikTokHashtag, TikTokUser
+from ddcs.metadata.models import DataOrigins, Keyword, TikTokUser
+from ddcs.metadata.research_api.utils.backfill_keywords import backfill_keywords
 
 if TYPE_CHECKING:
     from django.core.management import CommandParser
@@ -130,8 +131,8 @@ class Command(BaseCommand):
             self._sync_kind(
                 "keywords",
                 keywords_file,
-                TikTokHashtag,
-                strip_hash=True,
+                Keyword,
+                strip_hash=False,
                 apply=apply,
             )
             did_anything = True
@@ -169,6 +170,23 @@ class Command(BaseCommand):
         if apply and not plan.is_noop():
             _apply_plan(model, plan)
             self.stdout.write(self.style.SUCCESS(f"Applied changes for {label}."))
+
+    def _backfill_new_keywords(self, plan: Plan) -> None:
+        newly_active_names = [e.name for e in plan.to_create] + [
+            e.name for e, _ in plan.to_reenable
+        ]
+        if not newly_active_names:
+            return
+
+        keywords = list(Keyword.objects.filter(name__in=newly_active_names))
+        self.stdout.write(
+            self.style.HTTP_INFO(
+                f"  Backfilling {len(keywords)} newly-monitored keyword(s) "
+                f"against existing videos..."
+            )
+        )
+        backfill_keywords(keywords)
+        self.stdout.write(self.style.SUCCESS("  Backfill complete."))
 
 
 def _read_entries(path: Path, *, strip_hash: bool) -> list[Entry]:
