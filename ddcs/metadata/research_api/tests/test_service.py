@@ -7,6 +7,7 @@ from tiktok_metadata_kit.research_api import ResearchAPIRateLimitExceededError
 
 from ddcs.metadata.models import (
     DataOrigins,
+    Keyword,
     ResearchAPIQueryTracker,
     SyncAttempt,
     TikTokHashtag,
@@ -366,8 +367,8 @@ def _monitored_user(name: str, priority: int = 0) -> TikTokUser:
     )
 
 
-def _monitored_hashtag(name: str, priority: int = 0) -> TikTokHashtag:
-    return TikTokHashtag.objects.create(
+def _monitored_keyword(name: str, priority: int = 0) -> Keyword:
+    return Keyword.objects.create(
         name=name, monitor_api=True, monitoring_priority_api=priority
     )
 
@@ -610,14 +611,14 @@ class DailySyncTasksTest(TestCase):
         )
 
     @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
-    def test_daily_sync_keywords_uses_hashtag_fk_on_attempts(self, cls_mock):
+    def test_daily_sync_keywords_uses_keyword_fk_on_attempts(self, cls_mock):
         _configure_service_mock(cls_mock)
-        _monitored_hashtag("k1")
+        _monitored_keyword("k1")
 
         daily_sync_keywords(target_date="2025-06-10")
 
         cls_mock.return_value.get_videos_by_keywords.assert_called_once()
-        attempt = SyncAttempt.objects.get(hashtag__name="k1")
+        attempt = SyncAttempt.objects.get(keyword__name="k1")
         self.assertEqual(attempt.status, SyncAttempt.Status.SUCCESS)
         self.assertIsNone(attempt.user_id)
 
@@ -665,7 +666,7 @@ class BackfillMissingSyncsTest(TestCase):
         tz_mock.now.side_effect = lambda: datetime(2025, 6, 5, tzinfo=UTC)
         redis_cls.from_url.return_value = self._fake_redis(self._fake_lock())
         _monitored_user("u1")
-        _monitored_hashtag("k1")
+        _monitored_keyword("k1")
 
         backfill_missing_syncs()
 
@@ -705,7 +706,7 @@ class BackfillMissingSyncsTest(TestCase):
         tz_mock.now.side_effect = lambda: datetime(2025, 6, 5, tzinfo=UTC)
         redis_cls.from_url.return_value = self._fake_redis(self._fake_lock())
         _monitored_user("u1")
-        _monitored_hashtag("k1")
+        _monitored_keyword("k1")
 
         backfill_missing_syncs()
 

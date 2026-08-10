@@ -1,15 +1,17 @@
 argon2-cffi==25.1.0  # https://github.com/hynek/argon2_cffi
 Authlib==1.7.2  # https://github.com/authlib/authlib
 celery[redis]==5.6.3  # https://github.com/celery/celery
-django==5.2.15  # https://www.djangoproject.com/ / https://github.com/django/django (stay with 5.2.x - LTS until 2028)
+django==5.2.17  # https://www.djangoproject.com/ / https://github.com/django/django (stay with 5.2.x - LTS until 2028)
 django-celery-beat==2.9.0  # https://github.com/celery/django-celery-beat/
 django-csp==4.0  # https://django-csp.readthedocs.io/en/latest/installation.html
 django-ddm==2.2.0b3  # https://github.com/uzh/ddm
 django-fernet-encrypted-fields==0.4.0  # https://github.com/jazzband/django-fernet-encrypted-fields
+django-filter==26.1  # https://github.com/carltongibson/django-filter
 django-htmx==1.27.0  # https://github.com/adamchainz/django-htmx
 django-import-export==4.4.1  # https://github.com/django-import-export/django-import-export
 django-structlog==10.1.0  # https://github.com/jrobichaud/django-structlog/
 django-two-factor-auth==1.18.1  # https://github.com/jazzband/django-two-factor-auth
+drf-spectacular==0.30.0  # https://github.com/tfranzel/drf-spectacular
 environs[django]==15.0.1  # https://pypi.org/project/environs/
 plotly==6.8.0  # https://github.com/plotly/plotly.py
 requests==2.34.2  # https://github.com/psf/requests

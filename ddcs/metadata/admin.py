@@ -8,6 +8,7 @@ from import_export.resources import ModelResource
 
 from ddcs.metadata.models import (
     DataOrigins,
+    Keyword,
     ResearchAPIQueryTracker,
     SyncAttempt,
     TikTokHashtag,
@@ -208,6 +209,19 @@ class TikTokHashtagAdmin(admin.ModelAdmin):
     search_fields = ("name", "id_tiktok")
     readonly_fields = ("created_at", "updated_at")
     inlines = (APIHashtagInfosInline, SyncAttemptHashtagInline)
+
+
+@admin.register(Keyword)
+class KeywordAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "created_at",
+        "updated_at",
+        "monitor_api",
+        "monitoring_priority_api",
+    )
+    search_fields = ("name",)
+    readonly_fields = ("created_at", "updated_at")
 
 
 class TrackerOriginFilter(admin.SimpleListFilter):

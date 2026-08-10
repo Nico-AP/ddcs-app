@@ -13,9 +13,9 @@ from redis import Redis
 from tiktok_metadata_kit.research_api import ResearchAPIRateLimitExceededError
 
 from ddcs.metadata.models import (
+    Keyword,
     ResearchAPIQueryTracker,
     SyncAttempt,
-    TikTokHashtag,
     TikTokUser,
 )
 from ddcs.metadata.research_api.service import ResearchAPIService
@@ -58,13 +58,13 @@ class _SyncTargetConfig:
     """Static per-sync_target config that the shared runner needs.
 
     Two sync targets are supported: TikTok users (queried by username) and
-    TikTok hashtags used as keyword targets. Both write SyncAttempt rows
+    Keywords. Both write SyncAttempt rows
     into the same table via the FK named in ``sync_attempt_field``.
     """
 
     task_name: str
-    model: type[TikTokUser] | type[TikTokHashtag]
-    sync_attempt_field: str  # "user" or "hashtag"
+    model: type[TikTokUser] | type[Keyword]
+    sync_attempt_field: str  # "user" or "keyword"
     service_method_name: str
 
 
@@ -76,8 +76,8 @@ _USER_SYNC_TARGET_CONFIG = _SyncTargetConfig(
 )
 _KEYWORD_SYNC_TARGET_CONFIG = _SyncTargetConfig(
     task_name="daily_sync_keywords",
-    model=TikTokHashtag,
-    sync_attempt_field="hashtag",
+    model=Keyword,
+    sync_attempt_field="keyword",
     service_method_name="get_videos_by_keywords",
 )
 
