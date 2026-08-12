@@ -7,6 +7,8 @@ from plotly import graph_objects as go
 from ddcs.reports.behaviour_metrics import (
     BEHAVIOUR_CHART_METRICS,
     BEHAVIOUR_CHART_SLIDES,
+    _format_hours_duration,
+    _format_seconds_duration,
 )
 from ddcs.reports.config import NO_PARTY_KEY, PARTIES_ORDER
 from ddcs.reports.plots.utils import (
@@ -41,8 +43,19 @@ _BEHAVIOUR_Y_AXIS_RANGE = [
 ]
 _BEHAVIOUR_USER_COLOR = "#0cc4b6"
 _BEHAVIOUR_MEAN_COLOR = "#ff587a"
+# Darker on-brand text (matches --text-accent / --text-accent-alt).
+_BEHAVIOUR_USER_TEXT_COLOR = "#058076"
+_BEHAVIOUR_MEAN_TEXT_COLOR = "#b3004e"
 _SINGLE_METRIC_CHART_HEIGHT = 112
+# Ridge + companion bar should match a three-bar slide: ridge takes two chart slots.
+_RIDGE_CHART_HEIGHT = _SINGLE_METRIC_CHART_HEIGHT * 2
 _PLOT_CORNER_RADIUS = 4
+_HOURS = list(range(24))
+_PEAK_HOUR_TICK_HOURS = [0, 6, 12, 18, 23]
+_WEEKDAYS = list(range(7))
+_WEEKDAY_TICK_LABELS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+_HOURS_PER_DAY = len(_HOURS)
+_WEEKDAYS_PER_WEEK = len(_WEEKDAYS)
 
 _FRACTION_METRICS = frozenset(
     {
@@ -57,14 +70,14 @@ _FRACTION_METRICS = frozenset(
 
 def _highlight_user_value(value_display: str) -> str:
     return (
-        f'<span style="color: {_BEHAVIOUR_USER_COLOR}; font-weight: 600;">'
+        f'<span style="color: {_BEHAVIOUR_USER_TEXT_COLOR}; font-weight: 600;">'
         f"{value_display}</span>"
     )
 
 
 def _highlight_mean_value(value_display: str) -> str:
     return (
-        f'<span style="color: {_BEHAVIOUR_MEAN_COLOR}; font-weight: 600;">'
+        f'<span style="color: {_BEHAVIOUR_MEAN_TEXT_COLOR}; font-weight: 600;">'
         f"{value_display}</span>"
     )
 
@@ -73,16 +86,25 @@ _USER_SUBTITLE_SENTENCES: dict[str, str] = {
     "avg_session_length_sec": ("Deine TikTok-Sessions dauern im Schnitt {value}."),
     "avg_videos_per_session": ("Pro Session schaust du im Schnitt {value} Videos."),
     "avg_active_hours_per_day": (
-        "An Tagen, an denen du TikTok nutzt, bist du im Schnitt {value} Stunden aktiv."
+        "An Tagen, an denen du TikTok nutzt, bist du im Schnitt {value} aktiv."
     ),
     "weekend_activity_frac": (
-        "{value} deiner TikTok-Zeit verbringst du am Wochenende."
+        "Das heißt, {value} deiner TikTok-Zeit verbringst du am Wochenende."
     ),
-    "night_activity_frac": ("{value} deiner Videos schaust du nachts (22-6 Uhr)."),
+    "night_activity_frac": (
+        "Das heißt, {value} deiner Videos schaust du nachts (22-6 Uhr)."
+    ),
     "peak_activity_hour": (
-        "Deine aktivste Stunde ist {hour}. "
-        "{same_frac} der Teilnehmenden nutzen TikTok am häufigsten "
-        "zur gleichen Stunde, {other_frac} zu einer anderen Uhrzeit."
+        "So viele Videos schaust "
+        '<span style="color: {_user}; font-weight: 600;">Du</span> '
+        "über den Tag im Durchschnitt im Vergleich zu "
+        '<span style="color: {_mean}; font-weight: 600;">Anderen</span>.'
+    ),
+    "weekday_active_hours": (
+        "So viele Stunden verbringst "
+        '<span style="color: {_user}; font-weight: 600;">Du</span> '
+        "an den Wochentagen im Schnitt auf TikTok im Vergleich zu "
+        '<span style="color: {_mean}; font-weight: 600;">Anderen</span>.'
     ),
     "frac_instant_skip": ("Bei {value} der Videos scrollst du direkt weiter."),
     "rate_like": ("{value} der Videos, die du anschaust, likst du."),
@@ -94,16 +116,12 @@ _USER_SUBTITLE_SENTENCES: dict[str, str] = {
 
 
 def _row_user_sentence(row: BehaviourComparisonRecord) -> str:
-    if row["metric"] == "peak_activity_hour":
+    if row["metric"] in {"peak_activity_hour", "weekday_active_hours"}:
         template = _USER_SUBTITLE_SENTENCES[row["metric"]]
-        hour = _highlight_user_value(row["value_display"])
-        same_frac = _highlight_user_value(
-            row.get("chart_user_value_display", row["value_display"])
+        return template.format(
+            _user=_BEHAVIOUR_USER_TEXT_COLOR,
+            _mean=_BEHAVIOUR_MEAN_TEXT_COLOR,
         )
-        other_frac = _highlight_mean_value(
-            row.get("chart_reference_value_display", row["reference_mean_display"])
-        )
-        return template.format(hour=hour, same_frac=same_frac, other_frac=other_frac)
 
     template = _USER_SUBTITLE_SENTENCES.get(
         row["metric"],
@@ -144,8 +162,6 @@ def _behaviour_hover_value_display(metric: str, value_display: str) -> str:
         return value_display
     if metric == "avg_videos_per_session":
         return f"{value_display}\u00a0Videos"
-    if metric == "avg_active_hours_per_day":
-        return f"{value_display}\u00a0Stunden"
     return value_display
 
 
@@ -159,9 +175,25 @@ def _comparison_chart_values(
             row.get("chart_user_value_display", row["value_display"]),
             row.get("chart_reference_value_display", row["reference_mean_display"]),
         )
+    user_value = row["value"]
+    mean_value = row["reference_mean"]
+    if row["metric"] == "avg_active_hours_per_day":
+        return (
+            user_value,
+            mean_value,
+            _format_hours_duration(user_value, short=True),
+            _format_hours_duration(mean_value, short=True),
+        )
+    if row["metric"] == "avg_session_length_sec":
+        return (
+            user_value,
+            mean_value,
+            _format_seconds_duration(user_value, short=True),
+            _format_seconds_duration(mean_value, short=True),
+        )
     return (
-        row["value"],
-        row["reference_mean"],
+        user_value,
+        mean_value,
         row["value_display"],
         row["reference_mean_display"],
     )
@@ -253,7 +285,296 @@ def _behaviour_mean_hover_data(row: BehaviourComparisonRecord) -> tuple[str, str
     )
 
 
+def _series_argmax(series: list[float]) -> int:
+    return max(range(len(series)), key=lambda index: series[index])
+
+
+def _add_ridge_max_label(
+    fig: go.Figure,
+    *,
+    series: list[float],
+    x_values: list[int],
+    color: str,
+    xshift: int = 0,
+) -> None:
+    if not series or max(series) <= 0:
+        return
+    peak_index = _series_argmax(series)
+    fig.add_annotation(
+        x=x_values[peak_index],
+        y=series[peak_index],
+        text=f"{series[peak_index]:.0f}",
+        showarrow=False,
+        xshift=xshift,
+        yshift=12,
+        xanchor="center",
+        yanchor="bottom",
+        font={"color": color, "size": 12, "family": PLOT_FONT_FAMILY},
+    )
+
+
+def _ridge_y_axis_range(
+    series_values: list[float],
+    *,
+    tighten: bool = False,
+) -> list[float]:
+    """Y-axis range for ridge charts.
+
+    With ``tighten``, zoom to just under the series minimum through the
+    series maximum (small top pad only so peak labels stay visible).
+    """
+    if not series_values:
+        return [0.0, 1.0]
+    series_max = max(series_values)
+    if series_max <= 0:
+        return [0.0, 1.0]
+    if not tighten:
+        return [0.0, series_max * 1.28]
+    series_min = min(series_values)
+    span = max(series_max - series_min, series_max * 0.05, 0.05)
+    below = max(span * 0.2, series_min * 0.05, 0.05)
+    y_lo = max(0.0, series_min - below)
+    # End at the data maximum; tiny headroom keeps max-value labels inside.
+    y_hi = series_max + max(span * 0.08, 0.02)
+    if y_hi <= y_lo:
+        y_hi = y_lo + 0.1
+    return [y_lo, y_hi]
+
+
+def _build_dual_ridge_chart(  # noqa: PLR0913
+    *,
+    user_series: list[float],
+    reference_series: list[float] | None,
+    x_values: list[int],
+    tick_vals: list[int],
+    tick_text: list[str],
+    point_labels: list[str],
+    value_unit: str,
+    marker_x: int | None = None,
+    tighten_y_axis: bool = False,
+    y_tickformat: str = ".0f",
+) -> str | None:
+    """Filled dual ridge (user + optional reference) for behaviour slides."""
+    if not user_series or len(point_labels) != len(user_series):
+        return None
+
+    has_reference = bool(reference_series and len(reference_series) == len(user_series))
+    series_values = list(user_series)
+    if has_reference and reference_series is not None:
+        series_values.extend(reference_series)
+    y_range = _ridge_y_axis_range(series_values, tighten=tighten_y_axis)
+
+    hover_rows: list[list[str | float]] = []
+    for index, label in enumerate(point_labels):
+        user_value = user_series[index]
+        if has_reference and reference_series is not None:
+            hover_rows.append([label, user_value, reference_series[index]])
+        else:
+            hover_rows.append([label, user_value])
+
+    fig = go.Figure()
+    if has_reference and reference_series is not None:
+        fig.add_trace(
+            go.Scatter(
+                x=x_values,
+                y=reference_series,
+                mode="lines",
+                name="Andere",
+                line={
+                    "width": 1.5,
+                    "color": _BEHAVIOUR_MEAN_COLOR,
+                    "shape": "spline",
+                    "smoothing": 0.6,
+                },
+                fill="tozeroy",
+                fillcolor=hex_to_rgba(_BEHAVIOUR_MEAN_COLOR, alpha=0.22),
+                hoverinfo="skip",
+            )
+        )
+    fig.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=user_series,
+            mode="lines",
+            name="Du",
+            line={
+                "width": 1.5,
+                "color": _BEHAVIOUR_USER_COLOR,
+                "shape": "spline",
+                "smoothing": 0.6,
+            },
+            fill="tozeroy",
+            fillcolor=hex_to_rgba(_BEHAVIOUR_USER_COLOR, alpha=0.35),
+            hoverinfo="skip",
+        )
+    )
+    if marker_x is not None and 0 <= marker_x < len(user_series):
+        fig.add_trace(
+            go.Scatter(
+                x=[marker_x],
+                y=[user_series[marker_x]],
+                mode="markers",
+                name="Peak",
+                marker={
+                    "size": 9,
+                    "color": _BEHAVIOUR_USER_TEXT_COLOR,
+                    "line": {"width": 1.5, "color": "white"},
+                },
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    user_xshift = 0
+    reference_xshift = 0
+    if has_reference and reference_series is not None:
+        user_peak = _series_argmax(user_series)
+        reference_peak = _series_argmax(reference_series)
+        if abs(user_peak - reference_peak) <= 1:
+            user_xshift = -10
+            reference_xshift = 10
+        _add_ridge_max_label(
+            fig,
+            series=reference_series,
+            x_values=x_values,
+            color=_BEHAVIOUR_MEAN_TEXT_COLOR,
+            xshift=reference_xshift,
+        )
+    _add_ridge_max_label(
+        fig,
+        series=user_series,
+        x_values=x_values,
+        color=_BEHAVIOUR_USER_TEXT_COLOR,
+        xshift=user_xshift,
+    )
+
+    if has_reference:
+        hovertemplate = (
+            "<b>%{customdata[0]}</b><br>"
+            f"Du: %{{customdata[1]:.2f}} {value_unit}<br>"
+            f"Andere: %{{customdata[2]:.2f}} {value_unit}"
+            "<extra></extra>"
+        )
+    else:
+        hovertemplate = (
+            "<b>%{customdata[0]}</b><br>"
+            f"Du: %{{customdata[1]:.2f}} {value_unit}"
+            "<extra></extra>"
+        )
+
+    fig.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=user_series,
+            mode="markers",
+            name="hover",
+            marker={
+                "size": 14,
+                "color": "rgba(0, 0, 0, 0)",
+                "line": {"width": 0},
+            },
+            customdata=hover_rows,
+            hovertemplate=hovertemplate,
+            showlegend=False,
+        )
+    )
+
+    fig.update_layout(
+        xaxis={
+            "title": "",
+            "range": [x_values[0] - 0.5, x_values[-1] + 0.5],
+            "tickmode": "array",
+            "tickvals": tick_vals,
+            "ticktext": tick_text,
+            "fixedrange": True,
+            "automargin": False,
+            "showgrid": False,
+            "zeroline": False,
+            "tickfont": {"size": 11, "color": "black"},
+        },
+        yaxis={
+            "title": "",
+            "range": y_range,
+            "fixedrange": True,
+            "automargin": False,
+            "showticklabels": True,
+            "ticks": "",
+            "ticklabelposition": "inside",
+            "nticks": 4,
+            "tickformat": y_tickformat,
+            "tickfont": {"size": 11, "color": "black"},
+            "showgrid": False,
+            "zeroline": False,
+        },
+        dragmode=False,
+        showlegend=has_reference,
+        legend={
+            "orientation": "h",
+            "x": 0.5,
+            "xanchor": "center",
+            "y": 1.1,
+            "yanchor": "bottom",
+            "font": {"size": 11},
+        },
+        autosize=True,
+        width=None,
+        height=_RIDGE_CHART_HEIGHT,
+        font={"size": 13, "color": "black", "family": PLOT_FONT_FAMILY},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin={"l": 8, "r": 8, "t": 4, "b": 28},
+        hovermode="closest",
+    )
+    return create_deferred_plot_html(fig, config=PLOT_CONFIG)
+
+
+def _build_peak_hour_ridge_chart(row: BehaviourComparisonRecord) -> str | None:
+    """Ridge-style density of mean videos watched per clock hour."""
+    hourly = row.get("hourly_watch_means")
+    if not hourly or len(hourly) != _HOURS_PER_DAY:
+        return None
+    return _build_dual_ridge_chart(
+        user_series=hourly,
+        reference_series=row.get("reference_hourly_watch_means"),
+        x_values=_HOURS,
+        tick_vals=_PEAK_HOUR_TICK_HOURS,
+        tick_text=[f"{hour}:00" for hour in _PEAK_HOUR_TICK_HOURS],
+        point_labels=[f"{hour}:00 Uhr" for hour in _HOURS],
+        value_unit="Videos (⌀)",
+        marker_x=round(row["value"]),
+    )
+
+
+def _build_weekday_active_hours_ridge_chart(
+    row: BehaviourComparisonRecord,
+) -> str | None:
+    """Ridge-style mean watch hours by weekday."""
+    weekdays = row.get("weekday_active_hours")
+    if not weekdays or len(weekdays) != _WEEKDAYS_PER_WEEK:
+        return None
+    return _build_dual_ridge_chart(
+        user_series=weekdays,
+        reference_series=row.get("reference_weekday_active_hours"),
+        x_values=_WEEKDAYS,
+        tick_vals=_WEEKDAYS,
+        tick_text=_WEEKDAY_TICK_LABELS,
+        point_labels=_WEEKDAY_TICK_LABELS,
+        value_unit="Stunden (⌀)",
+        tighten_y_axis=True,
+        y_tickformat=".1f",
+    )
+
+
 def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
+    if row["metric"] == "peak_activity_hour":
+        ridge = _build_peak_hour_ridge_chart(row)
+        if ridge is not None:
+            return ridge
+    if row["metric"] == "weekday_active_hours":
+        ridge = _build_weekday_active_hours_ridge_chart(row)
+        if ridge is not None:
+            return ridge
+
     user_value, mean_value, user_display, mean_display = _comparison_chart_values(row)
     axis_max = _metric_axis_max(
         user_value,
@@ -265,14 +586,14 @@ def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
     fig = go.Figure()
     _add_metric_value_bars(fig, user_value, mean_value)
     _add_bar_end_label(
-        fig, user_value, _USER_BAR_Y, user_display, _BEHAVIOUR_USER_COLOR
+        fig, user_value, _USER_BAR_Y, user_display, _BEHAVIOUR_USER_TEXT_COLOR
     )
     _add_bar_end_label(
         fig,
         mean_value,
         _MEAN_BAR_Y,
         mean_display,
-        _BEHAVIOUR_MEAN_COLOR,
+        _BEHAVIOUR_MEAN_TEXT_COLOR,
     )
 
     user_hover_x = user_value / 2 if user_value > 0 else 0
@@ -341,7 +662,7 @@ def _build_single_metric_chart(row: BehaviourComparisonRecord) -> str | None:
 
 def get_behaviour_profile_rows(
     comparisons: list[BehaviourComparisonRecord],
-) -> list[dict[str, str]]:
+) -> list[dict[str, str | None]]:
     """One mini-chart and colloquial title per behaviour chart metric."""
     if not comparisons:
         return []
@@ -355,13 +676,13 @@ def get_behaviour_profile_rows(
 
 def get_behaviour_profile_slides(
     comparisons: list[BehaviourComparisonRecord],
-) -> list[dict[str, list[dict[str, str]]]]:
+) -> list[dict[str, list[dict[str, str | None]]]]:
     """Behaviour charts grouped into carousel slides."""
     if not comparisons:
         return []
 
     by_metric = {row["metric"]: row for row in comparisons}
-    slides: list[dict[str, list[dict[str, str]]]] = []
+    slides: list[dict[str, list[dict[str, str | None]]]] = []
     for slide_metrics in BEHAVIOUR_CHART_SLIDES:
         rows = [
             _behaviour_profile_row(by_metric[metric])
@@ -373,8 +694,9 @@ def get_behaviour_profile_slides(
     return slides
 
 
-def _behaviour_profile_row(row: BehaviourComparisonRecord) -> dict[str, str]:
+def _behaviour_profile_row(row: BehaviourComparisonRecord) -> dict[str, str | None]:
     return {
+        "metric": row["metric"],
         "chart_html": _build_single_metric_chart(row),
         "title_html": _row_title_text(row),
     }
@@ -446,30 +768,87 @@ def get_party_distribution_plot_user(
     return {"html": create_plot_html(fig)}
 
 
-def get_temporal_party_distribution_plot_user(
+def _temporal_party_series(
     daily_party_counts: list[DailyPartyCountRecord],
-) -> dict:
-    """Create daily watched videos visualization with stacked area chart."""
+) -> tuple[list[str], dict[str, dict[str, int]]] | None:
+    """Dates and per-party daily counts, excluding non-party political videos."""
     relevant_data = [c for c in daily_party_counts if c["party"] != NO_PARTY_KEY]
-
     if not relevant_data:
-        return {"html": None}
+        return None
 
-    # Build per-party data lookup.
     party_data: dict[str, dict[str, int]] = {}
     for record in relevant_data:
         party_data.setdefault(record["party"], {})[record["date"]] = record["count"]
 
-    # Get all dates
     min_date = min(r["date"] for r in relevant_data)
     max_date = max(r["date"] for r in relevant_data)
-
     start = date.fromisoformat(min_date)
     end = date.fromisoformat(max_date)
     all_dates = [
         (start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)
     ]
+    return all_dates, party_data
 
+
+def _apply_temporal_party_axes(fig: go.Figure, all_dates: list[str]) -> None:
+    fig.update_xaxes(
+        tickmode="array",
+        tickvals=temporal_plot_xaxis_tickvals(all_dates),
+        hoverformat="%d.%m.%Y",
+        showgrid=True,
+        gridwidth=1,
+        gridcolor="gray",
+        zeroline=True,
+        zerolinewidth=1,
+        zerolinecolor="gray",
+        tickangle=45,
+        tickformat="%d.%m",
+        tickfont={"size": 20, "color": "black"},
+        title_font={"size": 20},
+    )
+    fig.update_yaxes(
+        automargin=True,
+        showgrid=True,
+        gridwidth=1,
+        gridcolor="gray",
+        zeroline=True,
+        zerolinewidth=1,
+        zerolinecolor="gray",
+        tickfont={"size": 20, "color": "black"},
+        title_font={"size": 1},
+        title_standoff=0,
+    )
+
+
+def _temporal_party_layout() -> dict[str, Any]:
+    return {
+        "xaxis_title": "Datum",
+        "yaxis_title": "",
+        "hovermode": "x unified",
+        "dragmode": False,
+        "showlegend": True,
+        "legend": TEMPORAL_PARTY_PLOT_LEGEND,
+        "autosize": True,
+        "height": TEMPORAL_PLOT_HEIGHT,
+        "minreducedwidth": 500,
+        "font": {"size": 25, "color": "black", "family": PLOT_FONT_FAMILY},
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
+        "hoverdistance": 100,
+        "hoverlabel": {"namelength": 0},
+    }
+
+
+def get_temporal_party_distribution_plot_user(
+    daily_party_counts: list[DailyPartyCountRecord],
+) -> dict:
+    """Create daily watched videos visualization with stacked area chart."""
+    series = _temporal_party_series(daily_party_counts)
+    if series is None:
+        return {"html": None}
+
+    all_dates, party_data = series
     fig = go.Figure()
 
     for party in reversed(PARTIES_ORDER):
@@ -495,51 +874,6 @@ def get_temporal_party_distribution_plot_user(
             )
         )
 
-    fig.update_layout(
-        xaxis_title="Datum",
-        yaxis_title="",
-        hovermode="x unified",
-        dragmode=False,
-        showlegend=True,
-        legend=TEMPORAL_PARTY_PLOT_LEGEND,
-        autosize=True,
-        height=TEMPORAL_PLOT_HEIGHT,
-        minreducedwidth=500,
-        font={"size": 25, "color": "black", "family": PLOT_FONT_FAMILY},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        hoverdistance=100,
-        hoverlabel={"namelength": 0},
-    )
-
-    fig.update_xaxes(
-        tickmode="array",
-        tickvals=temporal_plot_xaxis_tickvals(all_dates),
-        hoverformat="%d.%m.%Y",
-        showgrid=True,
-        gridwidth=1,
-        gridcolor="gray",
-        zeroline=True,
-        zerolinewidth=1,
-        zerolinecolor="gray",
-        tickangle=45,
-        tickformat="%d.%m",
-        tickfont={"size": 20, "color": "black"},
-        title_font={"size": 20},
-    )
-
-    fig.update_yaxes(
-        automargin=True,
-        showgrid=True,
-        gridwidth=1,
-        gridcolor="gray",
-        zeroline=True,
-        zerolinewidth=1,
-        zerolinecolor="gray",
-        tickfont={"size": 20, "color": "black"},
-        title_font={"size": 1},
-        title_standoff=0,
-    )
-
+    fig.update_layout(**_temporal_party_layout())
+    _apply_temporal_party_axes(fig, all_dates)
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}

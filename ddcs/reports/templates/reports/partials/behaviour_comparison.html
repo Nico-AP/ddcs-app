@@ -1,7 +1,13 @@
 <div class="report-block">
   <h2 class="h4 mb-3">Dein TikTok-Nutzungsprofil</h2>
+  <p class="text-muted">
+    Seit dem {{ start_date|date:"j.n.Y" }} hast du insgesamt
+    <span class="report-highlight">{{ n_seen_total }}</span>
+    {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %} auf TikTok
+    angesehen.{% include "reports/partials/viewed_info_trigger.html" %}
+  </p>
   <p class="text-muted mb-4">
-    So nutzt <span class="behaviour-profile-user-label">Du</span> TikTok im Vergleich zu <span class="behaviour-profile-mean-label">Anderen</span> Teilnehmenden.
+    Dabei hast <span class="behaviour-profile-user-label">Du</span> TikTok im Vergleich zu <span class="behaviour-profile-mean-label">Anderen</span> Teilnehmenden so genutzt.
   </p>
 
   {% if behaviour_comparisons %}
@@ -9,7 +15,8 @@
       {% include "reports/partials/behaviour_profile_content.html" %}
     </div>
 
-    <aside class="behaviour-comparison-filters position-relative" aria-label="Vergleichsgruppe filtern">
+    <aside class="behaviour-comparison-filters position-relative"
+           aria-label="Vergleichsgruppe filtern">
       {% include "reports/partials/behaviour_comparison_filters.html" %}
     </aside>
 
@@ -17,7 +24,11 @@
       {% include "reports/partials/behaviour_chart_info_trigger.html" %}
     </p>
     {% include "reports/partials/behaviour_chart_info_modal.html" %}
+    {% include "reports/partials/session_info_modal.html" %}
+    {% include "reports/partials/instant_skip_info_modal.html" %}
+    {% include "reports/partials/gender_filter_info_modal.html" %}
   {% endif %}
+  {% include "reports/partials/viewed_info_modal.html" %}
 </div>
 
 <hr />

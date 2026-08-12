@@ -6,6 +6,7 @@ from collections import defaultdict
 from datetime import date, datetime
 from functools import lru_cache
 from itertools import pairwise
+from random import choice
 from typing import Literal, TypedDict
 
 from ddcs.core.types import LikedVideoRecord, TikTokUserData, WatchHistoryRecord
@@ -37,12 +38,13 @@ BEHAVIOUR_CHART_METRICS: list[str] = [
     "avg_active_hours_per_day",
     "avg_videos_per_session",
     "avg_session_length_sec",
-    "weekend_activity_frac",
-    "night_activity_frac",
-    "peak_activity_hour",
     "frac_instant_skip",
     "rate_like",
     "frac_political_engagement",
+    "peak_activity_hour",
+    "night_activity_frac",
+    "weekday_active_hours",
+    "weekend_activity_frac",
 ]
 
 # Metrics grouped into carousel slides (each inner list = one slide).
@@ -53,14 +55,17 @@ BEHAVIOUR_CHART_SLIDES: list[list[str]] = [
         "avg_session_length_sec",
     ],
     [
-        "weekend_activity_frac",
-        "night_activity_frac",
-        "peak_activity_hour",
-    ],
-    [
         "frac_instant_skip",
         "rate_like",
         "frac_political_engagement",
+    ],
+    [
+        "peak_activity_hour",
+        "night_activity_frac",
+    ],
+    [
+        "weekday_active_hours",
+        "weekend_activity_frac",
     ],
 ]
 
@@ -71,6 +76,7 @@ RADAR_LABELS: dict[str, str] = {
     "weekend_activity_frac": ("Anteil TikTok-Zeit am Wochenende"),
     "night_activity_frac": "Anteil TikTok-Zeit nachts",
     "peak_activity_hour": "Aktivste Nutzungsstunde",
+    "weekday_active_hours": "Watch-Zeit nach Wochentag",
     "frac_instant_skip": ("Anteil Instant-Skips"),
     "rate_like": "Anteil gelikter Videos",
     "frac_political_engagement": ("Anteil politische Interaktionen"),
@@ -83,6 +89,7 @@ METRIC_LABELS: dict[str, str] = {
     "weekend_activity_frac": "Anteil Wochenend-Wiedergaben",
     "night_activity_frac": "Anteil Nacht-Wiedergaben (22-6 Uhr)",
     "peak_activity_hour": "Aktivste Nutzungsstunde",
+    "weekday_active_hours": "Ø Watch-Zeit nach Wochentag",
     "frac_instant_skip": "Anteil Instant-Skips (< 1 Sek. bis zum nächsten Video)",
     "rate_like": "Anteil gelikter Videos (Likes pro Ansicht)",
     "frac_political_engagement": "Anteil politische Interaktionen",
@@ -96,6 +103,19 @@ FRACTION_METRICS = {
     "frac_political_engagement",
 }
 
+_WEEKDAY_WATCH_SEC_CSV_KEYS = (
+    "avg_watch_sec_mon",
+    "avg_watch_sec_tue",
+    "avg_watch_sec_wed",
+    "avg_watch_sec_thu",
+    "avg_watch_sec_fri",
+    "avg_watch_sec_sat",
+    "avg_watch_sec_sun",
+)
+_SECONDS_PER_HOUR = 3600.0
+_HOURS_PER_DAY = 24
+_WEEKDAYS_PER_WEEK = 7
+
 AgeGroup = Literal["all", "under30", "over30"]
 GenderFilter = Literal["any", "male", "female"]
 VALID_AGE_GROUPS = frozenset({"all", "under30", "over30"})
@@ -107,6 +127,8 @@ class ReferenceParticipantRow(TypedDict):
     gender: str
     age: float | None
     metrics: dict[str, float]
+    hourly_watch_means: list[float]
+    weekday_active_hours: list[float]
 
 
 class ReferenceDemographicFilter(TypedDict):
@@ -183,14 +205,172 @@ def _distribution_stats(sorted_values: list[float]) -> dict[str, float]:
     }
 
 
+def _format_hours_duration(hours: float, *, short: bool = False) -> str:
+    """Format fractional hours as German Stunde(n) und Minute(n)."""
+    total_minutes = max(0, round(hours * 60))
+    whole_hours, minutes = divmod(total_minutes, 60)
+    if short:
+        hour_unit = "Std."
+        minute_unit = "Min."
+    else:
+        hour_unit = "Stunde" if whole_hours == 1 else "Stunden"
+        minute_unit = "Minute" if minutes == 1 else "Minuten"
+    if whole_hours == 0:
+        if not short and minutes == 1:
+            return "1\u00a0Minute"
+        return f"{minutes}\u00a0{minute_unit}"
+    hour_label = f"{whole_hours}\u00a0{hour_unit}"
+    if not short and whole_hours == 1:
+        hour_label = "1\u00a0Stunde"
+    if minutes == 0:
+        return hour_label
+    minute_label = f"{minutes}\u00a0{minute_unit}"
+    if not short and minutes == 1:
+        minute_label = "1\u00a0Minute"
+    return f"{hour_label} und {minute_label}"
+
+
+def _format_seconds_duration(seconds: float, *, short: bool = False) -> str:
+    """Format seconds as German Minute(n) und Sekunde(n)."""
+    total_seconds = max(0, round(seconds))
+    minutes, secs = divmod(total_seconds, 60)
+    if short:
+        minute_unit = "Min."
+        second_unit = "Sek."
+    else:
+        minute_unit = "Minute" if minutes == 1 else "Minuten"
+        second_unit = "Sekunde" if secs == 1 else "Sekunden"
+    if minutes == 0:
+        if not short and secs == 1:
+            return "1\u00a0Sekunde"
+        return f"{secs}\u00a0{second_unit}"
+    minute_label = f"{minutes}\u00a0{minute_unit}"
+    if not short and minutes == 1:
+        minute_label = "1\u00a0Minute"
+    if secs == 0:
+        return minute_label
+    second_label = f"{secs}\u00a0{second_unit}"
+    if not short and secs == 1:
+        second_label = "1\u00a0Sekunde"
+    return f"{minute_label} und {second_label}"
+
+
 def _format_metric_value(metric: str, value: float) -> str:
     if metric in FRACTION_METRICS:
         return f"{value * 100:.1f}\u00a0%"
     if metric == "avg_session_length_sec":
-        return f"{value / 60:.1f}\u00a0Min."
+        return _format_seconds_duration(value)
     if metric == "peak_activity_hour":
         return f"{round(value)}:00"
+    if metric == "avg_active_hours_per_day":
+        return _format_hours_duration(value)
     return f"{value:.2f}"
+
+
+def _hourly_watch_means(watches: list[WatchHistoryRecord]) -> list[float]:
+    """Mean videos watched at each clock hour across the donation date span."""
+    if not watches:
+        return [0.0] * _HOURS_PER_DAY
+
+    hour_counts: dict[int, int] = defaultdict(int)
+    days: set[date] = set()
+    for record in watches:
+        ts = record["date"]
+        assert isinstance(ts, datetime)
+        hour_counts[ts.hour] += 1
+        days.add(ts.date())
+
+    n_days = (max(days) - min(days)).days + 1
+    return [hour_counts.get(hour, 0) / n_days for hour in range(_HOURS_PER_DAY)]
+
+
+def _weekday_active_hours(watches: list[WatchHistoryRecord]) -> list[float]:
+    """Mean inferred watch hours for each weekday (Mon=0 .. Sun=6).
+
+    Donated data has no true watch duration. For each consecutive watch pair,
+    the gap is counted as watch time for the earlier event's calendar day when
+    it is within a session (≤ ``_SESSION_BREAK_SEC``). Longer gaps are session
+    breaks and are ignored. Daily totals are averaged per weekday.
+    """
+    if not watches:
+        return [0.0] * _WEEKDAYS_PER_WEEK
+
+    dated: list[datetime] = []
+    days_with_watches: set[date] = set()
+    for record in watches:
+        ts = record.get("date")
+        if not isinstance(ts, datetime):
+            continue
+        dated.append(ts)
+        days_with_watches.add(ts.date())
+    if len(dated) < _MIN_WATCH_EVENTS_FOR_GAP:
+        return [0.0] * _WEEKDAYS_PER_WEEK
+
+    dated.sort()
+    daily_sec: dict[date, float] = dict.fromkeys(days_with_watches, 0.0)
+    for prev_ts, next_ts in pairwise(dated):
+        gap = (next_ts - prev_ts).total_seconds()
+        if 0 <= gap <= _SESSION_BREAK_SEC:
+            daily_sec[prev_ts.date()] += gap
+
+    hours_by_weekday: dict[int, list[float]] = defaultdict(list)
+    for day, seconds in daily_sec.items():
+        hours_by_weekday[day.weekday()].append(seconds / _SECONDS_PER_HOUR)
+
+    return [
+        (
+            sum(hours_by_weekday[weekday]) / len(hours_by_weekday[weekday])
+            if hours_by_weekday[weekday]
+            else 0.0
+        )
+        for weekday in range(_WEEKDAYS_PER_WEEK)
+    ]
+
+
+def _reference_row_hourly_watch_means(row: dict[str, str | None]) -> list[float]:
+    hourly: list[float] = []
+    for hour in range(_HOURS_PER_DAY):
+        value = _parse_float(row.get(f"avg_watches_hour_{hour:02d}"))
+        hourly.append(value if value is not None else 0.0)
+    return hourly
+
+
+def _reference_row_weekday_active_hours(row: dict[str, str | None]) -> list[float]:
+    """Reference mean watch hours per weekday from ``avg_watch_sec_*`` CSV cols."""
+    weekday_hours: list[float] = []
+    for key in _WEEKDAY_WATCH_SEC_CSV_KEYS:
+        seconds = _parse_float(row.get(key))
+        weekday_hours.append(
+            (seconds / _SECONDS_PER_HOUR) if seconds is not None else 0.0
+        )
+    return weekday_hours
+
+
+def _mean_series(
+    series_list: list[list[float]],
+    length: int,
+) -> list[float]:
+    if not series_list:
+        return [0.0] * length
+    return [
+        sum(series[index] for series in series_list) / len(series_list)
+        for index in range(length)
+    ]
+
+
+def _mean_hourly_watch_means(
+    participants: list[ReferenceParticipantRow] | tuple[ReferenceParticipantRow, ...],
+) -> list[float]:
+    return _mean_series([p["hourly_watch_means"] for p in participants], _HOURS_PER_DAY)
+
+
+def _mean_weekday_active_hours(
+    participants: list[ReferenceParticipantRow] | tuple[ReferenceParticipantRow, ...],
+) -> list[float]:
+    return _mean_series(
+        [p["weekday_active_hours"] for p in participants],
+        _WEEKDAYS_PER_WEEK,
+    )
 
 
 def _frac_instant_skip(timestamps: list[datetime]) -> float:
@@ -204,6 +384,42 @@ def _frac_instant_skip(timestamps: list[datetime]) -> float:
         if (nxt - prev).total_seconds() < _INSTANT_SKIP_MAX_GAP_SEC
     )
     return instant_skips / (len(sorted_ts) - 1)
+
+
+def avg_inferred_watch_sec_by_video(
+    watches: list[WatchHistoryRecord],
+) -> dict[int, float]:
+    """Mean inferred dwell time (seconds) per video from gaps to the next watch.
+
+    Donated watch history has no true watch duration — only event timestamps.
+    For each consecutive pair in the sorted history, the gap is attributed to
+    the earlier video when it falls within a session (≤ ``_SESSION_BREAK_SEC``).
+    The last video of a session has no measurable gap and is skipped.
+    """
+    dated: list[tuple[datetime, int]] = []
+    for record in watches:
+        ts = record.get("date")
+        video_id = record.get("video_id")
+        if not isinstance(ts, datetime) or video_id is None:
+            continue
+        if ts < REPORT_FIRST_DATE_TO_INCLUDE:
+            continue
+        dated.append((ts, video_id))
+    if len(dated) < _MIN_WATCH_EVENTS_FOR_GAP:
+        return {}
+
+    dated.sort(key=lambda item: item[0])
+    gaps_by_video: dict[int, list[float]] = defaultdict(list)
+    for (prev_ts, prev_id), (next_ts, _next_id) in pairwise(dated):
+        gap = (next_ts - prev_ts).total_seconds()
+        if 0 <= gap <= _SESSION_BREAK_SEC:
+            gaps_by_video[prev_id].append(gap)
+
+    return {
+        video_id: sum(gaps) / len(gaps)
+        for video_id, gaps in gaps_by_video.items()
+        if gaps
+    }
 
 
 def _watch_sessions(timestamps: list[datetime]) -> list[tuple[float, int]]:
@@ -246,6 +462,8 @@ def _load_reference_participants() -> tuple[ReferenceParticipantRow, ...]:
                     "gender": (row.get("gender") or "").strip(),
                     "age": _parse_float(row.get("age")),
                     "metrics": metrics,
+                    "hourly_watch_means": _reference_row_hourly_watch_means(row),
+                    "weekday_active_hours": _reference_row_weekday_active_hours(row),
                 }
             )
     return tuple(participants)
@@ -324,6 +542,99 @@ def _reference_distributions_for_filter(
         for metric, value in participant["metrics"].items():
             values_by_metric[metric].append(value)
     return {key: sorted(values) for key, values in values_by_metric.items()}
+
+
+def _reference_hourly_watch_means_for_filter(
+    age_group: AgeGroup = "all",
+    gender: GenderFilter = "any",
+) -> list[float]:
+    participants = [
+        participant
+        for participant in _load_reference_participants()
+        if _matches_demographic_filter(participant, age_group, gender)
+    ]
+    return _mean_hourly_watch_means(participants)
+
+
+def _reference_weekday_active_hours_for_filter(
+    age_group: AgeGroup = "all",
+    gender: GenderFilter = "any",
+) -> list[float]:
+    participants = [
+        participant
+        for participant in _load_reference_participants()
+        if _matches_demographic_filter(participant, age_group, gender)
+    ]
+    return _mean_weekday_active_hours(participants)
+
+
+def sample_reference_activity_profile() -> (
+    tuple[list[float], float, list[float]] | None
+):
+    """Sample one CSV participant's hourly + weekday curves for synthetic previews."""
+    participants = _load_reference_participants()
+    if not participants:
+        return None
+
+    participant = choice(participants)  # noqa: S311
+    hourly = list(participant["hourly_watch_means"])
+    weekday_hours = list(participant["weekday_active_hours"])
+    peak = participant["metrics"].get("peak_activity_hour")
+    if peak is None:
+        peak = float(max(range(_HOURS_PER_DAY), key=lambda hour: hourly[hour]))
+    return hourly, float(peak), weekday_hours
+
+
+def apply_sampled_reference_activity_profiles(
+    comparisons: list[BehaviourComparisonRecord],
+) -> list[BehaviourComparisonRecord]:
+    """Replace synthetic ridge curves with one real CSV participant sample."""
+    sampled = sample_reference_activity_profile()
+    if sampled is None:
+        return comparisons
+
+    hourly, peak, weekday_hours = sampled
+    population = _load_reference_distributions().get("peak_activity_hour")
+    updated: list[BehaviourComparisonRecord] = []
+    for row in comparisons:
+        if row["metric"] == "peak_activity_hour" and population:
+            updated.append(
+                _build_peak_hour_comparison(
+                    peak,
+                    population,
+                    hourly_watch_means=hourly,
+                    reference_hourly_watch_means=row.get(
+                        "reference_hourly_watch_means"
+                    ),
+                )
+            )
+            continue
+        if row["metric"] == "weekday_active_hours":
+            updated.append(
+                _build_weekday_active_hours_comparison(
+                    weekday_hours,
+                    row.get("reference_weekday_active_hours")
+                    or [0.0] * _WEEKDAYS_PER_WEEK,
+                )
+            )
+            continue
+        updated.append(row)
+    return updated
+
+
+# Backwards-compatible aliases used by older call sites/tests.
+def sample_reference_hourly_profile() -> tuple[list[float], float] | None:
+    sampled = sample_reference_activity_profile()
+    if sampled is None:
+        return None
+    hourly, peak, _weekday = sampled
+    return hourly, peak
+
+
+def apply_sampled_reference_hourly_profile(
+    comparisons: list[BehaviourComparisonRecord],
+) -> list[BehaviourComparisonRecord]:
+    return apply_sampled_reference_activity_profiles(comparisons)
 
 
 @lru_cache(maxsize=1)
@@ -440,6 +751,9 @@ def _peak_hour_same_fraction(peak_hour: int, population: list[float]) -> float:
 def _build_peak_hour_comparison(
     peak_hour: float,
     population: list[float],
+    *,
+    hourly_watch_means: list[float] | None = None,
+    reference_hourly_watch_means: list[float] | None = None,
 ) -> BehaviourComparisonRecord:
     hour = round(peak_hour)
     same_frac = _peak_hour_same_fraction(hour, population)
@@ -447,7 +761,7 @@ def _build_peak_hour_comparison(
     stats = _distribution_stats(population)
     same_display = f"{same_frac * 100:.1f}\u00a0%"
     diff_display = f"{diff_frac * 100:.1f}\u00a0%"
-    return {
+    row: BehaviourComparisonRecord = {
         "metric": "peak_activity_hour",
         "label": METRIC_LABELS["peak_activity_hour"],
         "radar_label": RADAR_LABELS["peak_activity_hour"],
@@ -478,6 +792,53 @@ def _build_peak_hour_comparison(
         "chart_reference_value": diff_frac,
         "chart_user_value_display": same_display,
         "chart_reference_value_display": diff_display,
+    }
+    if hourly_watch_means is not None:
+        row["hourly_watch_means"] = hourly_watch_means
+    if reference_hourly_watch_means is not None:
+        row["reference_hourly_watch_means"] = reference_hourly_watch_means
+    return row
+
+
+def _build_weekday_active_hours_comparison(
+    weekday_active_hours: list[float],
+    reference_weekday_active_hours: list[float],
+) -> BehaviourComparisonRecord:
+    user_vals = weekday_active_hours or [0.0] * _WEEKDAYS_PER_WEEK
+    ref_vals = reference_weekday_active_hours or [0.0] * _WEEKDAYS_PER_WEEK
+    user_mean = sum(user_vals) / len(user_vals)
+    ref_mean = sum(ref_vals) / len(ref_vals)
+    return {
+        "metric": "weekday_active_hours",
+        "label": METRIC_LABELS["weekday_active_hours"],
+        "radar_label": RADAR_LABELS["weekday_active_hours"],
+        "value": user_mean,
+        "value_display": _format_metric_value("avg_active_hours_per_day", user_mean),
+        "percentile": 50.0,
+        "reference_mean": ref_mean,
+        "reference_mean_display": _format_metric_value(
+            "avg_active_hours_per_day", ref_mean
+        ),
+        "reference_mean_percentile": 50.0,
+        "reference_median": ref_mean,
+        "reference_median_display": _format_metric_value(
+            "avg_active_hours_per_day", ref_mean
+        ),
+        "reference_p25": min(ref_vals),
+        "reference_p75": max(ref_vals),
+        "reference_min": min(ref_vals),
+        "reference_max": max(ref_vals),
+        "reference_min_display": _format_metric_value(
+            "avg_active_hours_per_day", min(ref_vals)
+        ),
+        "reference_max_display": _format_metric_value(
+            "avg_active_hours_per_day", max(ref_vals)
+        ),
+        "radar_user": 50.0,
+        "radar_mean": 50.0,
+        "is_fraction": False,
+        "weekday_active_hours": user_vals,
+        "reference_weekday_active_hours": ref_vals,
     }
 
 
@@ -525,13 +886,36 @@ def apply_reference_demographic_filter(
         return comparisons
 
     updated: list[BehaviourComparisonRecord] = []
+    reference_hourly_means = _reference_hourly_watch_means_for_filter(age_group, gender)
+    reference_weekday_means = _reference_weekday_active_hours_for_filter(
+        age_group, gender
+    )
     for row in comparisons:
+        if row["metric"] == "weekday_active_hours":
+            user_weekdays = row.get("weekday_active_hours")
+            if not user_weekdays or len(user_weekdays) != _WEEKDAYS_PER_WEEK:
+                updated.append(row)
+                continue
+            updated.append(
+                _build_weekday_active_hours_comparison(
+                    user_weekdays,
+                    reference_weekday_means,
+                )
+            )
+            continue
         population = reference_values.get(row["metric"])
         if not population:
             updated.append(row)
             continue
         if row["metric"] == "peak_activity_hour":
-            updated.append(_build_peak_hour_comparison(row["value"], population))
+            updated.append(
+                _build_peak_hour_comparison(
+                    row["value"],
+                    population,
+                    hourly_watch_means=row.get("hourly_watch_means"),
+                    reference_hourly_watch_means=reference_hourly_means,
+                )
+            )
             continue
         updated.append(_comparison_with_reference_population(row, population))
     return updated
@@ -545,6 +929,7 @@ def compute_behaviour_comparisons(
     political_video_ids: frozenset[int] | None = None,
 ) -> list[BehaviourComparisonRecord]:
     """Compare watch-history profile metrics to the reference population."""
+    watches = _filtered_watch_history(data)
     participant_metrics = compute_watch_history_metrics(data)
     if political_video_ids is not None:
         participant_metrics.update(
@@ -557,6 +942,10 @@ def compute_behaviour_comparisons(
     if not reference_values:
         return []
 
+    hourly_means = _hourly_watch_means(watches)
+    reference_hourly_means = _reference_hourly_watch_means_for_filter()
+    weekday_means = _weekday_active_hours(watches)
+    reference_weekday_means = _reference_weekday_active_hours_for_filter()
     comparisons: list[BehaviourComparisonRecord] = []
     for metric in PROFILE_METRICS:
         value = participant_metrics.get(metric)
@@ -566,7 +955,14 @@ def compute_behaviour_comparisons(
         if not population:
             continue
         if metric == "peak_activity_hour":
-            comparisons.append(_build_peak_hour_comparison(value, population))
+            comparisons.append(
+                _build_peak_hour_comparison(
+                    value,
+                    population,
+                    hourly_watch_means=hourly_means,
+                    reference_hourly_watch_means=reference_hourly_means,
+                )
+            )
             continue
         percentile = _percentile_rank(value, population)
         stats = _distribution_stats(population)
@@ -598,6 +994,13 @@ def compute_behaviour_comparisons(
                 "is_fraction": metric in FRACTION_METRICS,
             }
         )
+
+    comparisons.append(
+        _build_weekday_active_hours_comparison(
+            weekday_means,
+            reference_weekday_means,
+        )
+    )
     return comparisons
 
 

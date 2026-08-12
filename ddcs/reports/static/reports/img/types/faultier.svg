@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <defs><clipPath id="c_faultier"><circle cx="150" cy="150" r="150"></circle></clipPath></defs>
+  <g clip-path="url(#c_faultier)"><rect width="300" height="300" fill="#eee4d3"></rect>
+  <ellipse cx="150" cy="252" rx="118" ry="86" fill="#9c754a"></ellipse>
+  <circle cx="150" cy="132" r="94" fill="#c1975c"></circle>
+  <ellipse cx="150" cy="142" rx="72" ry="76" fill="#e3d5bd"></ellipse>
+  <ellipse cx="116" cy="120" rx="19" ry="30" transform="rotate(22 116 120)" fill="#6f5334"></ellipse>
+  <ellipse cx="184" cy="120" rx="19" ry="30" transform="rotate(-22 184 120)" fill="#6f5334"></ellipse>
+  <circle cx="118" cy="127" r="8" fill="#2a2f3a"></circle><circle cx="182" cy="127" r="8" fill="#2a2f3a"></circle>
+  <circle cx="121" cy="124" r="2.6" fill="#fbfbf9"></circle><circle cx="185" cy="124" r="2.6" fill="#fbfbf9"></circle>
+  <ellipse cx="150" cy="166" rx="16" ry="11" fill="#5a4530"></ellipse>
+  <path d="M124 186 Q150 204 176 186" fill="none" stroke="#5a4530" stroke-width="6" stroke-linecap="round"></path></g>
+</svg>

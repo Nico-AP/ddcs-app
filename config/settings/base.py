@@ -74,6 +74,9 @@ THIRD_PARTY_APPS = [
     "webpack_loader",
     "rest_framework",
     "rest_framework.authtoken",
+    "django_filters",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     # Admin 2FA
     "django_otp",
     "django_otp.plugins.otp_static",
@@ -565,4 +568,20 @@ WAGTAILADMIN_RICH_TEXT_EDITORS = {
             ]
         },
     }
+}
+
+# Django Restframework
+# ------------------------------------------------------------------------------
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "DDCS TikTok API",
+    "DESCRIPTION": "API for TikTok video metadata",
+    "VERSION": "1.0",
+    "SERVE_URLCONF": "config.api_urls",
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }

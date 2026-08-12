@@ -7,6 +7,7 @@ from tiktok_metadata_kit.research_api import ResearchAPIClient
 
 from ddcs.metadata.models import (
     DataOrigins,
+    Keyword,
     TikTokHashtag,
     TikTokMusic,
     TikTokUser,
@@ -17,6 +18,7 @@ from ddcs.metadata.research_api.models import (
     APIVideoInfos,
     APIVideoStatistics,
 )
+from ddcs.metadata.research_api.utils.keyword_matching import find_matching_keywords
 from ddcs.metadata.utils import infer_publication_date_from_id
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,14 @@ class ResearchAPIService:
             "videos_retrieved": 0,
             "pages_retrieved": 0,
         }
+
+        self._monitored_keywords: list[Keyword] | None = None
+
+    @property
+    def monitored_keywords(self) -> list[Keyword] | None:
+        if self._monitored_keywords is None:
+            self._monitored_keywords = list(Keyword.objects.filter(monitor_api=True))
+        return self._monitored_keywords
 
     def get_user_videos(self, usernames: list[str], **kwargs) -> None:
         """Retrieve videos posted by specific TikTok users via Research API.
@@ -144,6 +154,7 @@ class ResearchAPIService:
         video = self._sync_video(data, user=user, music=music)
         self._sync_video_statistics(data, video=video)
         self._sync_hashtags(data.get("hashtag_names", []), video=video)
+        self._sync_keywords(data, video=video)
 
     def _sync_user(self, username: str) -> TikTokUser:
         user, created = TikTokUser.objects.get_or_create(
@@ -209,6 +220,20 @@ class ResearchAPIService:
             self.sync_stats["hashtags_created"] += 1
 
         return hashtag
+
+    def _sync_keywords(self, data: dict[str, Any], video: TikTokVideo) -> None:
+        """Attach monitored keywords found in the description or hashtags."""
+        if not self.monitored_keywords:
+            return
+
+        description = data.get("video_description") or ""
+        hashtag_names = {h.lower() for h in data.get("hashtag_names", [])}
+
+        matched = find_matching_keywords(
+            self.monitored_keywords, description, list(hashtag_names)
+        )
+        if matched:
+            video.keywords.add(*matched)
 
     # Note: Function is no longer in use because TikTok's API response structure
     #  has changed (first observed on 08.07.2026). Left to document past behaviour.

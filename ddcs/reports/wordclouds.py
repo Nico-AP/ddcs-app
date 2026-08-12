@@ -21,7 +21,8 @@ WORDCLOUD_CONFIG = {
 }
 
 RGB_ORANGE = (255, 191, 0)
-RGB_TURQUOISE = (0, 191, 150)
+# Distinct from brand teal (#0cc4b6) used elsewhere in the report.
+RGB_VIOLET = (118, 72, 180)
 
 GERMAN_STOPWORDS = frozenset(
     [
@@ -361,5 +362,5 @@ def get_wordcloud(descriptions: list[str], *, is_party_account: bool) -> dict:
     ``is_party_account=True`` colours the cloud orange (party-aligned videos);
     ``False`` colours it turquoise (non-party political videos).
     """
-    color = RGB_ORANGE if is_party_account else RGB_TURQUOISE
+    color = RGB_ORANGE if is_party_account else RGB_VIOLET
     return _create_wordcloud(_build_description_frequencies(descriptions), color)

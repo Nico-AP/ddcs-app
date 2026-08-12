@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" width="300" height="300">
+  <defs><clipPath id="c_kolibri"><circle cx="150" cy="150" r="150"></circle></clipPath></defs>
+  <g clip-path="url(#c_kolibri)"><rect width="300" height="300" fill="#d7efe9"></rect>
+  <path d="M120 158 L60 138 L100 164 L58 178 L108 172 L74 196 Z" fill="#17786a"></path>
+  <ellipse cx="165" cy="156" rx="52" ry="30" transform="rotate(-13 165 156)" fill="#1f9e8a"></ellipse>
+  <circle cx="212" cy="135" r="24" fill="#1f9e8a"></circle>
+  <path d="M234 131 L296 120 L234 143 Z" fill="#2a2f3a"></path>
+  <path d="M162 130 Q160 56 112 48 Q154 74 160 126 Q192 84 226 98 Q180 102 172 158 Z" fill="#17786a"></path>
+  <circle cx="220" cy="129" r="4.5" fill="#fbfbf9"></circle><circle cx="221" cy="130" r="2.2" fill="#2a2f3a"></circle></g>
+</svg>

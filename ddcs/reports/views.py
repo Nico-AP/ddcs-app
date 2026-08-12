@@ -41,8 +41,11 @@ from ddcs.reports.plots.user_plots import (
     get_temporal_party_distribution_plot_user,
 )
 from ddcs.reports.services import generate_user_report_statistics
+from ddcs.reports.user_types import assign_user_type
 from ddcs.reports.utils import enrich_top_videos_for_embed
 from ddcs.reports.wordclouds import get_wordcloud
+
+_SYNTHETIC_BEHAVIOUR_SESSION_KEY = "reports_synthetic_behaviour_comparisons"
 
 
 def _behaviour_profile_context(
@@ -60,10 +63,13 @@ def _behaviour_profile_context(
         gender=gender,
     )
     group_size = reference_group_size(age_group, gender)
+    # Type uses absolute user values from the unfiltered comparisons so age /
+    # gender filters never change the merch typology on HTMX refresh.
     return {
         "behaviour_comparisons": filtered_comparisons,
         "behaviour_profile_rows": get_behaviour_profile_rows(filtered_comparisons),
         "behaviour_profile_slides": get_behaviour_profile_slides(filtered_comparisons),
+        "behaviour_user_type": assign_user_type(behaviour_comparisons),
         "behaviour_profile_url": behaviour_profile_url,
         "behaviour_age_group": age_group,
         "behaviour_gender": gender,
@@ -185,7 +191,14 @@ class GetSyntheticReportView(GetReportView):
         return Participant()
 
     def _get_statistics(self) -> ParticipantReportStatistics:
-        return get_synthetic_report_statistics(self.participant)
+        statistics = get_synthetic_report_statistics(self.participant)
+        # Keep ridge/user behaviour curves stable across filter HTMX updates
+        # until the full synthetic report is refreshed.
+        self.request.session[_SYNTHETIC_BEHAVIOUR_SESSION_KEY] = (
+            statistics.behaviour_comparisons
+        )
+        self.request.session.modified = True
+        return statistics
 
     def _behaviour_profile_url(self) -> str:
         return reverse("reports:behaviour_profile_synthetic")
@@ -211,11 +224,29 @@ class BehaviourProfileFilterView(GetReportView):
 class BehaviourProfileFilterSyntheticView(GetSyntheticReportView):
     template_name = "reports/partials/behaviour_profile_content.html"
 
+    def setup(self, request: HttpRequest, *args, **kwargs) -> None:
+        # Do not regenerate synthetic statistics on filter changes — reuse the
+        # comparisons cached when the full synthetic report was last loaded.
+        TemplateView.setup(self, request, *args, **kwargs)
+        self.participant = self._get_participant()
+
+    def _cached_behaviour_comparisons(self) -> list[dict]:
+        cached = self.request.session.get(_SYNTHETIC_BEHAVIOUR_SESSION_KEY)
+        if cached is not None:
+            return cached
+
+        statistics = get_synthetic_report_statistics(self.participant)
+        self.request.session[_SYNTHETIC_BEHAVIOUR_SESSION_KEY] = (
+            statistics.behaviour_comparisons
+        )
+        self.request.session.modified = True
+        return statistics.behaviour_comparisons
+
     def get_context_data(self, **kwargs) -> dict[str, Any]:
         age_group = normalize_age_group(self.request.GET.get("age_group"))
         gender = normalize_gender_filter(self.request.GET.get("gender"))
         return _behaviour_profile_context(
-            self.statistics.behaviour_comparisons,
+            self._cached_behaviour_comparisons(),
             age_group=age_group,
             gender=gender,
             behaviour_profile_url=self._behaviour_profile_url(),
