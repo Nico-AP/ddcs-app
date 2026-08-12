@@ -235,3 +235,21 @@ class TikTokVideoListTestCase(APITestCase):
         )
 
         self.assertEqual(response.data["results"], [])
+
+    # --- has api infos filter ---
+
+    def test_filter_by_has_api_infos(self):
+        video = self._create_video(111)
+        self._create_api_info(video, created_at=timezone.now())
+
+        video_no_info = self._create_video(222)
+
+        # case True
+        response = self.client.get(self.url, {"has_api_infos": True})
+        ids = [v["id_tiktok"] for v in response.data["results"]]
+        self.assertEqual(ids, [video.id_tiktok])
+
+        # case False
+        response = self.client.get(self.url, {"has_api_infos": False})
+        ids = [v["id_tiktok"] for v in response.data["results"]]
+        self.assertEqual(ids, [video_no_info.id_tiktok])
