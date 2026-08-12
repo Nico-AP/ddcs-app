@@ -31,6 +31,7 @@ class TikTokVideoFilter(django_filters.FilterSet):
     create_date_to = django_filters.DateFilter(method="filter_create_date_to")
     region_codes = CharInFilter(method="filter_region_codes")
     keywords = CharInFilter(field_name="keywords__name", lookup_expr="in")
+    has_api_infos = django_filters.BooleanFilter(method="filter_has_api_infos")
 
     updated_since = django_filters.IsoDateTimeFilter(method="filter_updated_since")
 
@@ -74,3 +75,8 @@ class TikTokVideoFilter(django_filters.FilterSet):
         ).values("video_id")
 
         return queryset.filter(Q(updated_at__gt=value) | Q(pk__in=videos_with_new_info))
+
+    def filter_has_api_infos(
+        self, queryset: QuerySet[TikTokVideo], name: str, value: bool
+    ) -> QuerySet[TikTokVideo]:
+        return queryset.filter(latest_api_info_id__isnull=not value)
