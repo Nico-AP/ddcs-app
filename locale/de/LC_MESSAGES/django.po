@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-10 12:49+0200\n"
+"POT-Creation-Date: 2026-08-13 11:07+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -25,6 +25,57 @@ msgstr "Deutsch"
 #: config/settings/base.py:230
 msgid "English"
 msgstr "Englisch"
+
+#: ddcs/datadonation/templates/datadonation/briefing.html:32
+msgid "Please indicate whether you want to continue with this study."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/briefing.html:37
+msgid "Welcome to this study!"
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/briefing.html:39
+msgid ""
+"Please define a description and welcome text for this project in the Project "
+"Hub."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/briefing.html:93
+msgid "Continue"
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_available_msg.html:4
+msgid ""
+"Deine TikTok-Daten sind nun verfügbar! Klicke auf den Button, um "
+"fortzufahren."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_error_msg.html:5
+msgid "Leider ist beim Abrufen deiner Daten ein Fehler aufgetreten."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_error_msg.html:8
+msgid "Bitte versuche es noch einmal."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_error_msg.html:12
+msgid "Noch einmal versuchen"
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_expired_msg.html:5
+msgid ""
+"Leider ist der Download nicht mehr verfügbar. Bitte versuche es noch einmal:"
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_pending_msg.html:9
+msgid ""
+"Wir warten darauf, dass deine TikTok-Daten verfügbar sind. Das kann einige "
+"Sekunden dauern."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_pending_msg.html:16
+msgid "Verfügbarkeit zuletzt geprüft am"
+msgstr ""
 
 #: ddcs/website/templates/exceptions/403.html:6
 #: ddcs/website/templates/exceptions/403.html:10

@@ -6,7 +6,7 @@ from encrypted_fields import EncryptedTextField
 
 
 class TikTokConnection(models.Model):
-    open_id = models.CharField(max_length=255, unique=True)
+    open_id = models.CharField(max_length=255, unique=True)  # stores HMAC hash
 
     access_token = EncryptedTextField(max_length=255)
     access_token_expires_at = models.DateTimeField(null=True)
@@ -56,7 +56,12 @@ class TikTokConnection(models.Model):
 
 
 class TikTokDataRequest(models.Model):
-    open_id = models.CharField(max_length=255)
+    connection = models.ForeignKey(
+        TikTokConnection,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="data_requests",
+    )
     request_id = models.BigIntegerField(
         unique=True, help_text="ID of data request as provided by TikTok"
     )
@@ -65,14 +70,23 @@ class TikTokDataRequest(models.Model):
     last_polled = models.DateTimeField(null=True)
 
     class State(models.TextChoices):
+        """These are the official status strings returned by the TikTok API.
+
+        DOWNLOADED was added for completion, not part of the API schema.
+        """
+
         NOT_POLLED = "not polled", "not polled"
         PENDING = "pending", "pending"
-        READY = "downloading", "downloading"
+        READY = "downloading", "ready to download"
+        DOWNLOADED = "downloaded", "downloaded"
         EXPIRED = "expired", "expired"
         CANCELLED = "cancelled", "cancelled"
 
+    ACTIVE_STATES = [State.NOT_POLLED, State.PENDING, State.READY]
+
     status = models.CharField(
         max_length=20,
+        choices=State.choices,
         default=State.NOT_POLLED,
     )
 
@@ -87,5 +101,4 @@ class TikTokDataRequest(models.Model):
         return f"TikTok Data Request {self.request_id}"
 
     def is_active(self) -> bool:
-        inactive_states = [self.State.EXPIRED, self.State.CANCELLED]
-        return self.status not in inactive_states or self.download_succeeded
+        return self.status in self.ACTIVE_STATES
