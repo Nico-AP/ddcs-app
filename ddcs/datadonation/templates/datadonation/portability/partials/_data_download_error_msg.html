@@ -1,0 +1,13 @@
+{% load i18n %}
+
+<div class="border border-secondary rounded bg-light p-3">
+  <p class="mb-0">
+    {% translate "Leider ist beim Abrufen deiner Daten ein Fehler aufgetreten." %}
+  </p>
+  <p class="mb-0">
+    {% blocktranslate trimmed %}
+      Bitte versuche es noch einmal.
+    {% endblocktranslate %}
+  </p>
+  <p><a href="{% url 'datadonation:tiktok_connection' %}" class="btn btn-primary-dfdw cta-btn">{% translate "Noch einmal versuchen" %}</a></p>
+</div>

@@ -13,6 +13,10 @@
   <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
 {% endblock css %}
 
+{% block header %}
+  {% include "datadonation/header.html" with page_header_title="" %}
+{% endblock header %}
+
 {% block content %}
   <div class="container">
     <div class="row justify-content-center pt-4 mt-5 b-3 pb-3">
