@@ -1,0 +1,103 @@
+{% extends "datadonation/base.html" %}
+{% load i18n static %}
+{% load render_bundle from webpack_loader %}
+{% get_current_language as LANGUAGE_CODE %}
+
+{% block page_title %}Datenspende{% endblock page_title %}
+
+{% block css %}
+  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap.min.css' %}" />
+  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap-icons.css' %}" />
+  <link href="{% static 'ddm_core/css/fonts.css' %}" rel="stylesheet" />
+  <link href="{% static 'ddm_participation/css/public-base.css' %}" rel="stylesheet" />
+  <link rel="stylesheet" href="{% static 'ddm_core/css/research-interface-base.css' %}" />
+  {% if project.has_custom_theme %}
+    <link rel="stylesheet" href="{% url 'ddm_participation:theme_css' project.slug %}?v={{ project.theme_version }}" />
+  {% endif %}
+  <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
+{% endblock css %}
+
+{% block header %}
+  {% include "datadonation/header.html" with page_header_title="" %}
+{% endblock header %}
+
+{% block content %}
+  <div class="container">
+    <div class="row justify-content-center mt-5 mb-5">
+      <div class="col-12 col-md-10 col-lg-8">
+        <div>
+          {% if briefing_error %}
+            <p class="text-red mb-4">
+              <i class="bi bi-exclamation-square-fill"></i>
+              {% translate "Please indicate whether you want to continue with this study." %}
+            </p>
+          {% endif %}
+
+          {% if object.briefing_text == None %}
+            <h1>{% translate "Welcome to this study!" %}</h1>
+            <p>
+              {% translate "Please define a description and welcome text for this project in the Project Hub." %}
+            </p>
+          {% else %}
+            {{ briefing | safe }}
+          {% endif %}
+        </div>
+
+        <form method="post">
+          {% csrf_token %}
+
+          {% if object.briefing_consent_enabled %}
+            <div
+              id="briefing-consent-answer"
+              class="briefing-consent-container"
+            >
+              <div class="form-check">
+                <input
+                  type="radio"
+                  id="consent_yes"
+                  class="form-check-input"
+                  name="briefing_consent"
+                  value="1"
+                  required
+                />
+                <label
+                  class="form-check-label"
+                  for="consent_yes"
+                >
+                  {{ object.briefing_consent_label_yes | safe }}
+                </label>
+              </div>
+
+              <div class="form-check pt-2">
+                <input
+                  type="radio"
+                  id="consent_no"
+                  class="form-check-input"
+                  name="briefing_consent"
+                  value="0"
+                />
+                <label
+                  class="form-check-label"
+                  for="consent_no"
+                >
+                  {{ object.briefing_consent_label_no | safe }}
+                </label>
+              </div>
+            </div>
+          {% endif %}
+
+          <button
+            class="flow-btn"
+            type="submit"
+          >
+            <span class="pe-2">{% translate 'Continue' %}</span>
+            <i class="step-chevron bi bi-chevron-right"></i>
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block extra_js %}
+{% endblock extra_js %}

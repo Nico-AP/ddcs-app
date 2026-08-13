@@ -457,6 +457,15 @@ LOGGING = {
             "encoding": "utf-8",
             "formatter": "json",
         },
+        "datadonation_file": {
+            "level": "WARNING",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "datadonation.log",
+            "backupCount": 0,  # Keep all rotated files forever
+            "maxBytes": 1024 * 1024 * 25,  # 25 MB per file
+            "encoding": "utf-8",
+            "formatter": "json",
+        },
         "mail_admins": {
             "level": "ERROR",
             "class": "django.utils.log.AdminEmailHandler",
@@ -498,14 +507,20 @@ LOGGING = {
             "propagate": False,
             "level": "INFO",
         },
+        "ddcs.datadonation": {
+            "handlers": ["datadonation_file"],
+            "propagate": False,
+            "level": "INFO",
+        },
     },
 }
 
 # TikTok Connection (OAuth + Portability API)
 # ------------------------------------------------------------------------------
-AUTH_TOKEN_SECRET = env.str("AUTH_TOKEN_SECRET")  # Authlib config
+TIKTOK_OPEN_ID_HASH_SECRET = env.str("TIKTOK_OPEN_ID_HASH_SECRET")
 TIKTOK_CLIENT_ID = env.str("TIKTOK_CLIENT_ID", "")
 TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET", "")
+TIKTOK_DDM_PROJECT_SLUG = env.str("TIKTOK_DDM_PROJECT_SLUG", "tiktok")
 
 # DDM and related settings
 # ------------------------------------------------------------------------------

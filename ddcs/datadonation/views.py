@@ -1,39 +1,42 @@
 from ddm.participation.views import (
+    BriefingView,
     DataDonationView,
     DebriefingView,
     QuestionnaireView,
-    create_participation_session,
 )
-from ddm.projects.models import DonationProject
-from django.http import Http404, HttpRequest
+from django.http import HttpRequest
+from django.utils import timezone
 from django.utils.datastructures import MultiValueDict
 
-from ddcs.datadonation.config import DDM_TIKTOK_PROJECT_SLUG
 from ddcs.datadonation.services import post_process_donation
 
 PARTICIPATION_FLOW_STEPS = [
+    "datadonation:briefing",
     "datadonation:donation_ddm",
     "datadonation:questionnaire",
     "datadonation:debriefing",
 ]
 
 
-class DonationViewDDM(DataDonationView):
+class DDCSBriefingView(BriefingView):
+    template_name = "datadonation/briefing.html"
+
+    steps = PARTICIPATION_FLOW_STEPS
+    step_name = "datadonation:briefing"
+
+    def extra_before_render(self, request: HttpRequest) -> None:
+        super().extra_before_render(request)
+        self.participant.extra_data["participation_mode"] = {
+            "DLUL": timezone.now().isoformat(),
+        }
+        self.participant.save()
+
+
+class DDCSDownloadUploadView(DataDonationView):
     template_name = "datadonation/donation.html"
 
     steps = PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:donation_ddm"
-
-    def _initialize_values(self, request: HttpRequest) -> None:
-        """Overwrite project initialization and current step assignment."""
-        try:
-            self.object = DonationProject.objects.get(slug=DDM_TIKTOK_PROJECT_SLUG)
-        except DonationProject.DoesNotExist as e:
-            raise Http404 from e
-
-        create_participation_session(request, self.object)
-        self.participant = self.get_participant_from_session(request)
-        self.current_step = self.get_current_step_from_participant(self.participant)
 
     def process_uploads(self, files: MultiValueDict) -> None:
         # Let DDM process the uploads normally
@@ -43,12 +46,14 @@ class DonationViewDDM(DataDonationView):
         post_process_donation(self.participant)
 
 
-class CustomQuestionnaireView(QuestionnaireView):
+class DDCSQuestionnaireView(QuestionnaireView):
+    template_name = "datadonation/questionnaire.html"
+
     steps = PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:questionnaire"
 
 
-class CustomDebriefingView(DebriefingView):
+class DDCSDebriefingView(DebriefingView):
     template_name = "datadonation/debriefing.html"
 
     steps = PARTICIPATION_FLOW_STEPS

@@ -1,0 +1,52 @@
+{% extends "datadonation/base.html" %}
+{% load i18n static %}
+{% load render_bundle from webpack_loader %}
+{% get_current_language as LANGUAGE_CODE %}
+
+{% block page_title %}Fragebogen{% endblock page_title %}
+
+{% block css %}
+  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap.min.css' %}" />
+  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap-icons.css' %}" />
+  <link href="{% static 'ddm_core/css/fonts.css' %}" rel="stylesheet" />
+  <link href="{% static 'ddm_participation/css/public-base.css' %}" rel="stylesheet" />
+  <link rel="stylesheet" href="{% static 'ddm_core/css/research-interface-base.css' %}" />
+  {% if project.has_custom_theme %}
+    <link rel="stylesheet" href="{% url 'ddm_participation:theme_css' project.slug %}?v={{ project.theme_version }}" />
+  {% endif %}
+  <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
+{% endblock css %}
+
+{% block header %}
+  {% include "datadonation/header.html" with page_header_title="Fragebogen" %}
+{% endblock header %}
+
+{% block content %}
+  <div class="container">
+    <div class="row justify-content-center mt-5 mb-5">
+      <div class="col-12 col-lg-9 col-xl-8">
+        <form method="post">
+          {% csrf_token %}
+          <div
+            id="qapp"
+            data-action-url='{{ request.build_absolute_uri }}'
+            data-progress-url='{% url "ddm_participation:questionnaire_progress" project.slug %}'
+            data-language='{{ LANGUAGE_CODE|slice:"0:2" }}'
+            class="text-black"
+          >
+            {{ q_config|json_script:"q-config-data" }}
+            {{ filter_config|json_script:"filter-config-data" }}
+            {{ extra_variables|json_script:"static-variables-data" }}
+            {# djlint:off #}
+            <qapp></qapp>
+            {# djlint:on #}
+          </div>
+        </form>
+        {% render_bundle 'ddm_questionnaire_frontend' config='DDM_QUESTIONNAIRE' %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}
+
+{% block extra_js %}
+{% endblock extra_js %}
