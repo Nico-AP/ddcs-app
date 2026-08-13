@@ -30,6 +30,12 @@ class APIVideoInfos(ResearchAPIDataModel):
     class Meta:
         verbose_name = "API Video Infos"
         verbose_name_plural = "API Video Infos"
+        indexes = [
+            models.Index(
+                fields=["video", "-created_at"],
+                name="apiinfos_vid_created_idx",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"Research API video infos for video {self.video}"

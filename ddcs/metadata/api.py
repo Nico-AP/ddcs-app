@@ -36,13 +36,15 @@ class TikTokVideoList(generics.ListAPIView):
         # Computed once here; TikTokVideoFilter's methods reuse this
         # annotation instead of each re-deriving their own "latest row"
         # subquery.
-        latest_info_id = (
-            APIVideoInfos.objects.filter(video=OuterRef("pk"))
-            .order_by("-created_at")
-            .values("pk")[:1]
+        latest_info = APIVideoInfos.objects.filter(video=OuterRef("pk")).order_by(
+            "-created_at"
         )
         return (
-            TikTokVideo.objects.annotate(latest_api_info_id=Subquery(latest_info_id))
+            TikTokVideo.objects.annotate(
+                latest_api_info_id=Subquery(latest_info.values("pk")[:1]),
+                latest_create_time=Subquery(latest_info.values("create_time")[:1]),
+                latest_region_code=Subquery(latest_info.values("region_code")[:1]),
+            )
             .prefetch_related(
                 Prefetch(
                     "api_infos",
