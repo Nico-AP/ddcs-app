@@ -67,6 +67,9 @@ class TikTokVideo(BaseMetadataModel):
     class Meta:
         verbose_name = "TikTok Video"
         verbose_name_plural = "TikTok Videos"
+        indexes = [
+            models.Index(fields=["-updated_at"], name="tiktokvideo_updated_at_idx"),
+        ]
 
     def __str__(self) -> str:
         return str(self.id_tiktok)
@@ -81,6 +84,12 @@ class TikTokUser(BaseMetadataModel, APIMonitoredMixin):
     class Meta:
         verbose_name = "TikTok User"
         verbose_name_plural = "TikTok Users"
+        indexes = [
+            models.Index(
+                fields=["monitor_api"],
+                name="tiktokuser_monitor_api_idx",
+            ),
+        ]
 
     def __str__(self) -> str:
         if self.name:
