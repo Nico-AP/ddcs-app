@@ -253,3 +253,20 @@ class TikTokVideoListTestCase(APITestCase):
         response = self.client.get(self.url, {"has_api_infos": False})
         ids = [v["id_tiktok"] for v in response.data["results"]]
         self.assertEqual(ids, [video_no_info.id_tiktok])
+
+    # --- monitored users filter ---
+
+    def test_filter_by_monitored_users(self):
+        matching_user = TikTokUser.objects.create(
+            name="alice", id_tiktok=10, monitor_api=True
+        )
+        other_user = TikTokUser.objects.create(
+            name="bob", id_tiktok=20, monitor_api=False
+        )
+        matching_video = self._create_video(111, user=matching_user)
+        self._create_video(222, user=other_user)
+
+        response = self.client.get(self.url, {"monitored_users": True})
+
+        ids = [v["id_tiktok"] for v in response.data["results"]]
+        self.assertEqual(ids, [matching_video.id_tiktok])
