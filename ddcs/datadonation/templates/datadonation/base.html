@@ -6,7 +6,9 @@
 
 {% block main %}
 
-  {% include "datadonation/header.html" %}
+  {% block header %}
+    {% include "datadonation/header.html" with page_header_title="Datenspende" %}
+  {% endblock header %}
 
   {% block content %}{% endblock content %}
 
