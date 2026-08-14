@@ -62,10 +62,14 @@ class TikTokVideo(BaseMetadataModel):
     )
 
     hashtags = models.ManyToManyField("TikTokHashtag", blank=True)
+    keywords = models.ManyToManyField("Keyword", blank=True)
 
     class Meta:
         verbose_name = "TikTok Video"
         verbose_name_plural = "TikTok Videos"
+        indexes = [
+            models.Index(fields=["-updated_at"], name="tiktokvideo_updated_at_idx"),
+        ]
 
     def __str__(self) -> str:
         return str(self.id_tiktok)
@@ -80,6 +84,12 @@ class TikTokUser(BaseMetadataModel, APIMonitoredMixin):
     class Meta:
         verbose_name = "TikTok User"
         verbose_name_plural = "TikTok Users"
+        indexes = [
+            models.Index(
+                fields=["monitor_api"],
+                name="tiktokuser_monitor_api_idx",
+            ),
+        ]
 
     def __str__(self) -> str:
         if self.name:
@@ -119,7 +129,16 @@ class TikTokHashtag(BaseMetadataModel, APIMonitoredMixin):
         return f"{self.pk} (pk)"
 
 
-# API Progress trackers
+class Keyword(BaseMetadataModel, APIMonitoredMixin):
+    """Keywords are used to query the TikTok Research API."""
+
+    name = models.CharField(max_length=255, db_index=True, unique=True)
+
+    def __str__(self) -> str:
+        return self.name
+
+
+# --- API Progress trackers ---
 
 
 class ResearchAPIQueryTracker(models.Model):
@@ -182,14 +201,24 @@ class SyncAttempt(models.Model):
         on_delete=models.SET_NULL,
         related_name="sync_attempts",
     )
-    hashtag = models.ForeignKey(
-        TikTokHashtag,
+    keyword = models.ForeignKey(
+        Keyword,
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
         related_name="sync_attempts",
         help_text="Target when the item was queried as a keyword.",
     )
+    hashtag = models.ForeignKey(
+        TikTokHashtag,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="sync_attempts",
+        help_text="Target when the item was queried as a keyword (hashtag).",
+    )  # Hashtag syncing is deprecated and replaced by keyword;
+    # kept for backwards compatibility
+
     target_date = models.DateField(
         help_text="The day the API was queried for (not when the attempt ran)."
     )
@@ -208,6 +237,7 @@ class SyncAttempt(models.Model):
     class Meta:
         indexes = [
             models.Index(fields=["user", "target_date"]),
+            models.Index(fields=["keyword", "target_date"]),
             models.Index(fields=["hashtag", "target_date"]),
             models.Index(fields=["target_date", "status"]),
         ]
@@ -215,12 +245,19 @@ class SyncAttempt(models.Model):
             models.CheckConstraint(
                 name="syncattempt_has_exactly_one_target",
                 condition=(
-                    models.Q(user__isnull=False, hashtag__isnull=True)
-                    | models.Q(user__isnull=True, hashtag__isnull=False)
+                    models.Q(
+                        user__isnull=False, keyword__isnull=True, hashtag__isnull=True
+                    )
+                    | models.Q(
+                        user__isnull=True, keyword__isnull=True, hashtag__isnull=False
+                    )
+                    | models.Q(
+                        user__isnull=True, keyword__isnull=False, hashtag__isnull=True
+                    )
                 ),
             ),
         ]
 
     def __str__(self) -> str:
-        target = self.user or self.hashtag
+        target = self.user or self.hashtag or self.keyword
         return f"{target} @ {self.target_date} [{self.status}]"

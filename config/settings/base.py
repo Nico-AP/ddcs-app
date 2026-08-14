@@ -74,6 +74,9 @@ THIRD_PARTY_APPS = [
     "webpack_loader",
     "rest_framework",
     "rest_framework.authtoken",
+    "django_filters",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     # Admin 2FA
     "django_otp",
     "django_otp.plugins.otp_static",
@@ -454,6 +457,15 @@ LOGGING = {
             "encoding": "utf-8",
             "formatter": "json",
         },
+        "datadonation_file": {
+            "level": "WARNING",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "datadonation.log",
+            "backupCount": 0,  # Keep all rotated files forever
+            "maxBytes": 1024 * 1024 * 25,  # 25 MB per file
+            "encoding": "utf-8",
+            "formatter": "json",
+        },
         "mail_admins": {
             "level": "ERROR",
             "class": "django.utils.log.AdminEmailHandler",
@@ -495,14 +507,20 @@ LOGGING = {
             "propagate": False,
             "level": "INFO",
         },
+        "ddcs.datadonation": {
+            "handlers": ["datadonation_file"],
+            "propagate": False,
+            "level": "INFO",
+        },
     },
 }
 
 # TikTok Connection (OAuth + Portability API)
 # ------------------------------------------------------------------------------
-AUTH_TOKEN_SECRET = env.str("AUTH_TOKEN_SECRET")  # Authlib config
+TIKTOK_OPEN_ID_HASH_SECRET = env.str("TIKTOK_OPEN_ID_HASH_SECRET")
 TIKTOK_CLIENT_ID = env.str("TIKTOK_CLIENT_ID", "")
 TIKTOK_CLIENT_SECRET = env.str("TIKTOK_CLIENT_SECRET", "")
+TIKTOK_DDM_PROJECT_SLUG = env.str("TIKTOK_DDM_PROJECT_SLUG", "tiktok")
 
 # DDM and related settings
 # ------------------------------------------------------------------------------
@@ -565,4 +583,20 @@ WAGTAILADMIN_RICH_TEXT_EDITORS = {
             ]
         },
     }
+}
+
+# Django Restframework
+# ------------------------------------------------------------------------------
+REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "DDCS TikTok API",
+    "DESCRIPTION": "API for TikTok video metadata",
+    "VERSION": "1.0",
+    "SERVE_URLCONF": "config.api_urls",
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+    "REDOC_DIST": "SIDECAR",
 }

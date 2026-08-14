@@ -2,6 +2,11 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularRedocView,
+    SpectacularSwaggerView,
+)
 from wagtail import urls as wagtail_urls
 from wagtail.admin import urls as wagtailadmin_urls
 from wagtail.documents import urls as wagtaildocs_urls
@@ -16,8 +21,17 @@ urlpatterns = [
     path(f"{settings.ADMIN_URL}/", admin.site.urls),
     # DDCS
     path("", include("ddcs.website.urls", namespace="website")),
+    path("metadata/", include("ddcs.metadata.urls", namespace="metadata")),
     path("", include("ddcs.datadonation.urls", namespace="datadonation")),
     path("", include("ddcs.reports.urls", namespace="reports")),
+    # DRF
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path(
+        "api/docs/",
+        SpectacularSwaggerView.as_view(url_name="schema"),
+        name="swagger-ui",
+    ),
+    path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     # DDM
     path("ddm/", include("ddm.core.urls")),
     path("ckeditor5/", include("django_ckeditor_5.urls")),

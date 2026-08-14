@@ -218,7 +218,7 @@ TikTokUser.objects.filter(monitor_api=True).annotate(
 ).filter(ok=False).values_list("name", flat=True)
 ```
 
-Swap `TikTokUser`/`user` for `TikTokHashtag`/`hashtag` for keywords.
+Swap `TikTokUser`/`user` for `Keyword` for keywords.
 
 ### "What error patterns are we seeing on date D?"
 

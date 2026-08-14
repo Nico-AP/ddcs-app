@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-07-09 15:25+0200\n"
+"POT-Creation-Date: 2026-08-14 16:02+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -18,13 +18,52 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: config/settings/base.py:226
+#: config/settings/base.py:229
 msgid "German"
 msgstr "Deutsch"
 
-#: config/settings/base.py:227
+#: config/settings/base.py:230
 msgid "English"
 msgstr "Englisch"
+
+#: ddcs/datadonation/templates/datadonation/briefing.html:20
+msgid "Please indicate whether you want to continue with this study."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/briefing.html:25
+msgid "Welcome to this study!"
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/briefing.html:27
+msgid ""
+"Please define a description and welcome text for this project in the Project "
+"Hub."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/briefing.html:81
+msgid "Continue"
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_available_msg.html:4
+msgid ""
+"Deine TikTok-Daten sind nun verfügbar! Klicke auf den Button, um "
+"fortzufahren."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_expired_msg.html:5
+msgid ""
+"Leider ist der Download nicht mehr verfügbar. Bitte versuche es noch einmal:"
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_pending_msg.html:9
+msgid ""
+"Wir warten darauf, dass deine TikTok-Daten verfügbar sind. Das kann einige "
+"Sekunden dauern."
+msgstr ""
+
+#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_pending_msg.html:16
+msgid "Verfügbarkeit zuletzt geprüft am"
+msgstr ""
 
 #: ddcs/website/templates/exceptions/403.html:6
 #: ddcs/website/templates/exceptions/403.html:10
@@ -44,8 +83,8 @@ msgid ""
 "in, or return to the <a href=\"%(landing_page_url)s\">home page</a>."
 msgstr ""
 "Sie sind nicht berechtigt, diese Seite aufzurufen. Bitte stellen Sie sicher, "
-"dass Sie angemeldet sind, oder kehren Sie zur <a href=\"%(landing_page_url)s"
-"\">Startseite</a> zurück."
+"dass Sie angemeldet sind, oder kehren Sie zur <a "
+"href=\"%(landing_page_url)s\">Startseite</a> zurück."
 
 #: ddcs/website/templates/exceptions/404.html:6
 #: ddcs/website/templates/exceptions/404.html:10
@@ -58,11 +97,11 @@ msgstr "Seite nicht gefunden"
 #| "This page does not exist or has been moved. Return to the <a href=\"/"
 #| "\">home page</a>."
 msgid ""
-"This page does not exist or has been moved. Return to the <a href="
-"\"%(landing_page_url)s\">home page</a>."
+"This page does not exist or has been moved. Return to the <a "
+"href=\"%(landing_page_url)s\">home page</a>."
 msgstr ""
-"Diese Seite existiert nicht oder wurde verschoben. Zurück zur <a href="
-"\"%(landing_page_url)s\">Startseite</a>."
+"Diese Seite existiert nicht oder wurde verschoben. Zurück zur <a "
+"href=\"%(landing_page_url)s\">Startseite</a>."
 
 #: ddcs/website/templates/exceptions/500.html:6
 msgid "Something went wrong"

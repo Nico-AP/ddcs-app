@@ -1,0 +1,6 @@
+{% load i18n %}
+
+<div>
+  <p>{% translate "Deine TikTok-Daten sind nun verfügbar! Klicke auf den Button, um fortzufahren." %}</p>
+  <p><a href="{% url 'datadonation:portability_donation' slug=project_slug %}" class="btn btn-primary-dfdw text-white cta-btn">Weiter</a></p>
+</div>

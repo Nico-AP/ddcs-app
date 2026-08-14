@@ -1,14 +1,14 @@
 {% load static %}
 
-<nav class="navbar navbar-expand-lg bg-body-tertiary sticky-top">
-  <div class="container">
+<nav class="navbar navbar-expand-lg bg-body-tertiary sticky-top custom-ddm-navbar">
+  <div class="container ">
     <div>
       <div class="d-flex align-items-center">
         <img src="{% static 'core/img/logos/ddcs_logo_oneline.svg' %}" alt="Dein Feed, Deine Wahl Logo" height="30px" />
       </div>
     </div>
     <div>
-      <strong>Datenspende</strong>
+      <strong>{% if page_header_title %}{{ page_header_title }}{% endif %}</strong>
     </div>
   </div>
 </nav>

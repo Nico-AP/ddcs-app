@@ -4,8 +4,13 @@ from ddcs.datadonation.portability import views
 
 urlpatterns = [
     path(
-        "connect/tiktok/",
-        views.TikTokConnectionView.as_view(),
+        "<slug:slug>/start/",
+        views.DDCSPortabilityBriefingView.as_view(),
+        name="portability_briefing",
+    ),
+    path(
+        "tiktok/connect/infos/",
+        views.TikTokConnectionInfosView.as_view(),
         name="tiktok_connection",
     ),
     path("auth/tiktok/", views.TikTokConnectView.as_view(), name="tiktok_auth"),
@@ -15,18 +20,33 @@ urlpatterns = [
         name="tiktok_callback",
     ),
     path(
-        "auth/tiktok/exception/",
+        "auth/tiktok/exception/<slug:code>",
         views.PortabilityExceptionView.as_view(),
         name="portability_exception",
     ),
     path(
-        "connect/tiktok/await/",
+        "tiktok/connect/",
         views.TikTokAwaitDataView.as_view(),
         name="tiktok_await_data",
     ),
     path(
-        "connect/<slug:slug>/datenspende/",
+        "tiktok/connect/check",
+        views.CheckDataAvailabilityView.as_view(),
+        name="tiktok_check_request",
+    ),
+    path(
+        "tiktok/connect/download",
+        views.TikTokDownloadView.as_view(),
+        name="tiktok_download",
+    ),
+    path(
+        "<slug:slug>/connect/datenspende/",
         views.PortabilityDonationView.as_view(),
         name="portability_donation",
+    ),
+    path(
+        "<slug:slug>/connect/datenspende/test/",
+        views.PortabilityDonationViewTest.as_view(),
+        name="portability_donation_test",
     ),
 ]

@@ -32,10 +32,15 @@
       {# djlint:off H020 #}<uapp></uapp>{# djlint:on #}
     </div>
     {% render_bundle "ddm_uploader_frontend" config="DDM_UPLOADER" %}
-
   </div>
+
+  {# Information consumed by tiktok-download.js #}
+  {% csrf_token %}
+  <input type="hidden" id="tiktok-download-url" value="{{ download_url }}" />
+  <input type="hidden" id="fail-redirect-url" value="{{ failed_url }}" />
 {% endblock content %}
 
 {% block extra_js %}
-  <script src="{% static 'datadonation/update_ddm_ui.js' %}"></script>
+  <script src="{% static 'datadonation/update-ddm-ui.js' %}"></script>
+  <script src="{% static 'datadonation/tiktok-download.js' %}"></script>
 {% endblock extra_js %}

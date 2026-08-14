@@ -1,0 +1,20 @@
+{% load i18n static %}
+
+<div id="check-download-availability"
+     hx-get="{% url 'datadonation:tiktok_check_request' %}"
+     hx-trigger="load delay:10s"
+     hx-swap="outerHTML">
+  <div>
+    <p class="mb-0">
+      {% translate "Wir warten darauf, dass deine TikTok-Daten verfügbar sind. Das kann einige Sekunden dauern." %}
+    </p>
+    <div class="col-auto pt-3">
+      <img src="{% static 'core/img/ddcs_load_icon.svg' %}" alt="Dein Feed, Deine Wahl Ladeicon" height="100px" />
+    </div>
+    {% if poll_datetime %}
+    <p class="mb-0 pt-3">
+      {% translate "Verfügbarkeit zuletzt geprüft am" %} {{ poll_datetime }}
+    </p>
+    {% endif %}
+  </div>
+</div>

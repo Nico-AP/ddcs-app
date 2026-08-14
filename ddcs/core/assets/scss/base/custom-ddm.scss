@@ -1,3 +1,5 @@
+@use '../abstracts/index' as *;
+
 #uapp {
 
   font-size: var(--font-size-body-small);
@@ -32,8 +34,63 @@
       margin: 10px;
     }
   }
+
+  .grey-button {
+    background: #ededed !important;
+    color: #000 !important;
+  }
 }
 
 #uapp.ddm-portability {
   visibility: hidden; // visibility is controlled through JS
+}
+
+.custom-ddm-navbar {
+  height: 70px;
+  .container {
+    display: flex;
+    flex-direction: column;
+  }
+
+  @media (min-width: $bp-sm) {
+    height: 50px;
+    .container {
+      flex-direction: row;
+      justify-content: space-between;
+    }
+  }
+}
+
+#ddm-participation-main {
+  .progress-indicator {
+    top: 70px;
+    background: white;
+    @media (min-width: $bp-sm) {
+      top: 50px;
+    }
+  }
+
+  .sticky-gap-mask {
+    background: white;
+  }
+
+  .question-body.is-sticky .question-text {
+    top: 100px;
+    @media (min-width: $bp-sm) {
+      top: 80px;
+    }
+  }
+
+  .flow-btn {
+    background-color: var(--color-cta-bg);
+    border-radius: var(--radius-md);
+    padding: .75rem 1.5rem;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-bold);
+    line-height: 1;
+  }
+  .flow-btn:hover {
+    background-color: var(--color-cta-hover);
+    color: var(--color-cta-text);
+  }
 }
