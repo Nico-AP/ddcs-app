@@ -4,12 +4,14 @@ from datetime import UTC, datetime
 import requests
 from django.conf import settings
 from django.utils import timezone
+from requests import HTTPError
 
-from ddcs.datadonation.portability.endpoints import (
+from ddcs.datadonation.portability.api_specifications import (
     TIKTOK_DATA_ADD_URL,
     TIKTOK_DATA_CHECK_URL,
     TIKTOK_DATA_DOWNLOAD_URL,
     TIKTOK_TOKEN_URL,
+    Scopes,
 )
 from ddcs.datadonation.portability.models import TikTokConnection
 
@@ -47,19 +49,44 @@ def get_valid_token(connection: TikTokConnection) -> str:
     return connection.access_token
 
 
-def issue_data_request(access_token: str) -> dict:
+def get_category_selection_from_scopes(scopes: str) -> list[str]:
+    """Converts approved scopes into the category selection list expected by TikTok"""
+    categories = []
+    if Scopes.ACTIVITY in scopes:
+        categories.append("activity")
+    if Scopes.DIRECT_MESSAGES in scopes:
+        categories.append("direct_message")
+    if Scopes.POSTSANDPROFILE in scopes:
+        categories.extend(["video", "profile"])
+    return categories
+
+
+def issue_data_request(access_token: str, scopes: str) -> dict:
     url = TIKTOK_DATA_ADD_URL
+    category_selection_list = get_category_selection_from_scopes(scopes)
+
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {access_token}",
     }
     params = {"fields": "request_id"}
-    payload = {"data_format": "json", "category_selection_list": ["all_data"]}
+    payload = {
+        "data_format": "json",
+        "category_selection_list": category_selection_list,
+    }
 
     response = requests.post(
         url, headers=headers, params=params, json=payload, timeout=(5, 30)
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except HTTPError:
+        logger.exception(
+            "TikTok data request creation failed. status=%s body=%s",
+            response.status_code,
+            response.text,
+        )
+        raise
     return response.json()
 
 
@@ -93,7 +120,15 @@ def poll_data_request_status(access_token: str, request_id: int) -> dict:
     response = requests.post(
         url, headers=headers, params=params, json=payload, timeout=30
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except HTTPError:
+        logger.exception(
+            "TikTok data request status poll failed. status=%s body=%s",
+            response.status_code,
+            response.text,
+        )
+        raise
     return response.json()
 
 
@@ -114,5 +149,13 @@ def download_data_request(access_token: str, request_id: int) -> requests.Respon
         stream=True,
         timeout=(5, 15),
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except HTTPError:
+        logger.exception(
+            "TikTok data request download failed. status=%s body=%s",
+            response.status_code,
+            response.text,
+        )
+        raise
     return response

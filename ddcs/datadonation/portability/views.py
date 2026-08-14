@@ -22,6 +22,7 @@ from django.views.generic import TemplateView
 from requests import Response
 from requests.exceptions import HTTPError
 
+from ddcs.datadonation.portability.api_specifications import Scopes
 from ddcs.datadonation.portability.models import TikTokConnection, TikTokDataRequest
 from ddcs.datadonation.portability.oauth import oauth
 from ddcs.datadonation.portability.services import (
@@ -85,6 +86,8 @@ class DataRequestMixin(ConnectionInSessionMixin):
 
 class DDCSPortabilityBriefingView(BriefingView):
     """Renders the briefing page with the infos set in DDM."""
+
+    template_name = "datadonation/briefing.html"
 
     steps = API_PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:portability_briefing"
@@ -157,6 +160,17 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
         connection, connection_created = self._get_or_create_tiktok_connection(token)
         store_tiktok_connection_in_session(request, connection.id)
 
+        if not any(scope in connection.scope for scope in list(Scopes)):
+            # Participant has not approved access to their data
+            logger.info(
+                "Participant has not approved access to any relevant data. "
+                "connection_id=%s",
+                connection.id,
+            )
+            return redirect(
+                reverse("datadonation:portability_exception")
+            )  # TODO: switch to DL-UL
+
         if not connection_created:
             data_request = (
                 TikTokDataRequest.objects.filter(
@@ -172,7 +186,9 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
 
         # Create a data request on TikTok's API
         try:
-            request_data = issue_data_request(get_valid_token(connection))
+            request_data = issue_data_request(
+                get_valid_token(connection), connection.scope
+            )
         except HTTPError:
             logger.exception(
                 "Failed to issue TikTok data request. connection_id=%s", connection.id

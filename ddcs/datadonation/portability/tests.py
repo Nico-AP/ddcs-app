@@ -234,7 +234,7 @@ class ConnectionInSessionMixinTest(PortabilityViewTestCase):
         )
 
 
-def _fake_token(open_id="raw_open_id"):
+def _fake_token(open_id: str = "raw_open_id"):
     return {
         "open_id": open_id,
         "access_token": "new-access-token",
@@ -242,7 +242,7 @@ def _fake_token(open_id="raw_open_id"):
         "expires_in": 3600,
         "refresh_expires_in": 2592000,
         "token_type": "Bearer",
-        "scope": "user.info.basic",
+        "scope": "portability.activity.single",
     }
 
 
@@ -274,6 +274,24 @@ class TikTokCallbackViewTest(PortabilityViewTestCase):
         data_request = TikTokDataRequest.objects.get()
         self.assertEqual(data_request.connection, connection)
         self.assertEqual(data_request.request_id, 111)
+
+    @patch("ddcs.datadonation.portability.views.extract_request_id")
+    @patch("ddcs.datadonation.portability.views.issue_data_request")
+    @patch("ddcs.datadonation.portability.views.get_valid_token")
+    @patch("ddcs.datadonation.portability.views.oauth")
+    def test_invalid_scope_redirects(
+        self, mock_oauth, mock_get_valid_token, mock_issue, mock_extract
+    ):
+        token_data = _fake_token("raw_open_id")
+        token_data["scope"] = "invalid_scope"
+        mock_oauth.tiktok.authorize_access_token.return_value = token_data
+        mock_get_valid_token.return_value = "access-token"
+        mock_issue.return_value = {"request_id": 111}
+        mock_extract.return_value = 111
+
+        response = self.client.get(self._callback_url())
+
+        self.assertRedirects(response, reverse("datadonation:portability_exception"))
 
     @patch("ddcs.datadonation.portability.views.extract_request_id")
     @patch("ddcs.datadonation.portability.views.issue_data_request")
