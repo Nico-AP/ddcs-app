@@ -1,7 +1,10 @@
 from authlib.integrations.django_client import OAuth
 from django.conf import settings
 
-from ddcs.datadonation.portability.endpoints import TIKTOK_AUTH_URL, TIKTOK_TOKEN_URL
+from ddcs.datadonation.portability.api_specifications import (
+    TIKTOK_AUTH_URL,
+    TIKTOK_TOKEN_URL,
+)
 
 oauth = OAuth()
 

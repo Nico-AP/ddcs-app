@@ -5,6 +5,7 @@ from ddm.participation.views import (
     QuestionnaireView,
 )
 from django.http import HttpRequest
+from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.datastructures import MultiValueDict
 
@@ -44,6 +45,15 @@ class DDCSDownloadUploadView(DataDonationView):
 
         # Trigger post-donation processing pipeline
         post_process_donation(self.participant)
+
+    def current_step_url(self) -> str:
+        try:
+            return reverse(
+                self.steps[self.current_step], kwargs={"slug": self.object.slug}
+            )
+        except NoReverseMatch:
+            # Fallback for URLs hard-coding the "tiktok" slug.
+            return reverse(self.steps[self.current_step])
 
 
 class DDCSQuestionnaireView(QuestionnaireView):
