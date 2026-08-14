@@ -1,8 +1,21 @@
 {% extends "website/base.html" %}
 
+{% load i18n static %}
+
 {% block page_title %}Datenspende{% endblock page_title %}
 
 {% block head_seo_tags %}{% endblock head_seo_tags %}
+
+{% block css %}
+  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap.min.css' %}" />
+  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap-icons.css' %}" />
+  <link rel="stylesheet" href="{% static 'ddm_core/css/fonts.css' %}" />
+  <link rel="stylesheet" href="{% static 'ddm_core/css/research-interface-base.css' %}" />
+  {% if project.has_custom_theme %}
+    <link rel="stylesheet" href="{% url 'ddm_participation:theme_css' project.slug %}?v={{ project.theme_version }}" />
+  {% endif %}
+  <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
+{% endblock css %}
 
 {% block main %}
 
@@ -10,9 +23,11 @@
     {% include "datadonation/header.html" with page_header_title="Datenspende" %}
   {% endblock header %}
 
-  {% block content %}{% endblock content %}
+  <div id="ddm-participation-main">
+    {% block content %}{% endblock content %}
+  </div>
 
-  {% include "website/components/footer.html" %}
+  {% include "datadonation/footer.html" %}
 
   {% block extra_content %}{% endblock extra_content %}
 

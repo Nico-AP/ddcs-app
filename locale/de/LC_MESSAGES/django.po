@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-13 11:07+0200\n"
+"POT-Creation-Date: 2026-08-13 14:19+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -26,21 +26,21 @@ msgstr "Deutsch"
 msgid "English"
 msgstr "Englisch"
 
-#: ddcs/datadonation/templates/datadonation/briefing.html:32
+#: ddcs/datadonation/templates/datadonation/briefing.html:20
 msgid "Please indicate whether you want to continue with this study."
 msgstr ""
 
-#: ddcs/datadonation/templates/datadonation/briefing.html:37
+#: ddcs/datadonation/templates/datadonation/briefing.html:25
 msgid "Welcome to this study!"
 msgstr ""
 
-#: ddcs/datadonation/templates/datadonation/briefing.html:39
+#: ddcs/datadonation/templates/datadonation/briefing.html:27
 msgid ""
 "Please define a description and welcome text for this project in the Project "
 "Hub."
 msgstr ""
 
-#: ddcs/datadonation/templates/datadonation/briefing.html:93
+#: ddcs/datadonation/templates/datadonation/briefing.html:81
 msgid "Continue"
 msgstr ""
 

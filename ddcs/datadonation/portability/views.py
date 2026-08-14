@@ -5,8 +5,11 @@ from collections.abc import Generator
 from datetime import datetime, timedelta
 
 from authlib.integrations.django_client import OAuthError
+from ddm.datadonation.models import FileUploader
+from ddm.participation.services import UploaderConfigService
 from ddm.participation.views import BriefingView
 from django.conf import settings
+from django.contrib.auth.mixins import UserPassesTestMixin
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -22,6 +25,7 @@ from django.views.generic import TemplateView
 from requests import Response
 from requests.exceptions import HTTPError
 
+from ddcs.datadonation.portability.api_specifications import Scopes
 from ddcs.datadonation.portability.models import TikTokConnection, TikTokDataRequest
 from ddcs.datadonation.portability.oauth import oauth
 from ddcs.datadonation.portability.services import (
@@ -85,6 +89,8 @@ class DataRequestMixin(ConnectionInSessionMixin):
 
 class DDCSPortabilityBriefingView(BriefingView):
     """Renders the briefing page with the infos set in DDM."""
+
+    template_name = "datadonation/briefing.html"
 
     steps = API_PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:portability_briefing"
@@ -157,6 +163,17 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
         connection, connection_created = self._get_or_create_tiktok_connection(token)
         store_tiktok_connection_in_session(request, connection.id)
 
+        if not any(scope in connection.scope for scope in list(Scopes)):
+            # Participant has not approved access to their data
+            logger.info(
+                "Participant has not approved access to any relevant data. "
+                "connection_id=%s",
+                connection.id,
+            )
+            return redirect(
+                reverse("datadonation:portability_exception")
+            )  # TODO: switch to DL-UL
+
         if not connection_created:
             data_request = (
                 TikTokDataRequest.objects.filter(
@@ -172,7 +189,9 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
 
         # Create a data request on TikTok's API
         try:
-            request_data = issue_data_request(get_valid_token(connection))
+            request_data = issue_data_request(
+                get_valid_token(connection), connection.scope
+            )
         except HTTPError:
             logger.exception(
                 "Failed to issue TikTok data request. connection_id=%s", connection.id
@@ -381,6 +400,49 @@ class PortabilityDonationView(DDCSDownloadUploadView):
 
     steps = API_PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:portability_donation"
+
+    def get_uploader_configs(self) -> list:
+        project_uploaders = FileUploader.objects.filter(project=self.object)
+        configs = UploaderConfigService.create_configs(
+            project_uploaders, self.participant
+        )
+        # Remove Instructions
+        for uploader in configs:
+            uploader["instructions"] = []
+        return configs
+
+    def get_context_data(self, **kwargs) -> dict:
+        context = super().get_context_data(**kwargs)
+        context["download_url"] = reverse("datadonation:tiktok_download")
+        context["failed_url"] = reverse(
+            "datadonation:portability_exception"
+        )  # TODO: Better destination
+        return context
+
+
+class PortabilityDonationViewTest(UserPassesTestMixin, DDCSDownloadUploadView):
+    template_name = "datadonation/portability/donation.html"
+
+    def test_func(self) -> bool:
+        return self.request.user.is_superuser
+
+    def get_context_data(self, **kwargs) -> dict:
+        context = super().get_context_data(**kwargs)
+        context["download_url"] = reverse("datadonation:tiktok_download")
+        context["failed_url"] = reverse(
+            "datadonation:portability_exception"
+        )  # TODO: Better destination
+        return context
+
+    def get_uploader_configs(self) -> list:
+        project_uploaders = FileUploader.objects.filter(project=self.object)
+        configs = UploaderConfigService.create_configs(
+            project_uploaders, self.participant
+        )
+        # Remove Instructions
+        for uploader in configs:
+            uploader["instructions"] = []
+        return configs
 
 
 class PortabilityExceptionView(TemplateView):

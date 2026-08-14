@@ -8,6 +8,7 @@ class TikTokVideoSerializer(serializers.HyperlinkedModelSerializer):
     user = serializers.CharField(source="user.name", read_only=True, default=None)
     description = serializers.SerializerMethodField()
     create_time = serializers.SerializerMethodField()
+    created_at = serializers.SerializerMethodField()
     region_code = serializers.SerializerMethodField()
     duration = serializers.SerializerMethodField()
     voice_to_text = serializers.SerializerMethodField()
@@ -36,6 +37,7 @@ class TikTokVideoSerializer(serializers.HyperlinkedModelSerializer):
             "user",
             "description",
             "create_time",
+            "created_at",
             "region_code",
             "duration",
             "voice_to_text",
@@ -66,11 +68,19 @@ class TikTokVideoSerializer(serializers.HyperlinkedModelSerializer):
 
     def get_create_time(self, obj: TikTokVideo) -> str | None:
         api_info = self._get_latest_api_info(obj)
-        if api_info and api_info.created_at:
-            create_time = api_info.created_at.isoformat()
+        if api_info and api_info.create_time:
+            create_time = api_info.create_time.isoformat()
         else:
             create_time = None
         return create_time
+
+    def get_created_at(self, obj: TikTokVideo) -> str | None:
+        api_info = self._get_latest_api_info(obj)
+        if api_info and api_info.created_at:
+            created_at = api_info.created_at.isoformat()
+        else:
+            created_at = None
+        return created_at
 
     def get_region_code(self, obj: TikTokVideo) -> str | None:
         api_info = self._get_latest_api_info(obj)
