@@ -1,0 +1,36 @@
+{% load static nav_tags %}
+
+{% get_navigation as navigation %}
+
+<div class="bg-body-tertiary">
+  <div class="container">
+    <footer class="d-flex flex-wrap justify-content-center justify-content-md-between align-items-center py-3 my-4">
+      <div class="col-md-6 d-flex align-items-center mb-3 mb-md-0 text-body-secondary">
+        <div>© 2026 Dein Feed, Deine Wahl. / Weizenbaum-Institut</div>
+      </div>
+
+      <div>
+        <div class="pe-4">
+          <a
+            type="button"
+            data-bs-toggle="modal"
+            data-bs-target="#contactModal"
+          >
+            Impressum
+          </a>
+        </div>
+        <div class="pe-4">
+          <a
+            type="button"
+            data-bs-toggle="modal"
+            data-bs-target="#dataProtectionModal"
+          >
+            Datenschutzerklärung
+          </a>
+        </div>
+      </div>
+    </footer>
+  </div>
+</div>
+
+{% include "ddm_participation/footer_modals.html" %}

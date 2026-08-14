@@ -40,8 +40,13 @@ urlpatterns = [
         name="tiktok_download",
     ),
     path(
-        "connect/<slug:slug>/datenspende/",
+        "<slug:slug>/connect/datenspende/",
         views.PortabilityDonationView.as_view(),
         name="portability_donation",
+    ),
+    path(
+        "<slug:slug>/connect/datenspende/test/",
+        views.PortabilityDonationViewTest.as_view(),
+        name="portability_donation_test",
     ),
 ]

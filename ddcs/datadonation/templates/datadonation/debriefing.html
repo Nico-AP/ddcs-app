@@ -5,14 +5,6 @@
 
 {% block page_title %}Datenspende{% endblock page_title %}
 
-{% block css %}
-  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap.min.css' %}" />
-  <link rel="stylesheet" href="{% static 'ddm_core/css/bootstrap/bootstrap-icons.css' %}" />
-  <link href="{% static 'ddm_core/css/fonts.css' %}" rel="stylesheet" />
-  <link href="{% static 'ddm_participation/css/public-base.css' %}" rel="stylesheet" />
-  <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
-{% endblock css %}
-
 {% block header %}
   {% include "datadonation/header.html" with page_header_title="" %}
 {% endblock header %}
@@ -20,22 +12,21 @@
 {% block content %}
   <div class="container">
     <div class="row justify-content-center pt-4 mt-5 b-3 pb-3">
-      <div class="text-hero-subtitle mb-1">Abschluss</div>
-      <h1>Herzlichen Dank!</h1>
+      <div class="col-12 col-md-10 col-lg-8">
+        <div class="text-hero-subtitle mb-1">Abschluss</div>
+        <h1>Herzlichen Dank!</h1>
 
-      <p>
-        Sie sind nun am Ende der Studie angelangt.
-        Wenn Sie Ihre TikTok-Daten erfolgreich hochgeladen haben,
-        wird Ihnen auf der nächsten Seite Ihr personalisierter Nutzungsreport
-        angezeigt.
-      </p>
+        <p>
+          Sie sind nun am Ende der Studie angelangt.
+          Wenn Sie Ihre TikTok-Daten erfolgreich hochgeladen haben,
+          wird Ihnen auf der nächsten Seite Ihr personalisierter Nutzungsreport
+          angezeigt.
+        </p>
 
-      {# TODO: Handle cases where participant has not donated anything. #}
-
+        {# TODO: Handle cases where participant has not donated anything. #}
+        <a class="btn btn-dark btn-primary-dfdw text-white" href="{% url 'reports:report' participant_id %}">zum Report</a>
+      </div>
     </div>
-
-    <a class="btn btn-dark btn-primary-dfdw" href="{% url 'reports:report' participant_id %}">zum Report</a>
-
   </div>
 {% endblock content %}
 

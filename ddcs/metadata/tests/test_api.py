@@ -170,6 +170,64 @@ class TikTokVideoListTestCase(APITestCase):
         ids = [v["id_tiktok"] for v in response.data["results"]]
         self.assertEqual(ids, [video_in_range.id_tiktok])
 
+    def test_filter_by_create_date_range_to_only(self):
+        video_out_of_range = self._create_video(111)
+        self._create_api_info(
+            video_out_of_range,
+            create_time=timezone.datetime(
+                2026, 6, 15, tzinfo=timezone.get_current_timezone()
+            ),
+        )
+
+        video_in_range = self._create_video(222)
+        self._create_api_info(
+            video_in_range,
+            create_time=timezone.datetime(
+                2026, 1, 1, tzinfo=timezone.get_current_timezone()
+            ),
+        )
+
+        response = self.client.get(
+            self.url,
+            {"create_date_to": "2026-02-01"},
+        )
+
+        ids = [v["id_tiktok"] for v in response.data["results"]]
+        self.assertEqual(ids, [video_in_range.id_tiktok])
+
+    def test_filter_create_date_excludes_video_without_api_info(self):
+        _ = self._create_video(111)  # no _create_api_info call
+
+        video_in_range = self._create_video(222)
+        self._create_api_info(
+            video_in_range,
+            create_time=timezone.datetime(
+                2026, 6, 15, tzinfo=timezone.get_current_timezone()
+            ),
+        )
+
+        response = self.client.get(
+            self.url, {"create_date_from": "2026-06-01", "create_date_to": "2026-06-30"}
+        )
+
+        ids = [v["id_tiktok"] for v in response.data["results"]]
+        self.assertEqual(ids, [video_in_range.id_tiktok])
+
+    def test_filter_create_date_from_after_to_returns_empty(self):
+        video = self._create_video(111)
+        self._create_api_info(
+            video,
+            create_time=timezone.datetime(
+                2026, 6, 15, tzinfo=timezone.get_current_timezone()
+            ),
+        )
+
+        response = self.client.get(
+            self.url, {"create_date_from": "2026-07-01", "create_date_to": "2026-06-01"}
+        )
+
+        self.assertEqual(response.data["results"], [])
+
     # --- keywords filter (M2M on TikTokVideo) ---
 
     def test_filter_by_keywords(self):
