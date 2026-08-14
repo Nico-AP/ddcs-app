@@ -34,6 +34,11 @@
       margin: 10px;
     }
   }
+
+  .grey-button {
+    background: #ededed !important;
+    color: #000 !important;
+  }
 }
 
 #uapp.ddm-portability {
@@ -74,5 +79,18 @@
     @media (min-width: $bp-sm) {
       top: 80px;
     }
+  }
+
+  .flow-btn {
+    background-color: var(--color-cta-bg);
+    border-radius: var(--radius-md);
+    padding: .75rem 1.5rem;
+    font-size: var(--font-size-body);
+    font-weight: var(--font-weight-bold);
+    line-height: 1;
+  }
+  .flow-btn:hover {
+    background-color: var(--color-cta-hover);
+    color: var(--color-cta-text);
   }
 }

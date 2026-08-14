@@ -7,14 +7,15 @@ urlpatterns = [
     path("", include("ddcs.datadonation.portability.urls")),
     path("<slug:slug>/briefing/", views.DDCSBriefingView.as_view(), name="briefing"),
     path(
-        "<slug:slug>/datadonation/",
+        "<slug:slug>/datenspende/",
         views.DDCSDownloadUploadView.as_view(),
         name="donation_ddm",
     ),
     path(
-        "<slug:slug>/survey/",
+        "<slug:slug>/fragebogen/",
         views.DDCSQuestionnaireView.as_view(),
         name="questionnaire",
     ),
     path("<slug:slug>/debrief/", views.DDCSDebriefingView.as_view(), name="debriefing"),
+    path("tiktok/switch-path/", views.SwitchPathView.as_view(), name="switch_path"),
 ]
