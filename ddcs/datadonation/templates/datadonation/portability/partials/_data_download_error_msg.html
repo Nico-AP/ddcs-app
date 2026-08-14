@@ -1,13 +1,17 @@
-{% load i18n %}
-
 <div class="border border-secondary rounded bg-light p-3">
-  <p class="mb-0">
-    {% translate "Leider ist beim Abrufen deiner Daten ein Fehler aufgetreten." %}
+  <p class="mb-0 fw-bold">
+    Leider konnte TikTok deine Daten nicht korrekt bereitstellen.
   </p>
   <p class="mb-0">
-    {% blocktranslate trimmed %}
-      Bitte versuche es noch einmal.
-    {% endblocktranslate %}
+    Du kannst es entweder <a href="{% url 'datadonation:tiktok_connection' %}">noch einmal versuchen</a>
+    oder die Daten selbst in der TikTok-App anfordern und anschließend selbst hochladen.
   </p>
-  <p><a href="{% url 'datadonation:tiktok_connection' %}" class="btn btn-primary-dfdw cta-btn">{% translate "Noch einmal versuchen" %}</a></p>
+  <p>
+    <a
+      href="{% url 'datadonation:switch_path' %}"
+      class="btn btn-primary-dfdw text-white cta-btn"
+    >
+      Daten selbst anfordern
+    </a>
+  </p>
 </div>
