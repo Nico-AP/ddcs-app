@@ -1,5 +1,8 @@
+from ddm.participation.models import Participant
 from django.conf import settings
 from django.urls import NoReverseMatch, reverse
+
+from ddcs.datadonation.types import ParticipantLog
 
 
 def get_step_url(steps: list[str], current_step: int, slug: str | None) -> str:
@@ -29,3 +32,9 @@ def get_next_step_url(steps: list[str], current_step: int, slug: str | None) -> 
     """
     current_step += 1
     return get_step_url(steps, current_step, slug)
+
+
+def get_participant_log(participant: Participant) -> ParticipantLog:
+    return participant.extra_data.setdefault(
+        "participation_log", {"modes": {}, "steps": {}, "errors": {}}
+    )

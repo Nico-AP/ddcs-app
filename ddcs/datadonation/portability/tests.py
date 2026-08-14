@@ -291,7 +291,12 @@ class TikTokCallbackViewTest(PortabilityViewTestCase):
 
         response = self.client.get(self._callback_url())
 
-        self.assertRedirects(response, reverse("datadonation:portability_exception"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:portability_exception", kwargs={"code": "data-types"}
+            ),
+        )
 
     @patch("ddcs.datadonation.portability.views.extract_request_id")
     @patch("ddcs.datadonation.portability.views.issue_data_request")
@@ -350,7 +355,12 @@ class TikTokCallbackViewTest(PortabilityViewTestCase):
 
         response = self.client.get(self._callback_url())
 
-        self.assertRedirects(response, reverse("datadonation:portability_exception"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:portability_exception", kwargs={"code": "oauth-failed"}
+            ),
+        )
         self.assertEqual(TikTokConnection.objects.count(), 0)
 
     @patch("ddcs.datadonation.portability.views.extract_request_id")
@@ -369,7 +379,12 @@ class TikTokCallbackViewTest(PortabilityViewTestCase):
 
         response = self.client.get(self._callback_url())
 
-        self.assertRedirects(response, reverse("datadonation:portability_exception"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:portability_exception", kwargs={"code": "no-request"}
+            ),
+        )
         self.assertEqual(TikTokDataRequest.objects.count(), 0)
 
 

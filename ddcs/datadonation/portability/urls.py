@@ -20,7 +20,7 @@ urlpatterns = [
         name="tiktok_callback",
     ),
     path(
-        "auth/tiktok/exception/",
+        "auth/tiktok/exception/<slug:code>",
         views.PortabilityExceptionView.as_view(),
         name="portability_exception",
     ),

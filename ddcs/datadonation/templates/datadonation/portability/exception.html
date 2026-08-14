@@ -3,8 +3,81 @@
 {% block content %}
   <div class="container align-items-center justify-content-center mt-5 pb-5">
     <div class="row justify-content-center pt-4">
-      <div class="col-12 col-md-8">
-        Something went wrong (portability issue).
+      <div class="col-12 col-md-8 col-xl-7 col-xxl-6">
+        <h1 class="fs-1 mb-3">Verbindung zu TikTok hat nicht geklappt</h1>
+
+        {# Specific error messages #}
+        {% if exception_type == "data-types" %}
+          <div>
+            <p>
+              Du hast uns leider nicht erlaubt, auf deine Daten zuzugreifen.
+            </p>
+            <h3>Nochmals versuchen</h3>
+            <p>
+              Wenn du es dir anders überlegt hast, klicke hier, damit
+              "Dein Feed, Deine Wahl" deine Daten bei TikTok anfordert und
+              direkt in deinen Browser lädt:
+            </p>
+          </div>
+        {% elif exception_type == "download-failed" %}
+          <div>
+            <p>
+              Leider ist beim Herunterladen deiner Daten etwas schiefgegangen.
+              Hier kannst du es nochmals versuchen:
+            </p>
+          </div>
+        {% elif exception_type == "request-expired" %}
+          <div>
+            <p>
+              Deine Anfrage ist leider abgelaufen. Hier kannst du sie
+              nochmal starten:
+            </p>
+          </div>
+        {% else %}
+          <div>
+            <p>
+              Leider ist bei der Anfrage deiner Daten etwas schiefgegangen.
+              Hier kannst du die Anfrage nochmals versuchen:
+            </p>
+          </div>
+        {% endif %}
+
+        {# Continuation options #}
+        {% if show_retry %}
+          <div class="pb-3">
+            <a
+              href="{% url 'datadonation:tiktok_connection' %}"
+              class="btn btn-primary-dfdw text-white cta-btn"
+            >
+              Nochmal versuchen
+            </a>
+            <p class="fs-08 pt-2 ps-1 text-secondary">
+              Bei der Anfrage deiner TikTok-Daten speichern wir noch keine
+              Informationen ab. Sobald deine Daten bereit sind, kannst du
+              sie in Ruhe ansehen und selbst entscheiden,
+              was du mit uns teilen möchtest.
+            </p>
+          </div>
+        {% endif %}
+
+        {% if show_dl_ul_continuation %}
+          <div>
+            <h3>Daten selbst herunterladen</h3>
+            <p>
+              Alternativ kannst du deine Daten auch
+              selbst direkt in der TikTok-App anfordern und
+              anschließend auf unserer Webseite hochladen:
+            </p>
+            <div>
+              <a
+                href="{% url 'datadonation:switch_path' %}"
+                class="btn btn-primary-dfdw text-white cta-btn"
+              >
+                Daten selbst anfordern
+              </a>
+            </div>
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>

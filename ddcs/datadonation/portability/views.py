@@ -41,7 +41,11 @@ from ddcs.datadonation.session import (
     get_tiktok_connection_from_session,
     store_tiktok_connection_in_session,
 )
-from ddcs.datadonation.utils import get_current_step_url, get_next_step_url
+from ddcs.datadonation.utils import (
+    get_current_step_url,
+    get_next_step_url,
+    get_participant_log,
+)
 from ddcs.datadonation.views import DDCSDownloadUploadView
 
 logger = logging.getLogger(__name__)
@@ -99,9 +103,8 @@ class DDCSPortabilityBriefingView(BriefingView):
 
     def extra_before_render(self, request: HttpRequest) -> None:
         super().extra_before_render(request)
-        self.participant.extra_data["participation_mode"] = {
-            "PAPI": timezone.now().isoformat(),
-        }
+        log = get_participant_log(self.participant)
+        log["modes"]["PAPI"] = timezone.now().isoformat()
         self.participant.save()
 
     def current_step_url(self) -> str:
@@ -125,8 +128,8 @@ class TikTokConnectionInfosView(ParticipantInSessionMixin, TemplateView):
         return super().get(request, *args, **kwargs)
 
     def log_participant_info(self) -> None:
-        log = self.participant.extra_data.setdefault("participation_log", {})
-        log["tiktok-connection-info_reached"] = timezone.now().isoformat()
+        log = get_participant_log(self.participant)
+        log["steps"]["papi_tiktok-connection-info_reached"] = timezone.now().isoformat()
         self.participant.save()
 
 
@@ -142,8 +145,8 @@ class TikTokConnectView(ParticipantInSessionMixin, View):
         return oauth.tiktok.authorize_redirect(request, redirect_uri)
 
     def log_participant_info(self) -> None:
-        log = self.participant.extra_data.setdefault("participation_log", {})
-        log["tiktok-connect_dispatched"] = timezone.now().isoformat()
+        log = get_participant_log(self.participant)
+        log["steps"]["papi_tiktok-connect_dispatched"] = timezone.now().isoformat()
         self.participant.save()
 
 
@@ -163,7 +166,12 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
             logger.exception(
                 "OAuth error. error=%s description=%s", e.error, e.description
             )
-            return redirect(reverse("datadonation:portability_exception"))
+            return redirect(
+                reverse(
+                    "datadonation:portability_exception",
+                    kwargs={"code": "oauth-failed"},
+                )
+            )
 
         connection, connection_created = self._get_or_create_tiktok_connection(token)
         store_tiktok_connection_in_session(request, connection.id)
@@ -176,8 +184,10 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
                 connection.id,
             )
             return redirect(
-                reverse("datadonation:portability_exception")
-            )  # TODO: switch to DL-UL
+                reverse(
+                    "datadonation:portability_exception", kwargs={"code": "data-types"}
+                )
+            )
 
         if not connection_created:
             data_request = (
@@ -208,7 +218,11 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
             logger.error(
                 "TikTok data request returned no request_id. response=%s", request_data
             )
-            return redirect(reverse("datadonation:portability_exception"))
+            return redirect(
+                reverse(
+                    "datadonation:portability_exception", kwargs={"code": "no-request"}
+                )
+            )
 
         TikTokDataRequest.objects.create(
             connection=connection,
@@ -245,8 +259,8 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
         return timezone.now() + timedelta(seconds=expires_in)
 
     def log_participant_info(self) -> None:
-        log = self.participant.extra_data.setdefault("participation_log", {})
-        log["callback_reached"] = timezone.now().isoformat()
+        log = get_participant_log(self.participant)
+        log["steps"]["papi_callback_reached"] = timezone.now().isoformat()
         self.participant.save()
 
 
@@ -262,26 +276,13 @@ class TikTokAwaitDataView(
     template_name = "datadonation/portability/await_download.html"
 
     def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
-        self.advance_participant_step()
         self.log_participant_info()
         return super().get(request, *args, **kwargs)
 
-    def advance_participant_step(self) -> None:
-        try:
-            position = API_PARTICIPATION_FLOW_STEPS.index(
-                "datadonation:tiktok_connection"
-            )
-        except ValueError:
-            position = None
-
-        if self.participant.current_step == position:
-            self.participant.current_step += 1
-            self.participant.save()
-
     def log_participant_info(self) -> None:
-        log = self.participant.extra_data.setdefault("participation_log", {})
-        if "await-view_reached" not in log:
-            log["await-view_reached"] = timezone.now().isoformat()
+        log = get_participant_log(self.participant)
+        if "await-view_reached" not in log["steps"]:
+            log["steps"]["papi_await-view_reached"] = timezone.now().isoformat()
             self.participant.save()
 
 
@@ -327,21 +328,34 @@ class CheckDataAvailabilityView(
                 request_status_response,
             )
             self.template_name = self.templates["error"]
-            return render(request, self.template_name)  # TODO: Update failed template
+            return render(request, self.template_name)
 
         if request_status not in TikTokDataRequest.State.values:
             logger.warning(
-                "Unrecognized TikTok data request status. request_id=%s status=%r",
+                "Unrecognized TikTok data request status. "
+                "request_id=%s status=%r response=%s",
                 self.data_request.request_id,
                 request_status,
+                request_status_response,
             )
-            # TODO: What to do here?
+            # Let the await view catch errors.
 
-        # TODO: Cover expired case (redirect again to connect)
+        if request_status == "expired":
+            logger.warning(
+                "Encountered expired data request. request_id=%s status=%r response=%s",
+                self.data_request.request_id,
+                request_status,
+                request_status_response,
+            )
+            # Exception caught by selected template
 
         self.data_request.last_polled = timezone.now()
         self.data_request.save(update_fields=["last_polled"])
         self.set_template_based_on_status(request_status)
+
+        if request_status == TikTokDataRequest.State.READY:
+            self.advance_participant_step()
+
         return render(
             request,
             self.template_name,
@@ -350,6 +364,18 @@ class CheckDataAvailabilityView(
                 "project_slug": settings.TIKTOK_DDM_PROJECT_SLUG,
             },
         )
+
+    def advance_participant_step(self) -> None:
+        try:
+            position = API_PARTICIPATION_FLOW_STEPS.index(
+                "datadonation:tiktok_connection"
+            )
+        except ValueError:
+            position = None
+
+        if self.participant.current_step == position:
+            self.participant.current_step += 1
+            self.participant.save()
 
     def set_template_based_on_status(self, request_status: str) -> None:
         if request_status == TikTokDataRequest.State.PENDING:
@@ -437,7 +463,7 @@ class TikTokDownloadView(ParticipantInSessionMixin, DataRequestMixin, View):
         return streaming_response
 
 
-class PortabilityDonationView(DDCSDownloadUploadView):
+class PortabilityDonationView(DataRequestMixin, DDCSDownloadUploadView):
     template_name = "datadonation/portability/donation.html"
 
     steps = API_PARTICIPATION_FLOW_STEPS
@@ -455,10 +481,11 @@ class PortabilityDonationView(DDCSDownloadUploadView):
 
     def get_context_data(self, **kwargs) -> dict:
         context = super().get_context_data(**kwargs)
+        self.log_participant_info()
         context["download_url"] = reverse("datadonation:tiktok_download")
         context["failed_url"] = reverse(
-            "datadonation:portability_exception"
-        )  # TODO: Better destination
+            "datadonation:portability_exception", kwargs={"code": "download-failed"}
+        )
         return context
 
     def current_step_url(self) -> str:
@@ -466,6 +493,12 @@ class PortabilityDonationView(DDCSDownloadUploadView):
 
     def next_step_url(self) -> str:
         return get_next_step_url(self.steps, self.current_step, self.object.slug)
+
+    def log_participant_info(self) -> None:
+        log = get_participant_log(self.participant)
+        if "papi-donation_reached" not in log["steps"]:
+            log["steps"]["papi_donation_reached"] = timezone.now().isoformat()
+            self.participant.save()
 
 
 class PortabilityDonationViewTest(UserPassesTestMixin, DDCSDownloadUploadView):
@@ -478,8 +511,8 @@ class PortabilityDonationViewTest(UserPassesTestMixin, DDCSDownloadUploadView):
         context = super().get_context_data(**kwargs)
         context["download_url"] = reverse("datadonation:tiktok_download")
         context["failed_url"] = reverse(
-            "datadonation:portability_exception"
-        )  # TODO: Better destination
+            "datadonation:portability_exception", kwargs={"code": "download-failed"}
+        )
         return context
 
     def get_uploader_configs(self) -> list:
@@ -493,5 +526,37 @@ class PortabilityDonationViewTest(UserPassesTestMixin, DDCSDownloadUploadView):
         return configs
 
 
-class PortabilityExceptionView(TemplateView):
+class PortabilityExceptionView(ParticipantInSessionMixin, TemplateView):
     template_name = "datadonation/portability/exception.html"
+
+    def get_context_data(self, **kwargs) -> dict:
+        context = super().get_context_data(**kwargs)
+        code = self.kwargs.get("code")
+
+        show_retry = True
+        show_dl_ul_continue = True
+        match code:
+            case "data-types":
+                pass
+            case "download-failed":
+                pass
+            case "request-expired":
+                show_dl_ul_continue = False
+            case "no-request":
+                pass
+            case "oath-failed":
+                pass
+
+        context.update(
+            {
+                "show_retry": show_retry,
+                "show_dl_ul_continuation": show_dl_ul_continue,
+                "exception_type": code,
+            }
+        )
+        return context
+
+    def log_participant_info(self, code: str) -> None:
+        log = get_participant_log(self.participant)
+        log["errors"][code] = timezone.now().isoformat()
+        self.participant.save()
