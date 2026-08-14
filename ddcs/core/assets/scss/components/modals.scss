@@ -1,7 +1,7 @@
 @use '../abstracts/index' as *;
 
 .modal {
-  .modal-dialog {
-    max-width: 650px;
+  .ddcs-modal-dialog {
+    max-width: 650px !important;
   }
 }
