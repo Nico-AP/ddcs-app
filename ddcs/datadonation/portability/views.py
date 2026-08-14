@@ -41,6 +41,7 @@ from ddcs.datadonation.session import (
     get_tiktok_connection_from_session,
     store_tiktok_connection_in_session,
 )
+from ddcs.datadonation.utils import get_current_step_url, get_next_step_url
 from ddcs.datadonation.views import DDCSDownloadUploadView
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ logger = logging.getLogger(__name__)
 API_PARTICIPATION_FLOW_STEPS = [
     "datadonation:portability_briefing",
     "datadonation:tiktok_connection",
+    "datadonation:portability_donation",
     "datadonation:questionnaire",
     "datadonation:debriefing",
 ]
@@ -102,8 +104,11 @@ class DDCSPortabilityBriefingView(BriefingView):
         }
         self.participant.save()
 
+    def current_step_url(self) -> str:
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
     def next_step_url(self) -> str:
-        return reverse(self.steps[self.current_step + 1])  # Removed unused slug
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
 
 
 class TikTokConnectionInfosView(ParticipantInSessionMixin, TemplateView):
@@ -256,6 +261,29 @@ class TikTokAwaitDataView(
 
     template_name = "datadonation/portability/await_download.html"
 
+    def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
+        self.advance_participant_step()
+        self.log_participant_info()
+        return super().get(request, *args, **kwargs)
+
+    def advance_participant_step(self) -> None:
+        try:
+            position = API_PARTICIPATION_FLOW_STEPS.index(
+                "datadonation:tiktok_connection"
+            )
+        except ValueError:
+            position = None
+
+        if self.participant.current_step == position:
+            self.participant.current_step += 1
+            self.participant.save()
+
+    def log_participant_info(self) -> None:
+        log = self.participant.extra_data.setdefault("participation_log", {})
+        if "await-view_reached" not in log:
+            log["await-view_reached"] = timezone.now().isoformat()
+            self.participant.save()
+
 
 class CheckDataAvailabilityView(
     ParticipantInSessionMixin, DataRequestMixin, TemplateView
@@ -289,13 +317,27 @@ class CheckDataAvailabilityView(
             )
             request_status_response = {}
 
-        request_status = request_status_response.get("status", "")
+        try:
+            request_status = request_status_response["data"].get("status", "")
+        except KeyError:
+            logger.exception(
+                "Check Data Availability received malformed response. "
+                "Must contain 'data'.'status' keys."
+                "response=%s",
+                request_status_response,
+            )
+            self.template_name = self.templates["error"]
+            return render(request, self.template_name)  # TODO: Update failed template
+
         if request_status not in TikTokDataRequest.State.values:
             logger.warning(
                 "Unrecognized TikTok data request status. request_id=%s status=%r",
                 self.data_request.request_id,
                 request_status,
             )
+            # TODO: What to do here?
+
+        # TODO: Cover expired case (redirect again to connect)
 
         self.data_request.last_polled = timezone.now()
         self.data_request.save(update_fields=["last_polled"])
@@ -418,6 +460,12 @@ class PortabilityDonationView(DDCSDownloadUploadView):
             "datadonation:portability_exception"
         )  # TODO: Better destination
         return context
+
+    def current_step_url(self) -> str:
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
 
 
 class PortabilityDonationViewTest(UserPassesTestMixin, DDCSDownloadUploadView):

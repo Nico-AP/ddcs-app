@@ -5,18 +5,21 @@ from ddm.participation.views import (
     QuestionnaireView,
 )
 from django.http import HttpRequest
-from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.datastructures import MultiValueDict
 
 from ddcs.datadonation.services import post_process_donation
+from ddcs.datadonation.utils import get_current_step_url, get_next_step_url
 
 PARTICIPATION_FLOW_STEPS = [
     "datadonation:briefing",
+    "",  # Placeholder to align step-count with PAPI step count
     "datadonation:donation_ddm",
     "datadonation:questionnaire",
     "datadonation:debriefing",
 ]
+# The alignment is needed, to allow the two flows to share the questionnaire
+# and debriefing steps.
 
 
 class DDCSBriefingView(BriefingView):
@@ -31,6 +34,19 @@ class DDCSBriefingView(BriefingView):
             "DLUL": timezone.now().isoformat(),
         }
         self.participant.save()
+
+    def set_step_completed(self) -> None:
+        """Updates the last_completed_step attribute in current session to
+        skip step placeholder."""
+
+        self.participant.current_step += 2
+        self.participant.save()
+
+    def current_step_url(self) -> str:
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
 
 
 class DDCSDownloadUploadView(DataDonationView):
@@ -47,13 +63,10 @@ class DDCSDownloadUploadView(DataDonationView):
         post_process_donation(self.participant)
 
     def current_step_url(self) -> str:
-        try:
-            return reverse(
-                self.steps[self.current_step], kwargs={"slug": self.object.slug}
-            )
-        except NoReverseMatch:
-            # Fallback for URLs hard-coding the "tiktok" slug.
-            return reverse(self.steps[self.current_step])
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
 
 
 class DDCSQuestionnaireView(QuestionnaireView):
@@ -61,6 +74,12 @@ class DDCSQuestionnaireView(QuestionnaireView):
 
     steps = PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:questionnaire"
+
+    def current_step_url(self) -> str:
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
 
 
 class DDCSDebriefingView(DebriefingView):
@@ -74,3 +93,9 @@ class DDCSDebriefingView(DebriefingView):
         context = super().get_context_data(**kwargs)
         context["participant_id"] = self.participant.external_id
         return context
+
+    def current_step_url(self) -> str:
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
