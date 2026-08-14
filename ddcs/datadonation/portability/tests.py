@@ -291,7 +291,12 @@ class TikTokCallbackViewTest(PortabilityViewTestCase):
 
         response = self.client.get(self._callback_url())
 
-        self.assertRedirects(response, reverse("datadonation:portability_exception"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:portability_exception", kwargs={"code": "data-types"}
+            ),
+        )
 
     @patch("ddcs.datadonation.portability.views.extract_request_id")
     @patch("ddcs.datadonation.portability.views.issue_data_request")
@@ -350,7 +355,12 @@ class TikTokCallbackViewTest(PortabilityViewTestCase):
 
         response = self.client.get(self._callback_url())
 
-        self.assertRedirects(response, reverse("datadonation:portability_exception"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:portability_exception", kwargs={"code": "oauth-failed"}
+            ),
+        )
         self.assertEqual(TikTokConnection.objects.count(), 0)
 
     @patch("ddcs.datadonation.portability.views.extract_request_id")
@@ -369,7 +379,12 @@ class TikTokCallbackViewTest(PortabilityViewTestCase):
 
         response = self.client.get(self._callback_url())
 
-        self.assertRedirects(response, reverse("datadonation:portability_exception"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:portability_exception", kwargs={"code": "no-request"}
+            ),
+        )
         self.assertEqual(TikTokDataRequest.objects.count(), 0)
 
 
@@ -397,7 +412,7 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
             status=TikTokDataRequest.State.NOT_POLLED,
         )
         mock_get_valid_token.return_value = "access-token"
-        mock_poll.return_value = {"status": TikTokDataRequest.State.PENDING}
+        mock_poll.return_value = {"data": {"status": TikTokDataRequest.State.PENDING}}
 
         response = self.client.get(self._check_url())
 
@@ -421,7 +436,7 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
             status=TikTokDataRequest.State.NOT_POLLED,
         )
         mock_get_valid_token.return_value = "access-token"
-        mock_poll.return_value = {"status": TikTokDataRequest.State.READY}
+        mock_poll.return_value = {"data": {"status": TikTokDataRequest.State.READY}}
 
         response = self.client.get(self._check_url())
 
@@ -442,7 +457,7 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
             status=TikTokDataRequest.State.NOT_POLLED,
         )
         mock_get_valid_token.return_value = "access-token"
-        mock_poll.return_value = {"status": TikTokDataRequest.State.EXPIRED}
+        mock_poll.return_value = {"data": {"status": TikTokDataRequest.State.EXPIRED}}
 
         response = self.client.get(self._check_url())
 
@@ -463,7 +478,7 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
             status=TikTokDataRequest.State.NOT_POLLED,
         )
         mock_get_valid_token.return_value = "access-token"
-        mock_poll.return_value = {"status": "some_unrecognized_status"}
+        mock_poll.return_value = {"data": {"status": "some_unrecognized_status"}}
 
         response = self.client.get(self._check_url())
 
@@ -666,7 +681,7 @@ class PortabilityFlowIntegrationTest(PortabilityViewTestCase):
         self.assertEqual(response.status_code, 200)
 
         # Step 4: polling reports the data is ready.
-        mock_poll.return_value = {"status": TikTokDataRequest.State.READY}
+        mock_poll.return_value = {"data": {"status": TikTokDataRequest.State.READY}}
         response = self.client.get(reverse("datadonation:tiktok_check_request"))
         template_names = [t.name for t in response.templates if t.name]
         self.assertIn(

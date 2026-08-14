@@ -55,7 +55,7 @@ def get_category_selection_from_scopes(scopes: str) -> list[str]:
     if Scopes.ACTIVITY in scopes:
         categories.append("activity")
     if Scopes.DIRECT_MESSAGES in scopes:
-        categories.append("direct_message")
+        categories.append("direct_messages")
     if Scopes.POSTSANDPROFILE in scopes:
         categories.extend(["video", "profile"])
     return categories
@@ -96,7 +96,7 @@ def extract_request_id(data: dict) -> str | None:
     if error_code and error_code != "ok":
         logger.warning("TikTok data request returned an error: %s", error_details)
         return None
-    return data.get("request_id")
+    return data["data"].get("request_id")
 
 
 def poll_data_request_status(access_token: str, request_id: int) -> dict:

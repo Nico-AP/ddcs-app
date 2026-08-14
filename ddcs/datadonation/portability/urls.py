@@ -9,7 +9,7 @@ urlpatterns = [
         name="portability_briefing",
     ),
     path(
-        "tiktok/connect/",
+        "tiktok/connect/infos/",
         views.TikTokConnectionInfosView.as_view(),
         name="tiktok_connection",
     ),
@@ -20,12 +20,12 @@ urlpatterns = [
         name="tiktok_callback",
     ),
     path(
-        "auth/tiktok/exception/",
+        "auth/tiktok/exception/<slug:code>",
         views.PortabilityExceptionView.as_view(),
         name="portability_exception",
     ),
     path(
-        "tiktok/connect/await/",
+        "tiktok/connect/",
         views.TikTokAwaitDataView.as_view(),
         name="tiktok_await_data",
     ),

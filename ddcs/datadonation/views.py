@@ -4,19 +4,31 @@ from ddm.participation.views import (
     DebriefingView,
     QuestionnaireView,
 )
-from django.http import HttpRequest
-from django.urls import NoReverseMatch, reverse
+from django.conf import settings
+from django.http import HttpRequest, HttpResponse
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.datastructures import MultiValueDict
+from django.views import View
 
 from ddcs.datadonation.services import post_process_donation
+from ddcs.datadonation.session import ParticipantInSessionMixin
+from ddcs.datadonation.utils import (
+    get_current_step_url,
+    get_next_step_url,
+    get_participant_log,
+)
 
 PARTICIPATION_FLOW_STEPS = [
     "datadonation:briefing",
+    "",  # Placeholder to align step-count with PAPI step count
     "datadonation:donation_ddm",
     "datadonation:questionnaire",
     "datadonation:debriefing",
 ]
+# The alignment is needed, to allow the two flows to share the questionnaire
+# and debriefing steps.
 
 
 class DDCSBriefingView(BriefingView):
@@ -27,10 +39,22 @@ class DDCSBriefingView(BriefingView):
 
     def extra_before_render(self, request: HttpRequest) -> None:
         super().extra_before_render(request)
-        self.participant.extra_data["participation_mode"] = {
-            "DLUL": timezone.now().isoformat(),
-        }
+        log = get_participant_log(self.participant)
+        log["modes"]["DLUL"] = timezone.now().isoformat()
         self.participant.save()
+
+    def set_step_completed(self) -> None:
+        """Updates the last_completed_step attribute in current session to
+        skip step placeholder."""
+
+        self.participant.current_step += 2
+        self.participant.save()
+
+    def current_step_url(self) -> str:
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
 
 
 class DDCSDownloadUploadView(DataDonationView):
@@ -46,14 +70,17 @@ class DDCSDownloadUploadView(DataDonationView):
         # Trigger post-donation processing pipeline
         post_process_donation(self.participant)
 
+    def extra_before_render(self, request: HttpRequest) -> None:
+        super().extra_before_render(request)
+        log = get_participant_log(self.participant)
+        log["steps"]["dlul_donation_reached"] = timezone.now().isoformat()
+        self.participant.save()
+
     def current_step_url(self) -> str:
-        try:
-            return reverse(
-                self.steps[self.current_step], kwargs={"slug": self.object.slug}
-            )
-        except NoReverseMatch:
-            # Fallback for URLs hard-coding the "tiktok" slug.
-            return reverse(self.steps[self.current_step])
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
 
 
 class DDCSQuestionnaireView(QuestionnaireView):
@@ -61,6 +88,18 @@ class DDCSQuestionnaireView(QuestionnaireView):
 
     steps = PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:questionnaire"
+
+    def extra_before_render(self, request: HttpRequest) -> None:
+        super().extra_before_render(request)
+        log = get_participant_log(self.participant)
+        log["steps"]["questionnaire_reached"] = timezone.now().isoformat()
+        self.participant.save()
+
+    def current_step_url(self) -> str:
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
 
 
 class DDCSDebriefingView(DebriefingView):
@@ -74,3 +113,30 @@ class DDCSDebriefingView(DebriefingView):
         context = super().get_context_data(**kwargs)
         context["participant_id"] = self.participant.external_id
         return context
+
+    def extra_before_render(self, request: HttpRequest) -> None:
+        super().extra_before_render(request)
+        log = get_participant_log(self.participant)
+        log["steps"]["debriefing_reached"] = timezone.now().isoformat()
+        self.participant.save()
+
+    def current_step_url(self) -> str:
+        return get_current_step_url(self.steps, self.current_step, self.object.slug)
+
+    def next_step_url(self) -> str:
+        return get_next_step_url(self.steps, self.current_step, self.object.slug)
+
+
+class SwitchPathView(ParticipantInSessionMixin, View):
+    def get(self, request: HttpRequest, slug: str) -> HttpResponse:
+        # Log switch
+        log = get_participant_log(self.participant)
+        log["steps"]["switched_to_dlul"] = timezone.now().isoformat()
+
+        # Send to DLUL path
+        return redirect(
+            reverse(
+                "datadonation:donation_ddm",
+                kwargs={"slug": settings.TIKTOK_DDM_PROJECT_SLUG},
+            )
+        )
