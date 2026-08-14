@@ -5,8 +5,11 @@ from collections.abc import Generator
 from datetime import datetime, timedelta
 
 from authlib.integrations.django_client import OAuthError
+from ddm.datadonation.models import FileUploader
+from ddm.participation.services import UploaderConfigService
 from ddm.participation.views import BriefingView
 from django.conf import settings
+from django.contrib.auth.mixins import UserPassesTestMixin
 from django.http import (
     HttpRequest,
     HttpResponse,
@@ -397,6 +400,49 @@ class PortabilityDonationView(DDCSDownloadUploadView):
 
     steps = API_PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:portability_donation"
+
+    def get_uploader_configs(self) -> list:
+        project_uploaders = FileUploader.objects.filter(project=self.object)
+        configs = UploaderConfigService.create_configs(
+            project_uploaders, self.participant
+        )
+        # Remove Instructions
+        for uploader in configs:
+            uploader["instructions"] = []
+        return configs
+
+    def get_context_data(self, **kwargs) -> dict:
+        context = super().get_context_data(**kwargs)
+        context["download_url"] = reverse("datadonation:tiktok_download")
+        context["failed_url"] = reverse(
+            "datadonation:portability_exception"
+        )  # TODO: Better destination
+        return context
+
+
+class PortabilityDonationViewTest(UserPassesTestMixin, DDCSDownloadUploadView):
+    template_name = "datadonation/portability/donation.html"
+
+    def test_func(self) -> bool:
+        return self.request.user.is_superuser
+
+    def get_context_data(self, **kwargs) -> dict:
+        context = super().get_context_data(**kwargs)
+        context["download_url"] = reverse("datadonation:tiktok_download")
+        context["failed_url"] = reverse(
+            "datadonation:portability_exception"
+        )  # TODO: Better destination
+        return context
+
+    def get_uploader_configs(self) -> list:
+        project_uploaders = FileUploader.objects.filter(project=self.object)
+        configs = UploaderConfigService.create_configs(
+            project_uploaders, self.participant
+        )
+        # Remove Instructions
+        for uploader in configs:
+            uploader["instructions"] = []
+        return configs
 
 
 class PortabilityExceptionView(TemplateView):
