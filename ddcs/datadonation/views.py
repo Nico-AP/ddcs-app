@@ -54,7 +54,7 @@ class DDCSBriefingView(BriefingView):
         return get_current_step_url(self.steps, self.current_step, self.object.slug)
 
     def next_step_url(self) -> str:
-        return get_next_step_url(self.steps, self.current_step, self.object.slug)
+        return get_next_step_url(self.steps, self.current_step + 1, self.object.slug)
 
 
 class DDCSDownloadUploadView(DataDonationView):
