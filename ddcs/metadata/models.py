@@ -138,6 +138,33 @@ class Keyword(BaseMetadataModel, APIMonitoredMixin):
         return self.name
 
 
+# --- Classification ---
+
+
+class TikTokVideoClassification(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    video = models.ForeignKey(
+        "TikTokVideo",
+        on_delete=models.CASCADE,
+        related_name="classifications",
+    )
+
+    is_political = models.BooleanField(default=False)
+    stage1_rationale = models.TextField(blank=True)
+    entities = models.JSONField(blank=True, null=True, default=list)
+    keyword_matches = models.JSONField(blank=True, null=True, default=list)
+    classification_ts = models.DateTimeField(null=True, blank=True)
+    # created_at received from classifier
+
+    class Meta:
+        managed = False  # prevent accidental migrations; enable once it's prod-ready.
+
+    def __str__(self) -> str:
+        return f"Classification {self.pk} for video {self.video.id_tiktok}"
+
+
 # --- API Progress trackers ---
 
 
