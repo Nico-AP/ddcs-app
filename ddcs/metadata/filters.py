@@ -3,7 +3,7 @@ from datetime import datetime
 import django_filters
 from django.db.models import Exists, OuterRef, Q, QuerySet
 
-from ddcs.metadata.models import TikTokVideo
+from ddcs.metadata.models import TikTokVideo, TikTokVideoClassification
 from ddcs.metadata.research_api.models import APIVideoInfos
 
 
@@ -38,6 +38,9 @@ class TikTokVideoFilter(django_filters.FilterSet):
     region_codes = CharInFilter(field_name="latest_region_code", lookup_expr="in")
     keywords = CharInFilter(method="filter_keywords")
     has_api_infos = django_filters.BooleanFilter(method="filter_has_api_infos")
+    has_classifications = django_filters.BooleanFilter(
+        method="filter_has_classifications"
+    )
 
     updated_since = django_filters.IsoDateTimeFilter(method="filter_updated_since")
 
@@ -57,6 +60,14 @@ class TikTokVideoFilter(django_filters.FilterSet):
         self, queryset: QuerySet[TikTokVideo], name: str, value: bool
     ) -> QuerySet[TikTokVideo]:
         return queryset.filter(latest_api_info_id__isnull=not value)
+
+    def filter_has_classifications(
+        self, queryset: QuerySet[TikTokVideo], name: str, value: bool
+    ) -> QuerySet[TikTokVideo]:
+        has_classification = Exists(
+            TikTokVideoClassification.objects.filter(video=OuterRef("pk"))
+        )
+        return queryset.filter(has_classification if value else ~has_classification)
 
     def filter_keywords(
         self, queryset: QuerySet[TikTokVideo], name: str, value: str
