@@ -3,6 +3,7 @@ import hmac
 import logging
 from collections.abc import Generator
 from datetime import datetime, timedelta
+from typing import Any
 
 from authlib.integrations.django_client import OAuthError
 from ddm.datadonation.models import FileUploader
@@ -309,6 +310,8 @@ class CheckDataAvailabilityView(
     connection: TikTokConnection
     data_request: TikTokDataRequest
 
+    SECONDS_TO_DELAY_INFO = 90
+
     def get(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
         try:
             request_status_response = poll_data_request_status(
@@ -379,14 +382,8 @@ class CheckDataAvailabilityView(
         if request_status == TikTokDataRequest.State.READY:
             self.advance_participant_step()
 
-        return render(
-            request,
-            self.template_name,
-            {
-                "poll_datetime": self.data_request.last_polled,
-                "project_slug": settings.TIKTOK_DDM_PROJECT_SLUG,
-            },
-        )
+        context = self.get_context_data(**kwargs)
+        return render(request, self.template_name, context)
 
     def redirect_to_exception(self, code: str) -> HttpResponse:
         return HttpResponseClientRedirect(
@@ -410,6 +407,37 @@ class CheckDataAvailabilityView(
             self.template_name = self.templates["pending"]
         else:
             self.template_name = self.templates["success"]
+
+    def show_reminder_message(self) -> bool:
+        """If a data request takes too long to be delivered by TikTok, a
+        reminder message is shown to participants.
+
+        "Too long" is determined by CheckDataAvailabilityView.SECONDS_TO_DELAY_INFO.
+        """
+        # Determine whether reminder message should be displayed
+        show_reminder_msg = False
+        if self.template_name == self.templates["pending"]:
+            time_to_reminder = timedelta(seconds=self.SECONDS_TO_DELAY_INFO)
+            if timezone.now() - self.data_request.issued_at > time_to_reminder:
+                show_reminder_msg = True
+                log = get_participant_log(self.participant)
+                if "papi_await-view_got-delay-info" not in log["steps"]:
+                    ts_now = timezone.now().isoformat()
+                    log["steps"]["papi_await-view_got-delay-info"] = ts_now
+                    self.participant.save()
+        return show_reminder_msg
+
+    def get_context_data(self, **kwargs) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        context.update(
+            {
+                "poll_datetime": self.data_request.last_polled,
+                "project_slug": settings.TIKTOK_DDM_PROJECT_SLUG,
+                # "show_reminder_message": self.show_reminder_message(),  # noqa: ERA001
+                # TODO: Enable, once the email handling is sorted out.
+            }
+        )
+        return context
 
 
 class TikTokDownloadView(ParticipantInSessionMixin, DataRequestMixin, View):
