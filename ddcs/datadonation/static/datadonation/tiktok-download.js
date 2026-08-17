@@ -148,13 +148,10 @@ async function fetchAndInjectTikTokData(fileInputEl, downloadUrl) {
       });
 
       if (!response.ok) {
-
-        if (response.status === 404) {
-          const redirect_url = document.getElementById("fail-redirect-url")?.value;
-          if (redirect_url) {
-            window.location.href = redirect_url;
-            return;
-          }
+        const redirect_url = document.getElementById("fail-redirect-url")?.value;
+        if (redirect_url) {
+          window.location.href = redirect_url;
+          return;
         }
         throw new Error(`Server error: ${response.status} ${response.statusText}`);
       }

@@ -54,7 +54,7 @@ class DDCSBriefingView(BriefingView):
         return get_current_step_url(self.steps, self.current_step, self.object.slug)
 
     def next_step_url(self) -> str:
-        return get_next_step_url(self.steps, self.current_step, self.object.slug)
+        return get_next_step_url(self.steps, self.current_step + 1, self.object.slug)
 
 
 class DDCSDownloadUploadView(DataDonationView):
@@ -128,12 +128,17 @@ class DDCSDebriefingView(DebriefingView):
 
 
 class SwitchPathView(ParticipantInSessionMixin, View):
-    def get(self, request: HttpRequest, slug: str) -> HttpResponse:
+    def get(self, request: HttpRequest) -> HttpResponse:
         # Log switch
         log = get_participant_log(self.participant)
         log["steps"]["switched_to_dlul"] = timezone.now().isoformat()
 
         # Send to DLUL path
+        self.participant.current_step = PARTICIPATION_FLOW_STEPS.index(
+            "datadonation:donation_ddm"
+        )
+        self.participant.save()
+
         return redirect(
             reverse(
                 "datadonation:donation_ddm",
