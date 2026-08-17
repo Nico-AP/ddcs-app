@@ -22,8 +22,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
+from django_htmx.http import HttpResponseClientRedirect
 from requests import Response
-from requests.exceptions import HTTPError
+from requests.exceptions import RequestException
 
 from ddcs.datadonation.portability.api_specifications import Scopes
 from ddcs.datadonation.portability.models import TikTokConnection, TikTokDataRequest
@@ -207,11 +208,16 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
             request_data = issue_data_request(
                 get_valid_token(connection), connection.scope
             )
-        except HTTPError:
+        except RequestException:
             logger.exception(
                 "Failed to issue TikTok data request. connection_id=%s", connection.id
             )
-            request_data = {}
+            return redirect(
+                reverse(
+                    "datadonation:portability_exception",
+                    kwargs={"code": "request-failed"},
+                )
+            )
 
         request_id = extract_request_id(request_data)
         if not request_id:
@@ -281,7 +287,7 @@ class TikTokAwaitDataView(
 
     def log_participant_info(self) -> None:
         log = get_participant_log(self.participant)
-        if "await-view_reached" not in log["steps"]:
+        if "papi_await-view_reached" not in log["steps"]:
             log["steps"]["papi_await-view_reached"] = timezone.now().isoformat()
             self.participant.save()
 
@@ -298,8 +304,6 @@ class CheckDataAvailabilityView(
     templates = {
         "pending": "datadonation/portability/partials/_data_download_pending_msg.html",
         "success": "datadonation/portability/partials/_data_download_available_msg.html",  # noqa: E501
-        "error": "datadonation/portability/partials/_data_download_error_msg.html",
-        "expired": "datadonation/portability/partials/_data_download_expired_msg.html",
     }
 
     connection: TikTokConnection
@@ -311,12 +315,12 @@ class CheckDataAvailabilityView(
                 get_valid_token(self.connection),
                 self.data_request.request_id,
             )
-        except HTTPError:
+        except RequestException:
             logger.warning(
                 "Failed to poll TikTok data request status. request_id=%s",
                 self.data_request.request_id,
             )
-            request_status_response = {}
+            return self.redirect_to_exception("request-failed")
 
         try:
             request_status = request_status_response["data"].get("status", "")
@@ -327,8 +331,7 @@ class CheckDataAvailabilityView(
                 "response=%s",
                 request_status_response,
             )
-            self.template_name = self.templates["error"]
-            return render(request, self.template_name)
+            return self.redirect_to_exception("request-failed")
 
         if request_status not in TikTokDataRequest.State.values:
             logger.warning(
@@ -338,19 +341,39 @@ class CheckDataAvailabilityView(
                 request_status,
                 request_status_response,
             )
-            # Let the await view catch errors.
+            return self.redirect_to_exception("request-failed")
 
-        if request_status == "expired":
+        if request_status in (
+            TikTokDataRequest.State.EXPIRED,
+            TikTokDataRequest.State.CANCELLED,
+        ):
             logger.warning(
-                "Encountered expired data request. request_id=%s status=%r response=%s",
+                "Encountered expired data request. request_id=%s status=%r",
                 self.data_request.request_id,
                 request_status,
-                request_status_response,
             )
-            # Exception caught by selected template
+            self.data_request.status = request_status
+            self.data_request.last_polled = timezone.now()
+            self.data_request.save(update_fields=["status", "last_polled"])
+            return self.redirect_to_exception("request-expired")
 
+        if request_status not in (
+            TikTokDataRequest.State.PENDING,
+            TikTokDataRequest.State.READY,
+        ):
+            # NOT_POLLED/DOWNLOADED are valid model states but are never
+            # returned by a live poll of TikTok's API.
+            logger.warning(
+                "Unexpected TikTok data request status for a live poll. "
+                "request_id=%s status=%r",
+                self.data_request.request_id,
+                request_status,
+            )
+            return self.redirect_to_exception("request-failed")
+
+        self.data_request.status = request_status
         self.data_request.last_polled = timezone.now()
-        self.data_request.save(update_fields=["last_polled"])
+        self.data_request.save(update_fields=["status", "last_polled"])
         self.set_template_based_on_status(request_status)
 
         if request_status == TikTokDataRequest.State.READY:
@@ -363,6 +386,11 @@ class CheckDataAvailabilityView(
                 "poll_datetime": self.data_request.last_polled,
                 "project_slug": settings.TIKTOK_DDM_PROJECT_SLUG,
             },
+        )
+
+    def redirect_to_exception(self, code: str) -> HttpResponse:
+        return HttpResponseClientRedirect(
+            reverse("datadonation:portability_exception", kwargs={"code": code})
         )
 
     def advance_participant_step(self) -> None:
@@ -380,15 +408,8 @@ class CheckDataAvailabilityView(
     def set_template_based_on_status(self, request_status: str) -> None:
         if request_status == TikTokDataRequest.State.PENDING:
             self.template_name = self.templates["pending"]
-        elif request_status == TikTokDataRequest.State.READY:
-            self.template_name = self.templates["success"]
-        elif request_status in [
-            TikTokDataRequest.State.EXPIRED,
-            TikTokDataRequest.State.CANCELLED,
-        ]:
-            self.template_name = self.templates["expired"]
         else:
-            self.template_name = self.templates["error"]
+            self.template_name = self.templates["success"]
 
 
 class TikTokDownloadView(ParticipantInSessionMixin, DataRequestMixin, View):
@@ -415,7 +436,7 @@ class TikTokDownloadView(ParticipantInSessionMixin, DataRequestMixin, View):
             data_takeout = download_data_request(
                 get_valid_token(self.connection), self.data_request.request_id
             )
-        except HTTPError:
+        except RequestException:
             logger.exception(
                 "Failed to download TikTok data. request_id=%s",
                 self.data_request.request_id,
@@ -496,7 +517,7 @@ class PortabilityDonationView(DataRequestMixin, DDCSDownloadUploadView):
 
     def log_participant_info(self) -> None:
         log = get_participant_log(self.participant)
-        if "papi-donation_reached" not in log["steps"]:
+        if "papi_donation_reached" not in log["steps"]:
             log["steps"]["papi_donation_reached"] = timezone.now().isoformat()
             self.participant.save()
 
@@ -532,6 +553,7 @@ class PortabilityExceptionView(ParticipantInSessionMixin, TemplateView):
     def get_context_data(self, **kwargs) -> dict:
         context = super().get_context_data(**kwargs)
         code = self.kwargs.get("code")
+        self.log_participant_info(code)
 
         show_retry = True
         show_dl_ul_continue = True
@@ -544,8 +566,10 @@ class PortabilityExceptionView(ParticipantInSessionMixin, TemplateView):
                 show_dl_ul_continue = False
             case "no-request":
                 pass
-            case "oath-failed":
+            case "oauth-failed":
                 pass
+            case "request-failed":
+                show_retry = False
 
         context.update(
             {

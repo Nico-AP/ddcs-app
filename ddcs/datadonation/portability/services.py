@@ -33,7 +33,11 @@ def get_valid_token(connection: TikTokConnection) -> str:
         },
         timeout=15,
     )
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except requests.RequestException:
+        logger.exception("TikTok token refresh failed. connection_id=%s", connection.id)
+        raise
     data = response.json()
 
     connection.access_token = data["access_token"]
