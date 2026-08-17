@@ -6,9 +6,14 @@ function applyDOMChanges() {
 
     const elText = el.textContent.trim();
     const replacements = {
+      'Drag and drop a file here': 'File is downloaded from TikTok',
       'Datei hierher ziehen': 'Die Datei wird von TikTok heruntergeladen',
       'un fichier ici': 'Le fichier est téléchargé depuis TikTok',
       'Trascina un file qui': 'Il file viene scaricato da TikTok',
+      'Datei erfolgreich verarbeitet': 'Datei wurde von TikTok heruntergeladen',
+      'File successfully processed': 'File was downloaded from TikTok',
+      'Fichier traité avec succès': 'Fichier téléchargé depuis TikTok',
+      'File elaborato con successo': 'File scaricato da TikTok',
     };
     const match = Object.keys(replacements).find(k => elText.includes(k));
     const newText = match ? replacements[match] : 'File is downloaded from TikTok';
@@ -42,6 +47,12 @@ function applyDOMChanges() {
     el.classList.add('bi-download');
     el.dataset.iconSwapped = 'true';
   });
+
+
+  /* Hide retry button */
+  document.querySelectorAll('.retry-button-container').forEach(el => {
+    el.classList.add('d-none');
+  })
 
   /* Hide step heading container */
   document.querySelectorAll('.step-heading-container').forEach(el => {
