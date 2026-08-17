@@ -36,9 +36,28 @@
   }
 
   .grey-button {
-    background: #ededed !important;
-    color: #000 !important;
+    background: #ededed;
+    color: #000;
   }
+
+  .btn-group {
+    @media (max-width: $bp-sm) {
+      flex-direction: column;
+
+      .donation-btn {
+        border-radius: .25rem;
+      }
+    }
+  }
+
+  .extraction-header-content {
+    padding-right: 5px;
+  }
+
+  .extraction-heading {
+    overflow-wrap: anywhere;
+  }
+
 }
 
 #uapp.ddm-portability {
@@ -63,22 +82,11 @@
 
 #ddm-participation-main {
   .progress-indicator {
-    top: 70px;
     background: white;
-    @media (min-width: $bp-sm) {
-      top: 50px;
-    }
   }
 
   .sticky-gap-mask {
     background: white;
-  }
-
-  .question-body.is-sticky .question-text {
-    top: 100px;
-    @media (min-width: $bp-sm) {
-      top: 80px;
-    }
   }
 
   .flow-btn {
@@ -92,5 +100,13 @@
   .flow-btn:hover {
     background-color: var(--color-cta-hover);
     color: var(--color-cta-text);
+  }
+}
+
+#qapp {
+  @media (max-width: $bp-md) {
+    input[type="text"] {
+      margin: 0 auto;
+    }
   }
 }

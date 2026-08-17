@@ -503,12 +503,12 @@ LOGGING = {
             "level": "WARNING",
         },
         "ddcs.metadata": {
-            "handlers": ["metadata_file"],
+            "handlers": ["metadata_file", "mail_admins"],
             "propagate": False,
             "level": "INFO",
         },
         "ddcs.datadonation": {
-            "handlers": ["datadonation_file"],
+            "handlers": ["datadonation_file", "mail_admins"],
             "propagate": False,
             "level": "INFO",
         },
