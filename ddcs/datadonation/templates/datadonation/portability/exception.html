@@ -33,6 +33,13 @@
               nochmal starten:
             </p>
           </div>
+        {% elif exception_type == "request-failed" %}
+          <div>
+            <p>
+              Aufgrund eines Fehlers bei TikTok können wir deine Daten
+              nicht direkt von TikTok abrufen.
+            </p>
+          </div>
         {% else %}
           <div>
             <p>

@@ -16,6 +16,7 @@ ExceptionKeys = Literal[
     "data-types",
     "download-failed",
     "request-expired",
+    "request-failed",
     "no-request",
     "oath-failed",
 ]

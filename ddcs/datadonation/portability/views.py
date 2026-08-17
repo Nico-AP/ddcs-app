@@ -211,7 +211,12 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
             logger.exception(
                 "Failed to issue TikTok data request. connection_id=%s", connection.id
             )
-            request_data = {}
+            return redirect(
+                reverse(
+                    "datadonation:portability_exception",
+                    kwargs={"code": "request-failed"},
+                )
+            )
 
         request_id = extract_request_id(request_data)
         if not request_id:
@@ -546,6 +551,8 @@ class PortabilityExceptionView(ParticipantInSessionMixin, TemplateView):
                 pass
             case "oath-failed":
                 pass
+            case "request-failed":
+                show_retry = False
 
         context.update(
             {
