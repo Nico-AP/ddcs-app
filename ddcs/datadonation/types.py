@@ -5,6 +5,7 @@ StepKeys = Literal[
     "papi_tiktok-connect_dispatched",
     "papi_callback_reached",
     "papi_await-view_reached",
+    "papi_await-view_got-delay-info",
     "papi_donation_reached",
     "dlul_donation_reached",
     "questionnaire_reached",

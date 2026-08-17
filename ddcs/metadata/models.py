@@ -143,7 +143,7 @@ class Keyword(BaseMetadataModel, APIMonitoredMixin):
 
 class TikTokVideoClassification(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(auto_now=True)  # will likely not be updated.
 
     video = models.ForeignKey(
         "TikTokVideo",
@@ -158,8 +158,9 @@ class TikTokVideoClassification(models.Model):
     classification_ts = models.DateTimeField(null=True, blank=True)
     # created_at received from classifier
 
-    class Meta:
-        managed = False  # prevent accidental migrations; enable once it's prod-ready.
+    is_sentiment_positive = models.BooleanField(default=False)
+    is_sentiment_negative = models.BooleanField(default=False)
+    is_sentiment_neutral = models.BooleanField(default=False)
 
     def __str__(self) -> str:
         return f"Classification {self.pk} for video {self.video.id_tiktok}"

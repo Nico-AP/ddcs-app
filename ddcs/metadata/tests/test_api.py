@@ -11,6 +11,7 @@ from ddcs.metadata.models import (
     Keyword,
     TikTokUser,
     TikTokVideo,
+    TikTokVideoClassification,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
 
@@ -36,6 +37,9 @@ class TikTokVideoListTestCase(APITestCase):
             info.created_at = created_at
             info.save(update_fields=["created_at"])
         return info
+
+    def _create_classification(self, video, **kwargs) -> TikTokVideoClassification:
+        return TikTokVideoClassification.objects.create(video=video, **kwargs)
 
     # --- Authentication ---
 
@@ -311,6 +315,38 @@ class TikTokVideoListTestCase(APITestCase):
         response = self.client.get(self.url, {"has_api_infos": False})
         ids = [v["id_tiktok"] for v in response.data["results"]]
         self.assertEqual(ids, [video_no_info.id_tiktok])
+
+    # --- has classifications filter ---
+
+    def test_filter_by_has_classifications(self):
+        video = self._create_video(111)
+        self._create_classification(video)
+
+        video_no_classification = self._create_video(222)
+
+        # case True
+        response = self.client.get(self.url, {"has_classifications": True})
+        ids = [v["id_tiktok"] for v in response.data["results"]]
+        self.assertEqual(ids, [video.id_tiktok])
+
+        # case False
+        response = self.client.get(self.url, {"has_classifications": False})
+        ids = [v["id_tiktok"] for v in response.data["results"]]
+        self.assertEqual(ids, [video_no_classification.id_tiktok])
+
+    def test_filter_by_has_classifications_does_not_duplicate_results(self):
+        """
+        A video with multiple classification rows should appear once, not
+        once per row (guards the Exists() subquery against join-style
+        duplication).
+        """
+        video = self._create_video(111)
+        self._create_classification(video)
+        self._create_classification(video)
+
+        response = self.client.get(self.url, {"has_classifications": True})
+
+        self.assertEqual(len(response.data["results"]), 1)
 
     # --- monitored users filter ---
 
