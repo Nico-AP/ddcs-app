@@ -18,7 +18,7 @@ ExceptionKeys = Literal[
     "request-expired",
     "request-failed",
     "no-request",
-    "oath-failed",
+    "oauth-failed",
 ]
 
 ParticipationModes = Literal[

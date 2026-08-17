@@ -10,11 +10,13 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
+from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import HTTPError
 
 from ddcs.datadonation.portability.models import TikTokConnection, TikTokDataRequest
 from ddcs.datadonation.portability.services import get_valid_token
 from ddcs.datadonation.portability.views import hash_open_id
+from ddcs.datadonation.utils import get_participant_log
 
 
 class TikTokConnectionIsExpiredTest(TestCase):
@@ -387,6 +389,58 @@ class TikTokCallbackViewTest(PortabilityViewTestCase):
         )
         self.assertEqual(TikTokDataRequest.objects.count(), 0)
 
+    @patch("ddcs.datadonation.portability.views.issue_data_request")
+    @patch("ddcs.datadonation.portability.views.get_valid_token")
+    @patch("ddcs.datadonation.portability.views.oauth")
+    def test_network_error_issuing_request_redirects_to_exception_without_crashing(
+        self, mock_oauth, mock_get_valid_token, mock_issue
+    ):
+        mock_oauth.tiktok.authorize_access_token.return_value = _fake_token(
+            "raw_open_id"
+        )
+        mock_get_valid_token.return_value = "access-token"
+        mock_issue.side_effect = RequestsConnectionError("boom")
+
+        response = self.client.get(self._callback_url())
+
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:portability_exception", kwargs={"code": "request-failed"}
+            ),
+        )
+        self.assertEqual(TikTokDataRequest.objects.count(), 0)
+
+
+class PortabilityExceptionViewTest(PortabilityViewTestCase):
+    def test_get_records_error_code_in_participant_log(self):
+        response = self.client.get(
+            reverse(
+                "datadonation:portability_exception", kwargs={"code": "request-failed"}
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.participant.refresh_from_db()
+        log = get_participant_log(self.participant)
+        self.assertIn("request-failed", log["errors"])
+
+    def test_get_records_different_codes_independently(self):
+        self.client.get(
+            reverse("datadonation:portability_exception", kwargs={"code": "data-types"})
+        )
+        self.client.get(
+            reverse(
+                "datadonation:portability_exception",
+                kwargs={"code": "request-expired"},
+            )
+        )
+
+        self.participant.refresh_from_db()
+        log = get_participant_log(self.participant)
+        self.assertIn("data-types", log["errors"])
+        self.assertIn("request-expired", log["errors"])
+
 
 class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
     def setUp(self):
@@ -400,6 +454,9 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
     def test_redirects_when_no_active_data_request(self):
         response = self.client.get(self._check_url())
         self.assertRedirects(response, reverse("datadonation:tiktok_connection"))
+
+    def _exception_redirect_url(self, code):
+        return reverse("datadonation:portability_exception", kwargs={"code": code})
 
     @patch("ddcs.datadonation.portability.views.get_valid_token")
     @patch("ddcs.datadonation.portability.views.poll_data_request_status")
@@ -424,13 +481,14 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
         )
         data_request.refresh_from_db()
         self.assertIsNotNone(data_request.last_polled)
+        self.assertEqual(data_request.status, TikTokDataRequest.State.PENDING)
 
     @patch("ddcs.datadonation.portability.views.get_valid_token")
     @patch("ddcs.datadonation.portability.views.poll_data_request_status")
     def test_ready_status_renders_available_partial(
         self, mock_poll, mock_get_valid_token
     ):
-        TikTokDataRequest.objects.create(
+        data_request = TikTokDataRequest.objects.create(
             connection=self.connection,
             request_id=556,
             status=TikTokDataRequest.State.NOT_POLLED,
@@ -445,10 +503,12 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
             "datadonation/portability/partials/_data_download_available_msg.html",
             template_names,
         )
+        data_request.refresh_from_db()
+        self.assertEqual(data_request.status, TikTokDataRequest.State.READY)
 
     @patch("ddcs.datadonation.portability.views.get_valid_token")
     @patch("ddcs.datadonation.portability.views.poll_data_request_status")
-    def test_expired_status_renders_expired_partial(
+    def test_expired_status_redirects_to_exception_view(
         self, mock_poll, mock_get_valid_token
     ):
         TikTokDataRequest.objects.create(
@@ -461,15 +521,34 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
 
         response = self.client.get(self._check_url())
 
-        template_names = [t.name for t in response.templates if t.name]
-        self.assertIn(
-            "datadonation/portability/partials/_data_download_expired_msg.html",
-            template_names,
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["HX-Redirect"], self._exception_redirect_url("request-expired")
         )
 
     @patch("ddcs.datadonation.portability.views.get_valid_token")
     @patch("ddcs.datadonation.portability.views.poll_data_request_status")
-    def test_unrecognized_status_renders_error_partial(
+    def test_cancelled_status_redirects_to_exception_view(
+        self, mock_poll, mock_get_valid_token
+    ):
+        TikTokDataRequest.objects.create(
+            connection=self.connection,
+            request_id=560,
+            status=TikTokDataRequest.State.NOT_POLLED,
+        )
+        mock_get_valid_token.return_value = "access-token"
+        mock_poll.return_value = {"data": {"status": TikTokDataRequest.State.CANCELLED}}
+
+        response = self.client.get(self._check_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["HX-Redirect"], self._exception_redirect_url("request-expired")
+        )
+
+    @patch("ddcs.datadonation.portability.views.get_valid_token")
+    @patch("ddcs.datadonation.portability.views.poll_data_request_status")
+    def test_unrecognized_status_redirects_to_exception_view(
         self, mock_poll, mock_get_valid_token
     ):
         TikTokDataRequest.objects.create(
@@ -482,15 +561,34 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
 
         response = self.client.get(self._check_url())
 
-        template_names = [t.name for t in response.templates if t.name]
-        self.assertIn(
-            "datadonation/portability/partials/_data_download_error_msg.html",
-            template_names,
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["HX-Redirect"], self._exception_redirect_url("request-failed")
         )
 
     @patch("ddcs.datadonation.portability.views.get_valid_token")
     @patch("ddcs.datadonation.portability.views.poll_data_request_status")
-    def test_poll_http_error_renders_error_partial_without_crashing(
+    def test_malformed_response_redirects_to_exception_view_without_crashing(
+        self, mock_poll, mock_get_valid_token
+    ):
+        TikTokDataRequest.objects.create(
+            connection=self.connection,
+            request_id=561,
+            status=TikTokDataRequest.State.NOT_POLLED,
+        )
+        mock_get_valid_token.return_value = "access-token"
+        mock_poll.return_value = {"unexpected": "shape"}
+
+        response = self.client.get(self._check_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["HX-Redirect"], self._exception_redirect_url("request-failed")
+        )
+
+    @patch("ddcs.datadonation.portability.views.get_valid_token")
+    @patch("ddcs.datadonation.portability.views.poll_data_request_status")
+    def test_poll_http_error_redirects_to_exception_view_without_crashing(
         self, mock_poll, mock_get_valid_token
     ):
         TikTokDataRequest.objects.create(
@@ -504,11 +602,54 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
         response = self.client.get(self._check_url())
 
         self.assertEqual(response.status_code, 200)
-        template_names = [t.name for t in response.templates if t.name]
-        self.assertIn(
-            "datadonation/portability/partials/_data_download_error_msg.html",
-            template_names,
+        self.assertEqual(
+            response["HX-Redirect"], self._exception_redirect_url("request-failed")
         )
+
+    @patch("ddcs.datadonation.portability.views.get_valid_token")
+    @patch("ddcs.datadonation.portability.views.poll_data_request_status")
+    def test_poll_network_error_redirects_to_exception_view_without_crashing(
+        self, mock_poll, mock_get_valid_token
+    ):
+        TikTokDataRequest.objects.create(
+            connection=self.connection,
+            request_id=562,
+            status=TikTokDataRequest.State.NOT_POLLED,
+        )
+        mock_get_valid_token.return_value = "access-token"
+        mock_poll.side_effect = RequestsConnectionError("boom")
+
+        response = self.client.get(self._check_url())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response["HX-Redirect"], self._exception_redirect_url("request-failed")
+        )
+
+    @patch("ddcs.datadonation.portability.views.get_valid_token")
+    @patch("ddcs.datadonation.portability.views.poll_data_request_status")
+    def test_expired_request_no_longer_matches_active_states_filter(
+        self, mock_poll, mock_get_valid_token
+    ):
+        # Regression test: before persisting the polled status, an expired
+        # TikTokDataRequest kept matching ACTIVE_STATES (default NOT_POLLED)
+        # indefinitely, so DataRequestMixin kept treating it as active.
+        data_request = TikTokDataRequest.objects.create(
+            connection=self.connection,
+            request_id=563,
+            status=TikTokDataRequest.State.NOT_POLLED,
+        )
+        mock_get_valid_token.return_value = "access-token"
+        mock_poll.return_value = {"data": {"status": TikTokDataRequest.State.EXPIRED}}
+
+        self.client.get(self._check_url())
+
+        data_request.refresh_from_db()
+        self.assertEqual(data_request.status, TikTokDataRequest.State.EXPIRED)
+
+        # A second poll should no longer find the (now expired) request active.
+        response = self.client.get(self._check_url())
+        self.assertRedirects(response, reverse("datadonation:tiktok_connection"))
 
 
 class TikTokDownloadViewTest(PortabilityViewTestCase):
@@ -558,6 +699,23 @@ class TikTokDownloadViewTest(PortabilityViewTestCase):
     ):
         mock_get_valid_token.return_value = "access-token"
         mock_download.side_effect = HTTPError("boom")
+
+        response = self.client.post(self._download_url())
+
+        self.assertEqual(response.status_code, 502)
+        self.data_request.refresh_from_db()
+        self.assertFalse(self.data_request.download_succeeded)
+
+    @patch("ddcs.datadonation.portability.views.get_valid_token")
+    @patch("ddcs.datadonation.portability.views.download_data_request")
+    def test_download_network_error_returns_502_without_marking_success(
+        self, mock_download, mock_get_valid_token
+    ):
+        # A non-HTTPError network failure must still return 502, not a
+        # redirect — the JS layer only handles the download endpoint's
+        # non-2xx status, not a redirect response.
+        mock_get_valid_token.return_value = "access-token"
+        mock_download.side_effect = RequestsConnectionError("boom")
 
         response = self.client.post(self._download_url())
 
@@ -635,6 +793,18 @@ class GetValidTokenTest(TestCase):
         self.assertEqual(self.connection.refresh_token, "refreshed-refresh-token")
         self.assertIsNotNone(self.connection.access_token_expires_at)
         self.assertIsNotNone(self.connection.refresh_token_expires_at)
+
+    @patch("ddcs.datadonation.portability.services.requests.post")
+    def test_raises_on_connection_error(self, mock_post):
+        self.connection.access_token_expires_at = timezone.now() - timedelta(seconds=1)
+        self.connection.save()
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.side_effect = RequestsConnectionError("boom")
+        mock_post.return_value = mock_response
+
+        with self.assertRaises(RequestsConnectionError):
+            get_valid_token(self.connection)
 
 
 class PortabilityFlowIntegrationTest(PortabilityViewTestCase):

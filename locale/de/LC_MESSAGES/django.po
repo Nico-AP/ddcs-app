@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-14 16:02+0200\n"
+"POT-Creation-Date: 2026-08-17 12:34+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -48,11 +48,6 @@ msgstr ""
 msgid ""
 "Deine TikTok-Daten sind nun verfügbar! Klicke auf den Button, um "
 "fortzufahren."
-msgstr ""
-
-#: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_expired_msg.html:5
-msgid ""
-"Leider ist der Download nicht mehr verfügbar. Bitte versuche es noch einmal:"
 msgstr ""
 
 #: ddcs/datadonation/templates/datadonation/portability/partials/_data_download_pending_msg.html:9
