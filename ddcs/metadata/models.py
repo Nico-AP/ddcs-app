@@ -158,6 +158,10 @@ class TikTokVideoClassification(models.Model):
     classification_ts = models.DateTimeField(null=True, blank=True)
     # created_at received from classifier
 
+    is_sentiment_positive = models.BooleanField(default=False)
+    is_sentiment_negative = models.BooleanField(default=False)
+    is_sentiment_neutral = models.BooleanField(default=False)
+
     class Meta:
         managed = False  # prevent accidental migrations; enable once it's prod-ready.
 
