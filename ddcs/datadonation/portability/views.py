@@ -530,7 +530,6 @@ class PortabilityDonationView(DataRequestMixin, DDCSDownloadUploadView):
 
     def get_context_data(self, **kwargs) -> dict:
         context = super().get_context_data(**kwargs)
-        self.log_participant_info()
         context["download_url"] = reverse("datadonation:tiktok_download")
         context["failed_url"] = reverse(
             "datadonation:portability_exception", kwargs={"code": "download-failed"}

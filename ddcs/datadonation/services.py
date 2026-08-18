@@ -39,18 +39,24 @@ _BLUEPRINT_NAMES = [
     COMMENTS_BP_NAME,
 ]
 
+_BLUEPRINT_NAMES_INCL_BACKUPS = [
+    n for bp in _BLUEPRINT_NAMES for n in (bp, bp + "_txt")
+]
+
 
 def _get_donation_data(participant: Participant) -> dict:
     """Fetch and decrypt the participant's successful donations.
 
     Returns a dict keyed by blueprint name (watch history, followed accounts,
-    liked videos) with the decrypted records as values. Blueprints without a
-    successful donation map to ``None``.
+    liked videos) with the decrypted records as values. It checks whether
+    the base blueprint or the backup blueprint has been extracted and includes
+    it under the base name. Blueprints without a successful donation map to ``None``.
+    If both the base and "_txt" backup variant succeeded, the base variant is used.
     """
     donations = DataDonation.objects.filter(
         participant=participant,
-        blueprint__name__in=_BLUEPRINT_NAMES,
-        status="success",
+        blueprint__name__in=_BLUEPRINT_NAMES_INCL_BACKUPS,
+        data_extraction_state=DataDonation.DataExtractionState.DATA_EXTRACTED,
     ).select_related("blueprint")
 
     project = participant.project
@@ -64,7 +70,10 @@ def _get_donation_data(participant: Participant) -> dict:
         for donation in donations
     }
     return {
-        bp_name: donations_by_blueprint.get(bp_name) for bp_name in _BLUEPRINT_NAMES
+        bp_name: donations_by_blueprint.get(
+            bp_name, donations_by_blueprint.get(bp_name + "_txt")
+        )
+        for bp_name in _BLUEPRINT_NAMES
     }
 
 
