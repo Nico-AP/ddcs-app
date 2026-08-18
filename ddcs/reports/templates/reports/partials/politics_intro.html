@@ -11,8 +11,8 @@
       <span class="report-highlight">{{ n_seen_total }}</span>
       {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %},
       die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
-      hatten <span class="report-highlight">keine</span> ein politisches Schlagwort
-      oder kamen von offiziellen Partei-Accounts.
+      hatte <span class="report-highlight">keins</span> ein politisches Schlagwort
+      oder kam von offiziellen Partei-Accounts.
       {% include "reports/partials/political_content_info_trigger.html" %}
     {% elif n_seen_pol_videos == 1 %}
       Von den

@@ -72,9 +72,13 @@ class DDCSDownloadUploadView(DataDonationView):
 
     def extra_before_render(self, request: HttpRequest) -> None:
         super().extra_before_render(request)
+        self.log_participant_info()
+
+    def log_participant_info(self) -> None:
         log = get_participant_log(self.participant)
-        log["steps"]["dlul_donation_reached"] = timezone.now().isoformat()
-        self.participant.save()
+        if "dlul_donation_reached" not in log["steps"]:
+            log["steps"]["dlul_donation_reached"] = timezone.now().isoformat()
+            self.participant.save()
 
     def current_step_url(self) -> str:
         return get_current_step_url(self.steps, self.current_step, self.object.slug)

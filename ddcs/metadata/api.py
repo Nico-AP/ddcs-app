@@ -22,7 +22,8 @@ class TikTokVideoList(generics.ListAPIView):
 
     * Requires token authentication.
     * Responses can be filtered by: id_tiktok, usernames, create_date_from/to,
-      keywords, monitored_users (bool), region_codes.
+      keywords, monitored_users (bool), region_codes, has_api_infos (bool),
+      has_classifications (bool), updated_since.
     """
 
     authentication_classes = [authentication.TokenAuthentication]
