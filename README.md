@@ -230,6 +230,7 @@ Once `stage` has been tested and is ready for release:
    later, in step 4):
 
 ```bash
+git pull origin
 git tag --list 'r[0-9]*' | sort -V | tail -1
 ```
 
@@ -249,6 +250,8 @@ gh pr create --base main --head stage --title "Release r11"
 ```bash
 git checkout main
 git pull origin main
+git pull origin
+git tag --list 'r[0-9]*' | sort -V | tail -1  # get correct tag
 git tag r11
 git push origin --tags
 ```
