@@ -77,7 +77,7 @@ class LoadAccountPartyMappingTests(TestCase):
 
     def test_csv_has_required_columns(self):
         # Loader reads `username` and `partei`; the CSV must provide both.
-        expected_columns = {"username", "partei"}
+        expected_columns = {"username", "partei", "bundesland"}
         with Path(ACCOUNT_PARTY_MAPPING_CSV_PATH).open("r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             self.assertEqual(set(reader.fieldnames), expected_columns)
@@ -715,8 +715,10 @@ class HourlyWatchMeansTests(TestCase):
         self.assertEqual(means[0], 0.0)
 
     def test_weekday_watch_hours_uses_within_session_gaps(self):
-        # 2026-05-01 is a Friday.
-        friday = REPORT_FIRST_DATE_TO_INCLUDE.replace(hour=10, minute=0, second=0)
+        # 2026-07-03 is a Friday.
+        friday = REPORT_FIRST_DATE_TO_INCLUDE.replace(
+            day=3, hour=10, minute=0, second=0
+        )
         saturday = friday + timedelta(days=1)
         watches = [
             {"date": friday, "link": "a", "video_id": 1},
@@ -989,20 +991,20 @@ class ComputeDailyPartyCountsTests(TestCase):
 
     def test_groups_by_day_and_party(self):
         records = [
-            self._record("2026-05-08", 1),
-            self._record("2026-05-08", 1),
-            self._record("2026-05-09", 2),
+            self._record("2026-07-08", 1),
+            self._record("2026-07-08", 1),
+            self._record("2026-07-09", 2),
         ]
         video_party_map = {1: "SPD", 2: "CDU/CSU"}
         result = user_metrics._compute_daily_party_counts(records, video_party_map)
-        self.assertIn({"date": "2026-05-08", "party": "SPD", "count": 2}, result)
-        self.assertIn({"date": "2026-05-09", "party": "CDU/CSU", "count": 1}, result)
+        self.assertIn({"date": "2026-07-08", "party": "SPD", "count": 2}, result)
+        self.assertIn({"date": "2026-07-09", "party": "CDU/CSU", "count": 1}, result)
 
     def test_sorted_by_date(self):
         records = [
-            self._record("2026-06-01", 2),
-            self._record("2026-05-08", 1),
-            self._record("2026-05-09", 1),
+            self._record("2026-08-01", 2),
+            self._record("2026-07-08", 1),
+            self._record("2026-07-09", 1),
         ]
         result = user_metrics._compute_daily_party_counts(
             records, {1: "SPD", 2: "CDU/CSU"}
@@ -1011,20 +1013,20 @@ class ComputeDailyPartyCountsTests(TestCase):
         self.assertEqual(dates, sorted(dates))
 
     def test_buckets_unmapped_to_no_party(self):
-        records = [self._record("2026-05-08", 999)]
+        records = [self._record("2026-07-08", 999)]
         result = user_metrics._compute_daily_party_counts(records, {})
         self.assertEqual(
-            result, [{"date": "2026-05-08", "party": NO_PARTY_KEY, "count": 1}]
+            result, [{"date": "2026-07-08", "party": NO_PARTY_KEY, "count": 1}]
         )
 
     def test_skips_records_with_invalid_date_or_missing_video_id(self):
         records = [
             {"date": "not a date", "video_id": 1},
-            {"date": datetime(2026, 5, 8, tzinfo=UTC), "video_id": None},
-            self._record("2026-05-08", 1),
+            {"date": datetime(2026, 7, 8, tzinfo=UTC), "video_id": None},
+            self._record("2026-07-08", 1),
         ]
         result = user_metrics._compute_daily_party_counts(records, {1: "SPD"})
-        self.assertEqual(result, [{"date": "2026-05-08", "party": "SPD", "count": 1}])
+        self.assertEqual(result, [{"date": "2026-07-08", "party": "SPD", "count": 1}])
 
 
 class GetTopVideosTests(TestCase):

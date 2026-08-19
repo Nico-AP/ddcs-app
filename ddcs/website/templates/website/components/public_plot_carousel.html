@@ -10,14 +10,14 @@
     <div class="carousel-inner">
 
       <div class="carousel-item active">
-        <div class="carousel-slide-title text-bold">So viel posten die Parteien über die Zeit gesehen...</div>
+        <div class="carousel-slide-title text-bold">So viel posten die Parteien über die Zeit gesehen...{% include "website/components/public_plot_info_trigger.html" %}</div>
         <div class="visualization-container temporal-plot w-100 min-w-0 overflow-hidden">
           {{ temporal_party_distribution_plot.html|safe }}
         </div>
       </div>
 
       <div class="carousel-item">
-        <div class="carousel-slide-title">...und so viel insgesamt seit dem 1. Juni 2026</div>
+        <div class="carousel-slide-title">...und so viel insgesamt seit dem 1. Juli 2026{% include "website/components/public_plot_info_trigger.html" %}</div>
         <div class="visualization-container w-100 min-w-0 overflow-hidden">
           {{ party_distribution_plot.html|safe }}
         </div>
@@ -34,6 +34,8 @@
       <span class="carousel-control-next-icon" aria-hidden="true"></span>
       <span class="visually-hidden">Next</span>
     </button>
+
+    {% include "website/components/public_plot_info_modal.html" %}
 
     {% if temporal_party_distribution_plot.html %}
       <script defer src="{% static 'reports/js/temporal-plot.js' %}"></script>

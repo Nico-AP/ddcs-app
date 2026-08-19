@@ -1,0 +1,235 @@
+{% extends "website/base.html" %}
+{% load static %}
+
+{% block page_title %}Dashboard – Dein Feed, Deine Wahl.{% endblock page_title %}
+
+{% block main %}
+  {% include "website/components/navigation.html" %}
+
+  <div class="container-fluid px-4 py-5">
+    <h1 class="text-center mb-2">Dein Feed, Deine Wahl im Überblick</h1>
+    <p class="text-center text-muted mb-5">
+      Tagesaktuelle Übersicht der Datenspende-Ergebnisse und Parteiaktivität auf TikTok.
+    </p>
+
+    {% if tierzeichen_distribution or tierzeichen_historic %}
+      <section class="mb-5 tierzeichen-section">
+        <h2 class="h5 mb-3">TikTok-Tierzeichen der Teilnehmenden</h2>
+
+        <div id="tierzeichenCarousel" class="carousel slide" data-bs-ride="false" data-bs-interval="false">
+          <div class="d-flex justify-content-center gap-2 mb-3">
+            <button type="button"
+                    class="btn btn-sm btn-outline-dark active"
+                    data-bs-target="#tierzeichenCarousel"
+                    data-bs-slide-to="0"
+                    aria-current="true">
+              Aktuelle Erhebung
+            </button>
+            <button type="button"
+                    class="btn btn-sm btn-outline-dark"
+                    data-bs-target="#tierzeichenCarousel"
+                    data-bs-slide-to="1">
+              Bundestagswahl 2025
+            </button>
+          </div>
+
+          <div class="carousel-inner">
+            <div class="carousel-item active">
+              <p class="small text-muted mb-3 text-center">
+                Aktuelle Erhebung – {{ tierzeichen_total }} Datenspenden
+              </p>
+              {% if tierzeichen_distribution %}
+                <div class="tierzeichen-chart">
+                  {% for item in tierzeichen_distribution %}
+                    <div class="tierzeichen-chart__item">
+                      <img src="{% static item.image_static %}"
+                           alt="{{ item.animal }}"
+                           class="tierzeichen-chart__img" />
+                      <div class="tierzeichen-chart__bar-wrap">
+                        <div class="tierzeichen-chart__bar" style="width: {{ item.pct }}%;"></div>
+                      </div>
+                      <span class="tierzeichen-chart__count">{{ item.count }}</span>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="text-muted text-center">Noch keine Daten vorhanden.</p>
+              {% endif %}
+            </div>
+
+            <div class="carousel-item">
+              <p class="small text-muted mb-3 text-center">
+                Bundestagswahl 2025 – {{ tierzeichen_historic_total }} Datenspenden
+              </p>
+              {% if tierzeichen_historic %}
+                <div class="tierzeichen-chart">
+                  {% for item in tierzeichen_historic %}
+                    <div class="tierzeichen-chart__item">
+                      <img src="{% static item.image_static %}"
+                           alt="{{ item.animal }}"
+                           class="tierzeichen-chart__img" />
+                      <div class="tierzeichen-chart__bar-wrap">
+                        <div class="tierzeichen-chart__bar" style="width: {{ item.pct }}%;"></div>
+                      </div>
+                      <span class="tierzeichen-chart__count">{{ item.count }}</span>
+                    </div>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <p class="text-muted text-center">Keine historischen Daten verfügbar.</p>
+              {% endif %}
+            </div>
+          </div>
+
+        </div>
+      </section>
+    {% endif %}
+
+    <hr />
+
+    <h2 class="h4 text-center mb-3">So aktiv sind die Parteien auf TikTok im Wahlkampf</h2>
+
+    <div class="d-flex justify-content-center gap-2 mb-4">
+      <a href="?{{ '' }}"
+         class="btn btn-sm {% if not selected_bundesland %}btn-dark{% else %}btn-outline-dark{% endif %}">
+        Alle
+      </a>
+      {% for bl in bundeslaender %}
+        <a href="?bundesland={{ bl }}"
+           class="btn btn-sm {% if selected_bundesland == bl %}btn-dark{% else %}btn-outline-dark{% endif %}">
+          {% if bl == "BE" %}Berlin{% elif bl == "MV" %}Mecklenburg-Vorpommern{% elif bl == "SA" %}Sachsen-Anhalt{% else %}{{ bl }}{% endif %}
+        </a>
+      {% endfor %}
+    </div>
+
+    {% if party_distribution_plot.html %}
+      <section class="mb-5">
+        <h2 class="h5 mb-1">
+          Videos gesamt pro Partei
+          {% include "website/components/public_plot_info_trigger.html" %}
+        </h2>
+        <p class="small text-muted mb-3">
+          Gesamtzahl veröffentlichter Videos pro Partei seit dem {{ video_stats.start_date }}.
+        </p>
+        <div class="w-100 min-w-0 overflow-hidden">
+          {{ party_distribution_plot.html|safe }}
+        </div>
+      </section>
+    {% endif %}
+
+    <hr />
+
+    {% if total_views_plot.html or views_per_video_plot.html %}
+      <section class="mb-5">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <h2 class="h5 mb-1">
+              Views gesamt pro Partei
+              {% include "website/components/public_plot_info_trigger.html" %}
+            </h2>
+            <p class="small text-muted mb-3">Gesamtzahl der Views auf Videos der Partei-Accounts.</p>
+            {% if total_views_plot.html %}
+              <div class="w-100 min-w-0 overflow-hidden">{{ total_views_plot.html|safe }}</div>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <h2 class="h5 mb-1">
+              Views pro Video pro Partei
+              {% include "website/components/public_plot_info_trigger.html" %}
+            </h2>
+            <p class="small text-muted mb-3">Durchschnittliche Views pro veröffentlichtem Video.</p>
+            {% if views_per_video_plot.html %}
+              <div class="w-100 min-w-0 overflow-hidden">{{ views_per_video_plot.html|safe }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+    {% endif %}
+
+    <hr />
+
+    {% if total_likes_plot.html or likes_per_video_plot.html %}
+      <section class="mb-5">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <h2 class="h5 mb-1">
+              Likes gesamt pro Partei
+              {% include "website/components/public_plot_info_trigger.html" %}
+            </h2>
+            <p class="small text-muted mb-3">Gesamtzahl der Likes auf Videos der Partei-Accounts.</p>
+            {% if total_likes_plot.html %}
+              <div class="w-100 min-w-0 overflow-hidden">{{ total_likes_plot.html|safe }}</div>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <h2 class="h5 mb-1">
+              Likes pro Video pro Partei
+              {% include "website/components/public_plot_info_trigger.html" %}
+            </h2>
+            <p class="small text-muted mb-3">Durchschnittliche Likes pro veröffentlichtem Video.</p>
+            {% if likes_per_video_plot.html %}
+              <div class="w-100 min-w-0 overflow-hidden">{{ likes_per_video_plot.html|safe }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+    {% endif %}
+
+    <hr />
+
+    {% if video_stats %}
+      <section class="mb-5">
+        <h2 class="h5 mb-3">Kennzahlen</h2>
+        <div class="row g-3 text-center">
+          <div class="col-6 col-md-3">
+            <div class="card h-100 p-3">
+              <div class="fs-3 fw-bold">{{ video_stats.total_videos }}</div>
+              <div class="small text-muted">Videos gesamt</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="card h-100 p-3">
+              <div class="fs-3 fw-bold">{{ video_stats.avg_videos_per_account_day }}</div>
+              <div class="small text-muted">Videos / Account / Tag</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="card h-100 p-3">
+              <div class="fs-3 fw-bold">{{ video_stats.total_likes }}</div>
+              <div class="small text-muted">Likes gesamt</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="card h-100 p-3">
+              <div class="fs-3 fw-bold">{{ video_stats.avg_likes_per_video }}</div>
+              <div class="small text-muted">Ø Likes / Video</div>
+            </div>
+          </div>
+        </div>
+        <p class="small text-muted mt-3 text-center">
+          Basierend auf {{ video_stats.n_accounts }} beobachteten Partei-Accounts
+          im Zeitraum {{ video_stats.start_date }} – {{ video_stats.end_date }}.
+        </p>
+      </section>
+    {% endif %}
+
+    {% include "website/components/public_plot_info_modal.html" %}
+  </div>
+
+  {% include "website/components/footer.html" %}
+{% endblock main %}
+
+{% block extra_js %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      var carousel = document.getElementById("tierzeichenCarousel");
+      if (!carousel) return;
+      var btns = carousel.querySelectorAll("[data-bs-slide-to]");
+      carousel.addEventListener("slid.bs.carousel", function (e) {
+        btns.forEach(function (btn) { btn.classList.remove("active"); });
+        var active = carousel.querySelector('[data-bs-slide-to="' + e.to + '"]');
+        if (active) active.classList.add("active");
+      });
+    });
+  </script>
+{% endblock extra_js %}
