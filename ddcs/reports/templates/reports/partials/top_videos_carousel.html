@@ -20,10 +20,20 @@
     {% endif %}
 
     <div class="top-videos-carousel__player">
+      <div id="topVideoConsentOverlay" class="top-videos-carousel__consent">
+        <p class="top-videos-carousel__consent-text">
+          Beim Abspielen werden Daten an TikTok übermittelt.
+        </p>
+        <button type="button"
+                class="btn btn-sm btn-outline-dark top-videos-carousel__consent-btn"
+                id="topVideoConsentBtn">
+          Videos laden
+        </button>
+      </div>
       <iframe id="topVideoEmbed"
-              class="top-videos-carousel__iframe"
-              src="{{ top_videos.0.embed_url }}"
-              data-current-embed-src="{{ top_videos.0.embed_url }}"
+              class="top-videos-carousel__iframe top-videos-carousel__iframe--hidden"
+              data-consent-src="{{ top_videos.0.embed_url }}"
+              data-current-embed-src=""
               title="TikTok-Video von @{{ top_videos.0.username }}"
               allow="encrypted-media; fullscreen; picture-in-picture"
               referrerpolicy="strict-origin-when-cross-origin"></iframe>

@@ -28,5 +28,45 @@
     {% include "reports/partials/wordcloud_non_party_user.html" %}
   {% endif %}
 
-  {# TODO: Add share buttons #}
+  {% include "reports/partials/share_invite.html" %}
+
+  {% if behaviour_user_type %}
+  <script nonce="{{ request.csp_nonce }}">
+    (function () {
+      var text = "Ich habe bei \u201eDein Feed, Deine Wahl\u201c mitgemacht \u2013 mein TikTok-Tierzeichen ist {{ behaviour_user_type.animal }}! Mach auch mit: https://dein-feed-deine-wahl.de/";
+      var encoded = encodeURIComponent(text);
+
+      document.querySelectorAll(".js-share-whatsapp").forEach(function (a) {
+        a.href = "https://wa.me/?text=" + encoded;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+      });
+
+      document.querySelectorAll(".js-share-telegram").forEach(function (a) {
+        a.href = "https://t.me/share/url?url=https%3A%2F%2Fdein-feed-deine-wahl.de%2F&text=" + encoded;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+      });
+
+      document.querySelectorAll(".js-share-copy").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(function () {
+              var iconCopy = btn.querySelector(".share-buttons__icon-copy");
+              var iconCheck = btn.querySelector(".share-buttons__icon-check");
+              btn.classList.add("share-buttons__btn--copied");
+              if (iconCopy) iconCopy.classList.add("share-buttons__icon--hidden");
+              if (iconCheck) iconCheck.classList.remove("share-buttons__icon--hidden");
+              setTimeout(function () {
+                btn.classList.remove("share-buttons__btn--copied");
+                if (iconCopy) iconCopy.classList.remove("share-buttons__icon--hidden");
+                if (iconCheck) iconCheck.classList.add("share-buttons__icon--hidden");
+              }, 2000);
+            });
+          }
+        });
+      });
+    })();
+  </script>
+  {% endif %}
 </div>

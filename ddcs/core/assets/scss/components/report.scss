@@ -613,12 +613,39 @@
     }
   }
 
+  &__consent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: var(--space-4);
+    text-align: center;
+    background-color: var(--bg-surface);
+  }
+
+  &__consent-text {
+    margin: 0 0 var(--space-3);
+    font-size: 13px;
+    color: var(--text-secondary);
+    max-width: 14rem;
+  }
+
+  &__consent-btn {
+    font-size: 13px;
+  }
+
   &__iframe {
     display: block;
     width: 100%;
     height: 100%;
     border: 0;
     background-color: var(--bg-surface);
+
+    &--hidden {
+      display: none;
+    }
   }
 
   &__indicators {
@@ -662,5 +689,114 @@
     &--next {
       transform: rotate(135deg);
     }
+  }
+}
+
+.report-share-invite {
+  padding: var(--space-6) var(--space-4);
+}
+
+.share-buttons {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border-default);
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+    text-decoration: none;
+
+    &:hover {
+      border-color: var(--text-accent);
+      color: var(--text-accent);
+    }
+
+    &--whatsapp:hover {
+      color: #25d366;
+      border-color: #25d366;
+    }
+
+    &--telegram:hover {
+      color: #0088cc;
+      border-color: #0088cc;
+    }
+
+    &--copied {
+      color: #16a34a;
+      border-color: #16a34a;
+      position: relative;
+
+      &::after {
+        content: "Kopiert!";
+        position: absolute;
+        top: calc(100% + 0.35rem);
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 11px;
+        font-weight: 500;
+        color: #16a34a;
+        white-space: nowrap;
+        pointer-events: none;
+      }
+    }
+  }
+
+  &__icon--hidden {
+    display: none;
+  }
+}
+
+.tierzeichen-section {
+  min-height: 28rem;
+}
+
+.tierzeichen-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  &__img {
+    width: 3.5rem;
+    height: 3.5rem;
+    flex-shrink: 0;
+  }
+
+  &__bar-wrap {
+    flex: 1;
+    height: 3.5rem;
+    background: var(--bg-surface, #f3f4f6);
+    border-radius: var(--radius-md, 6px);
+    overflow: hidden;
+  }
+
+  &__bar {
+    height: 100%;
+    background: var(--text-accent, #058076);
+    border-radius: var(--radius-md, 6px);
+    min-width: 4px;
+    transition: width 0.3s ease;
+  }
+
+  &__count {
+    min-width: 2.5rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-align: right;
+    color: var(--text-primary);
   }
 }
