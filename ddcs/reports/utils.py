@@ -24,6 +24,18 @@ def load_account_party_mapping() -> dict[str, str]:
         return {row["username"]: row["partei"] for row in reader}
 
 
+@lru_cache(maxsize=1)
+def load_account_bundesland_mapping() -> dict[str, str]:
+    """Load account-bundesland map. Key = username, value = bundesland code."""
+    with Path(ACCOUNT_PARTY_MAPPING_CSV_PATH).open("r", encoding="utf-8") as csv_file:
+        reader = csv.DictReader(csv_file, delimiter=",")
+        return {
+            row["username"]: row.get("bundesland", "").strip()
+            for row in reader
+            if row.get("bundesland", "").strip()
+        }
+
+
 def parse_tiktok_video_id_from_url(url: str) -> int | None:
     match = _TIKTOK_VIDEO_ID_RE.search(url)
     if not match:
