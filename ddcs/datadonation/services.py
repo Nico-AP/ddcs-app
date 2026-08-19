@@ -40,7 +40,7 @@ _BLUEPRINT_NAMES = [
 ]
 
 _BLUEPRINT_NAMES_INCL_BACKUPS = [
-    n for bp in _BLUEPRINT_NAMES for n in (bp, bp + "_txt")
+    n for bp in _BLUEPRINT_NAMES for n in (bp, bp + "_txt", bp + "_old")
 ]
 
 
@@ -71,7 +71,10 @@ def _get_donation_data(participant: Participant) -> dict:
     }
     return {
         bp_name: donations_by_blueprint.get(
-            bp_name, donations_by_blueprint.get(bp_name + "_txt")
+            bp_name,
+            donations_by_blueprint.get(
+                bp_name + "_txt", donations_by_blueprint.get(bp_name + "_old")
+            ),
         )
         for bp_name in _BLUEPRINT_NAMES
     }
