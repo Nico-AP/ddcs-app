@@ -58,8 +58,9 @@ def get_category_selection_from_scopes(scopes: str) -> list[str]:
     categories = []
     if Scopes.ACTIVITY in scopes:
         categories.append("activity")
-    if Scopes.DIRECT_MESSAGES in scopes:
-        categories.append("direct_messages")
+    # Note: decided not to include direct messages
+    # if Scopes.DIRECT_MESSAGES in scopes:
+    #     categories.append("direct_messages")  # noqa: ERA001
     if Scopes.POSTSANDPROFILE in scopes:
         categories.extend(["video", "profile"])
     return categories
