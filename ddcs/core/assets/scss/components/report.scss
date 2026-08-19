@@ -613,12 +613,39 @@
     }
   }
 
+  &__consent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding: var(--space-4);
+    text-align: center;
+    background-color: var(--bg-surface);
+  }
+
+  &__consent-text {
+    margin: 0 0 var(--space-3);
+    font-size: 13px;
+    color: var(--text-secondary);
+    max-width: 14rem;
+  }
+
+  &__consent-btn {
+    font-size: 13px;
+  }
+
   &__iframe {
     display: block;
     width: 100%;
     height: 100%;
     border: 0;
     background-color: var(--bg-surface);
+
+    &--hidden {
+      display: none;
+    }
   }
 
   &__indicators {
