@@ -159,6 +159,8 @@ def _compute_daily_party_counts(
         date = record.get("date")
         if not isinstance(date, datetime) or video_id is None:
             continue
+        if date < REPORT_FIRST_DATE_TO_INCLUDE:
+            continue
         day = date.date().isoformat()
         party = video_party_map.get(video_id, NO_PARTY_KEY)
         counts[(day, party)] = counts.get((day, party), 0) + 1
