@@ -194,3 +194,212 @@ def get_temporal_party_distribution_all_accounts(
     )
 
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
+
+
+def get_total_views_per_party_plot(
+    data: list[dict],
+) -> dict[str, Any]:
+    """Horizontal bar chart of total views per party."""
+    if not data:
+        return {"html": None}
+
+    sorted_data = sorted(data, key=lambda d: d["total_views"])
+    parties = [d["party"] for d in sorted_data]
+    values = [d["total_views"] for d in sorted_data]
+
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=parties,
+            orientation="h",
+            marker={
+                "color": [
+                    hex_to_rgba(PARTY_COLORS.get(p, PARTY_COLOR_OTHER)) for p in parties
+                ],
+                "cornerradius": PLOT_CORNER_RADIUS,
+            },
+            text=[f"{v:,.0f}" for v in values],
+            textposition="outside",
+            textfont={"size": 14, "family": PLOT_FONT_FAMILY},
+            hovertemplate="<b>%{y}</b>: %{x:,.0f} Views<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        dragmode=False,
+        margin={"t": 10, "l": 10, "r": 60, "b": 10},
+        font={"size": 14, "color": "black", "family": PLOT_FONT_FAMILY},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=max(len(data) * 50, 200),
+        xaxis={"visible": False},
+        yaxis={"tickfont": {"size": 14}, "automargin": True},
+    )
+
+    return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
+
+
+def get_views_per_video_per_party_plot(
+    data: list[dict],
+) -> dict[str, Any]:
+    """Horizontal bar chart of average views per video per party."""
+    if not data:
+        return {"html": None}
+
+    sorted_data = sorted(data, key=lambda d: d["avg_views_per_video"])
+    parties = [d["party"] for d in sorted_data]
+    values = [d["avg_views_per_video"] for d in sorted_data]
+
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=parties,
+            orientation="h",
+            marker={
+                "color": [
+                    hex_to_rgba(PARTY_COLORS.get(p, PARTY_COLOR_OTHER)) for p in parties
+                ],
+                "cornerradius": PLOT_CORNER_RADIUS,
+            },
+            text=[f"{v:,.0f}" for v in values],
+            textposition="outside",
+            textfont={"size": 14, "family": PLOT_FONT_FAMILY},
+            hovertemplate="<b>%{y}</b>: Ø %{x:,.0f} Views/Video<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        dragmode=False,
+        margin={"t": 10, "l": 10, "r": 60, "b": 10},
+        font={"size": 14, "color": "black", "family": PLOT_FONT_FAMILY},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=max(len(data) * 50, 200),
+        xaxis={"visible": False},
+        yaxis={"tickfont": {"size": 14}, "automargin": True},
+    )
+
+    return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
+
+
+def get_total_likes_per_party_plot(
+    likes_data: list[dict],
+) -> dict[str, Any]:
+    """Horizontal bar chart of total likes per party."""
+    if not likes_data:
+        return {"html": None}
+
+    parties = [d["party"] for d in reversed(likes_data)]
+    values = [d["total_likes"] for d in reversed(likes_data)]
+
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=parties,
+            orientation="h",
+            marker={
+                "color": [
+                    hex_to_rgba(PARTY_COLORS.get(p, PARTY_COLOR_OTHER)) for p in parties
+                ],
+                "cornerradius": PLOT_CORNER_RADIUS,
+            },
+            text=[f"{v:,.0f}" for v in values],
+            textposition="outside",
+            textfont={"size": 14, "family": PLOT_FONT_FAMILY},
+            hovertemplate="<b>%{y}</b>: %{x:,.0f} Likes<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        dragmode=False,
+        margin={"t": 10, "l": 10, "r": 60, "b": 10},
+        font={"size": 14, "color": "black", "family": PLOT_FONT_FAMILY},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=max(len(likes_data) * 50, 200),
+        xaxis={"visible": False},
+        yaxis={"tickfont": {"size": 14}, "automargin": True},
+    )
+
+    return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
+
+
+def get_likes_per_video_per_party_plot(
+    likes_data: list[dict],
+) -> dict[str, Any]:
+    """Horizontal bar chart of average likes per video per party."""
+    if not likes_data:
+        return {"html": None}
+
+    sorted_data = sorted(likes_data, key=lambda d: d["avg_likes_per_video"])
+    parties = [d["party"] for d in sorted_data]
+    values = [d["avg_likes_per_video"] for d in sorted_data]
+
+    fig = go.Figure(
+        go.Bar(
+            x=values,
+            y=parties,
+            orientation="h",
+            marker={
+                "color": [
+                    hex_to_rgba(PARTY_COLORS.get(p, PARTY_COLOR_OTHER)) for p in parties
+                ],
+                "cornerradius": PLOT_CORNER_RADIUS,
+            },
+            text=[f"{v:,.0f}" for v in values],
+            textposition="outside",
+            textfont={"size": 14, "family": PLOT_FONT_FAMILY},
+            hovertemplate="<b>%{y}</b>: Ø %{x:,.0f} Likes/Video<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        dragmode=False,
+        margin={"t": 10, "l": 10, "r": 60, "b": 10},
+        font={"size": 14, "color": "black", "family": PLOT_FONT_FAMILY},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=max(len(likes_data) * 50, 200),
+        xaxis={"visible": False},
+        yaxis={"tickfont": {"size": 14}, "automargin": True},
+    )
+
+    return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
+
+
+def get_tierzeichen_distribution_plot(
+    distribution: list[dict],
+) -> dict[str, Any]:
+    """Horizontal bar chart of TikTok-Tierzeichen counts across participants."""
+    if not distribution:
+        return {"html": None}
+
+    animals = [d["animal"] for d in reversed(distribution)]
+    counts = [d["count"] for d in reversed(distribution)]
+
+    fig = go.Figure(
+        go.Bar(
+            x=counts,
+            y=animals,
+            orientation="h",
+            marker={
+                "color": "#6366f1",
+                "cornerradius": PLOT_CORNER_RADIUS,
+            },
+            text=counts,
+            textposition="outside",
+            textfont={"size": 16, "family": PLOT_FONT_FAMILY},
+            hovertemplate="<b>%{y}</b>: %{x} Teilnehmende<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        dragmode=False,
+        margin={"t": 10, "l": 10, "r": 40, "b": 10},
+        font={"size": 16, "color": "black", "family": PLOT_FONT_FAMILY},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=max(len(distribution) * 60, 200),
+        xaxis={"visible": False},
+        yaxis={
+            "tickfont": {"size": 16},
+            "automargin": True,
+        },
+    )
+
+    return {"html": create_plot_html(fig, config=PLOT_CONFIG)}

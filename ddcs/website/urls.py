@@ -9,4 +9,9 @@ urlpatterns = [
         views.DFDW2025PageView.as_view(),
         name="dfdw_2025",
     ),
+    path(
+        "dashboard/public/",
+        views.PublicDashboardView.as_view(),
+        name="public_dashboard",
+    ),
 ]

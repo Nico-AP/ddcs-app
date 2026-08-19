@@ -754,3 +754,49 @@
     display: none;
   }
 }
+
+.tierzeichen-section {
+  min-height: 28rem;
+}
+
+.tierzeichen-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+
+  &__item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  &__img {
+    width: 3.5rem;
+    height: 3.5rem;
+    flex-shrink: 0;
+  }
+
+  &__bar-wrap {
+    flex: 1;
+    height: 3.5rem;
+    background: var(--bg-surface, #f3f4f6);
+    border-radius: var(--radius-md, 6px);
+    overflow: hidden;
+  }
+
+  &__bar {
+    height: 100%;
+    background: var(--text-accent, #058076);
+    border-radius: var(--radius-md, 6px);
+    min-width: 4px;
+    transition: width 0.3s ease;
+  }
+
+  &__count {
+    min-width: 2.5rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-align: right;
+    color: var(--text-primary);
+  }
+}
