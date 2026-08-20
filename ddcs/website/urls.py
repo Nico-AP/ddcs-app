@@ -14,4 +14,19 @@ urlpatterns = [
         views.PublicDashboardView.as_view(),
         name="public_dashboard",
     ),
+    path(
+        "methods/lists/",
+        views.MethodsListsView.as_view(),
+        name="methods_lists",
+    ),
+    path(
+        "methods/lists/export.json",
+        views.MethodsListsJsonExportView.as_view(),
+        name="methods_lists_json",
+    ),
+    path(
+        "methods/lists/export.xlsx",
+        views.MethodsListsExcelExportView.as_view(),
+        name="methods_lists_xlsx",
+    ),
 ]

@@ -24,3 +24,42 @@ body > section:last-of-type {
 .content-page h2 {
   padding-top: 1rem;
 }
+
+.methods-lists {
+  &__citation {
+    padding: 1rem 1.25rem;
+    background: #f8f9fa;
+    border-left: 3px solid var(--text-accent, #058076);
+  }
+
+  &__citation-text {
+    margin: 0;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  &__exports {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  &__table-wrap {
+    max-height: 28rem;
+    overflow: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+  }
+
+  &__table {
+    margin-bottom: 0;
+
+    thead th {
+      position: sticky;
+      top: 0;
+      background: #fff;
+      z-index: 1;
+      box-shadow: inset 0 -1px 0 #dee2e6;
+    }
+  }
+}
