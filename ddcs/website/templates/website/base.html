@@ -14,24 +14,34 @@
 
   {# SEO Meta Tags #}
   {% block head_seo_tags %}
-    <meta name="description" content="{% block description %}{% trans "Your Feed, Your Choice" %}{% endblock description %}" />
+    {% block canonical %}
+      {% if page %}
+        <link rel="canonical" href="{{ page.get_full_url }}" />
+      {% else %}
+        <link rel="canonical" href="{{ request.build_absolute_uri }}" />
+      {% endif %}
+    {% endblock canonical %}
+
+    <meta name="description" content="{% block description %}Dein Feed, deine Wahl: Ein Citizen Science TikTok Datenspende Projekt zu den Landtagswahlen 2026{% endblock description %}" />
     <meta name="keywords" content="{% block keywords %}Social Science Research, Data Donation, Digital Democracy, TikTok{% endblock keywords %}" />
+
+    <meta name="robots" content="{% block robots %}index, follow{% endblock robots %}" />
 
     {# Open Graph / Facebook Meta Tags #}
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="{% block og_url %}{{ request.build_absolute_uri }}{% endblock og_url %}" />
-    <meta property="og:title" content="{% block og_title %}{% trans "Your Feed, Your Choice" %}{% endblock og_title %}" />
+    <meta property="og:url" content="{% block og_url %}{{ request.scheme }}://{{ request.get_host }}{{ request.path }}{% endblock og_url %}" />
+    <meta property="og:title" content="{% block og_title %}Dein Feed, deine Wahl: Ein Citizen Science TikTok Datenspende Projekt zu den Landtagswahlen 2026{% endblock og_title %}" />
     <meta property="og:description" content="{% block og_description %}{% trans "Your Feed, Your Choice" %}{% endblock og_description %}" />
-    {# TODO: Add image #}
-    <meta property="og:image" content="{% block og_image %}{% static 'core/img/og-image.jpg' %}{% endblock og_image %}" />
+    <meta property="og:site_name" content="Dein Feed, deine Wahl" />
+    <meta property="og:locale" content="de" />
+    <meta property="og:image" content="{% block og_image %}{{ request.scheme }}://{{ request.get_host }}{% static 'core/img/dfdw_preview.png' %}{% endblock og_image %}" />
 
     {# Twitter Meta Tags #}
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:url" content="{% block twitter_url %}{{ request.build_absolute_uri }}{% endblock twitter_url %}" />
+    <meta name="twitter:url" content="{% block twitter_url %}{{ request.scheme }}://{{ request.get_host }}{{ request.path }}{% endblock twitter_url %}" />
     <meta name="twitter:title" content="{% block twitter_title %}{% trans "Your Feed, Your Choice" %}{% endblock twitter_title %}" />
     <meta name="twitter:description" content="{% block twitter_description %}{% trans "Your Feed, Your Choice" %}{% endblock twitter_description %}" />
-    {# TODO: Add image #}
-    <meta name="twitter:image" content="{% block twitter_image %}{% static 'core/img/twitter-image.jpg' %}{% endblock twitter_image %}" />
+    <meta name="twitter:image" content="{% block twitter_image %}{{ request.scheme }}://{{ request.get_host }}{% static 'core/img/dfdw_preview.png' %}{% endblock twitter_image %}" />
   {% endblock head_seo_tags %}
 
   {% block extra_head %}
