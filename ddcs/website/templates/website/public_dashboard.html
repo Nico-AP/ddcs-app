@@ -15,6 +15,7 @@
           <div class="public-dashboard__section-head public-dashboard__section-head--row">
             <h2 class="public-dashboard__h public-dashboard__h--tierzeichen">
               So verteilen sich die bisherigen Spenden auf die TikTok-Tierzeichen
+              {% include "website/components/public_plot_export_png.html" with filename="tierzeichen" extra_class="js-export-tierzeichen-png" %}
             </h2>
             {% if donation_stats %}
               <div class="public-dashboard__metrics">
@@ -149,6 +150,7 @@
               <h3 class="public-dashboard__plot-title">
                 Videos gesamt
                 {% include "website/components/public_plot_info_trigger.html" %}
+                {% include "website/components/public_plot_export_png.html" with filename="videos-gesamt" extra_class="js-export-plotly-png" %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ party_distribution_plot.html|safe }}
@@ -161,6 +163,7 @@
               <h3 class="public-dashboard__plot-title">
                 Views gesamt
                 {% include "website/components/public_plot_info_trigger.html" %}
+                {% include "website/components/public_plot_export_png.html" with filename="views-gesamt" extra_class="js-export-plotly-png" %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ total_views_plot.html|safe }}
@@ -173,6 +176,7 @@
               <h3 class="public-dashboard__plot-title">
                 Views / Video
                 {% include "website/components/public_plot_info_trigger.html" %}
+                {% include "website/components/public_plot_export_png.html" with filename="views-pro-video" extra_class="js-export-plotly-png" %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ views_per_video_plot.html|safe }}
@@ -185,6 +189,7 @@
               <h3 class="public-dashboard__plot-title">
                 Likes gesamt
                 {% include "website/components/public_plot_info_trigger.html" %}
+                {% include "website/components/public_plot_export_png.html" with filename="likes-gesamt" extra_class="js-export-plotly-png" %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ total_likes_plot.html|safe }}
@@ -197,6 +202,7 @@
               <h3 class="public-dashboard__plot-title">
                 Likes / Video
                 {% include "website/components/public_plot_info_trigger.html" %}
+                {% include "website/components/public_plot_export_png.html" with filename="likes-pro-video" extra_class="js-export-plotly-png" %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ likes_per_video_plot.html|safe }}
@@ -219,6 +225,7 @@
 {% endblock main %}
 
 {% block extra_js %}
+  <script src="{% static 'website/js/public-dashboard-export.js' %}"></script>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       var carousel = document.getElementById("tierzeichenCarousel");
