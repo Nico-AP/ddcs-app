@@ -8,7 +8,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PACKAGE VERSION\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-08-20 17:18+0200\n"
+"POT-Creation-Date: 2026-08-20 19:31+0200\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
@@ -118,10 +118,8 @@ msgstr ""
 "Der Fehler wurde automatisch erfasst. Sollte das Problem weiterhin bestehen, "
 "<a href=\"%(contact_url)s\">melden Sie sich gerne bei uns</a>."
 
-#: ddcs/website/templates/website/base.html:17
-#: ddcs/website/templates/website/base.html:23
-#: ddcs/website/templates/website/base.html:24
-#: ddcs/website/templates/website/base.html:31
-#: ddcs/website/templates/website/base.html:32
+#: ddcs/website/templates/website/base.html:34
+#: ddcs/website/templates/website/base.html:42
+#: ddcs/website/templates/website/base.html:43
 msgid "Your Feed, Your Choice"
 msgstr "Dein Feed, deine Wahl"
