@@ -41,9 +41,72 @@ from ddcs.reports.types import (
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_BAR_HEIGHT_PER_PARTY = 50
+_DEFAULT_BAR_MIN_HEIGHT = 200
+
+
+def _bar_chart_height(n: int) -> int:
+    """Fixed height for non-dashboard (non-compact) bar charts."""
+    return max(n * _DEFAULT_BAR_HEIGHT_PER_PARTY, _DEFAULT_BAR_MIN_HEIGHT)
+
+
+def _bar_chart_font_size(*, compact: bool) -> int:
+    return 12 if compact else 14
+
+
+def _bar_chart_margin(*, compact: bool) -> dict[str, int]:
+    if compact:
+        return {"t": 4, "l": 4, "r": 56, "b": 4}
+    return {"t": 10, "l": 10, "r": 60, "b": 10}
+
+
+_NEAR_MAX_LABEL_THRESHOLD = 0.92
+
+
+def _bar_text_kwargs(
+    *,
+    compact: bool,
+    font_size: int,
+    values: list[float] | list[int],
+) -> dict[str, Any]:
+    """Black outside labels; inside (white) only for bars near the axis max."""
+    if not compact:
+        return {
+            "textposition": "outside",
+            "textfont": {"size": font_size, "family": PLOT_FONT_FAMILY},
+        }
+
+    max_val = max(values) if values else 0
+    threshold = max_val * _NEAR_MAX_LABEL_THRESHOLD
+    positions = ["inside" if max_val and v >= threshold else "outside" for v in values]
+    return {
+        "textposition": positions,
+        "insidetextanchor": "end",
+        "constraintext": "none",
+        "outsidetextfont": {
+            "size": font_size,
+            "family": PLOT_FONT_FAMILY,
+            "color": "black",
+        },
+        "insidetextfont": {
+            "size": font_size,
+            "family": PLOT_FONT_FAMILY,
+            "color": "white",
+        },
+    }
+
+
+def _bar_chart_size_kwargs(*, compact: bool, n: int) -> dict[str, Any]:
+    """Compact charts fill their CSS container; others use a fixed height."""
+    if compact:
+        return {"autosize": True}
+    return {"height": _bar_chart_height(n)}
+
 
 def get_party_distribution_all_accounts(
     records: list[DailyAccountPostCountRecord],
+    *,
+    compact: bool = False,
 ) -> dict[str, Any]:
     """Create treemap of total posted-video counts per party, across all
     monitored party accounts."""
@@ -62,7 +125,11 @@ def get_party_distribution_all_accounts(
             parents=[""] * len(party_counts),
             values=values,
             textinfo="label+value",
-            textfont={"size": 28, "family": PLOT_FONT_FAMILY, "color": "black"},
+            textfont={
+                "size": 22 if compact else 28,
+                "family": PLOT_FONT_FAMILY,
+                "color": "black",
+            },
             marker={
                 "colors": [
                     hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER))
@@ -83,17 +150,25 @@ def get_party_distribution_all_accounts(
             pathbar={"visible": False},
         )
     )
-    fig.update_layout(
-        dragmode=False,
-        margin={"t": 0, "l": 0, "r": 0, "b": 0},
-        font={"size": 25, "color": "black", "family": PLOT_FONT_FAMILY},
-        paper_bgcolor="rgba(0,0,0,0)",
-        height=400,
-    )
+    layout: dict[str, Any] = {
+        "dragmode": False,
+        "margin": {"t": 0, "l": 0, "r": 0, "b": 0},
+        "font": {
+            "size": 20 if compact else 25,
+            "color": "black",
+            "family": PLOT_FONT_FAMILY,
+        },
+        "paper_bgcolor": "rgba(0,0,0,0)",
+    }
+    if compact:
+        layout["autosize"] = True
+    else:
+        layout["height"] = 400
+    fig.update_layout(**layout)
 
     top_party = party_counts[0]
     return {
-        "html": create_plot_html(fig),
+        "html": create_plot_html(fig, config=PLOT_CONFIG),
         "data": {
             "party": top_party["party"],
             "value": top_party["count"],
@@ -198,6 +273,8 @@ def get_temporal_party_distribution_all_accounts(
 
 def get_total_views_per_party_plot(
     data: list[dict],
+    *,
+    compact: bool = False,
 ) -> dict[str, Any]:
     """Horizontal bar chart of total views per party."""
     if not data:
@@ -206,6 +283,7 @@ def get_total_views_per_party_plot(
     sorted_data = sorted(data, key=lambda d: d["total_views"])
     parties = [d["party"] for d in sorted_data]
     values = [d["total_views"] for d in sorted_data]
+    font_size = _bar_chart_font_size(compact=compact)
 
     fig = go.Figure(
         go.Bar(
@@ -219,20 +297,19 @@ def get_total_views_per_party_plot(
                 "cornerradius": PLOT_CORNER_RADIUS,
             },
             text=[f"{v:,.0f}" for v in values],
-            textposition="outside",
-            textfont={"size": 14, "family": PLOT_FONT_FAMILY},
             hovertemplate="<b>%{y}</b>: %{x:,.0f} Views<extra></extra>",
+            **_bar_text_kwargs(compact=compact, font_size=font_size, values=values),
         )
     )
     fig.update_layout(
         dragmode=False,
-        margin={"t": 10, "l": 10, "r": 60, "b": 10},
-        font={"size": 14, "color": "black", "family": PLOT_FONT_FAMILY},
+        margin=_bar_chart_margin(compact=compact),
+        font={"size": font_size, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        height=max(len(data) * 50, 200),
         xaxis={"visible": False},
-        yaxis={"tickfont": {"size": 14}, "automargin": True},
+        yaxis={"tickfont": {"size": font_size}, "automargin": True},
+        **_bar_chart_size_kwargs(compact=compact, n=len(data)),
     )
 
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
@@ -240,6 +317,8 @@ def get_total_views_per_party_plot(
 
 def get_views_per_video_per_party_plot(
     data: list[dict],
+    *,
+    compact: bool = False,
 ) -> dict[str, Any]:
     """Horizontal bar chart of average views per video per party."""
     if not data:
@@ -248,6 +327,7 @@ def get_views_per_video_per_party_plot(
     sorted_data = sorted(data, key=lambda d: d["avg_views_per_video"])
     parties = [d["party"] for d in sorted_data]
     values = [d["avg_views_per_video"] for d in sorted_data]
+    font_size = _bar_chart_font_size(compact=compact)
 
     fig = go.Figure(
         go.Bar(
@@ -261,20 +341,19 @@ def get_views_per_video_per_party_plot(
                 "cornerradius": PLOT_CORNER_RADIUS,
             },
             text=[f"{v:,.0f}" for v in values],
-            textposition="outside",
-            textfont={"size": 14, "family": PLOT_FONT_FAMILY},
             hovertemplate="<b>%{y}</b>: Ø %{x:,.0f} Views/Video<extra></extra>",
+            **_bar_text_kwargs(compact=compact, font_size=font_size, values=values),
         )
     )
     fig.update_layout(
         dragmode=False,
-        margin={"t": 10, "l": 10, "r": 60, "b": 10},
-        font={"size": 14, "color": "black", "family": PLOT_FONT_FAMILY},
+        margin=_bar_chart_margin(compact=compact),
+        font={"size": font_size, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        height=max(len(data) * 50, 200),
         xaxis={"visible": False},
-        yaxis={"tickfont": {"size": 14}, "automargin": True},
+        yaxis={"tickfont": {"size": font_size}, "automargin": True},
+        **_bar_chart_size_kwargs(compact=compact, n=len(data)),
     )
 
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
@@ -282,6 +361,8 @@ def get_views_per_video_per_party_plot(
 
 def get_total_likes_per_party_plot(
     likes_data: list[dict],
+    *,
+    compact: bool = False,
 ) -> dict[str, Any]:
     """Horizontal bar chart of total likes per party."""
     if not likes_data:
@@ -289,6 +370,7 @@ def get_total_likes_per_party_plot(
 
     parties = [d["party"] for d in reversed(likes_data)]
     values = [d["total_likes"] for d in reversed(likes_data)]
+    font_size = _bar_chart_font_size(compact=compact)
 
     fig = go.Figure(
         go.Bar(
@@ -302,20 +384,19 @@ def get_total_likes_per_party_plot(
                 "cornerradius": PLOT_CORNER_RADIUS,
             },
             text=[f"{v:,.0f}" for v in values],
-            textposition="outside",
-            textfont={"size": 14, "family": PLOT_FONT_FAMILY},
             hovertemplate="<b>%{y}</b>: %{x:,.0f} Likes<extra></extra>",
+            **_bar_text_kwargs(compact=compact, font_size=font_size, values=values),
         )
     )
     fig.update_layout(
         dragmode=False,
-        margin={"t": 10, "l": 10, "r": 60, "b": 10},
-        font={"size": 14, "color": "black", "family": PLOT_FONT_FAMILY},
+        margin=_bar_chart_margin(compact=compact),
+        font={"size": font_size, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        height=max(len(likes_data) * 50, 200),
         xaxis={"visible": False},
-        yaxis={"tickfont": {"size": 14}, "automargin": True},
+        yaxis={"tickfont": {"size": font_size}, "automargin": True},
+        **_bar_chart_size_kwargs(compact=compact, n=len(likes_data)),
     )
 
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
@@ -323,6 +404,8 @@ def get_total_likes_per_party_plot(
 
 def get_likes_per_video_per_party_plot(
     likes_data: list[dict],
+    *,
+    compact: bool = False,
 ) -> dict[str, Any]:
     """Horizontal bar chart of average likes per video per party."""
     if not likes_data:
@@ -331,6 +414,7 @@ def get_likes_per_video_per_party_plot(
     sorted_data = sorted(likes_data, key=lambda d: d["avg_likes_per_video"])
     parties = [d["party"] for d in sorted_data]
     values = [d["avg_likes_per_video"] for d in sorted_data]
+    font_size = _bar_chart_font_size(compact=compact)
 
     fig = go.Figure(
         go.Bar(
@@ -344,20 +428,19 @@ def get_likes_per_video_per_party_plot(
                 "cornerradius": PLOT_CORNER_RADIUS,
             },
             text=[f"{v:,.0f}" for v in values],
-            textposition="outside",
-            textfont={"size": 14, "family": PLOT_FONT_FAMILY},
             hovertemplate="<b>%{y}</b>: Ø %{x:,.0f} Likes/Video<extra></extra>",
+            **_bar_text_kwargs(compact=compact, font_size=font_size, values=values),
         )
     )
     fig.update_layout(
         dragmode=False,
-        margin={"t": 10, "l": 10, "r": 60, "b": 10},
-        font={"size": 14, "color": "black", "family": PLOT_FONT_FAMILY},
+        margin=_bar_chart_margin(compact=compact),
+        font={"size": font_size, "color": "black", "family": PLOT_FONT_FAMILY},
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        height=max(len(likes_data) * 50, 200),
         xaxis={"visible": False},
-        yaxis={"tickfont": {"size": 14}, "automargin": True},
+        yaxis={"tickfont": {"size": font_size}, "automargin": True},
+        **_bar_chart_size_kwargs(compact=compact, n=len(sorted_data)),
     )
 
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
