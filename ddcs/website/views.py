@@ -4,9 +4,10 @@ from csp.constants import UNSAFE_INLINE
 from csp.decorators import csp_update
 from django.conf import settings
 from django.contrib.auth.mixins import UserPassesTestMixin
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils.decorators import method_decorator
+from django.views import View
 from django.views.generic import TemplateView
 
 from ddcs.reports.factories import get_synthetic_post_data
@@ -29,6 +30,12 @@ from ddcs.reports.user_types import USER_TYPES
 from ddcs.reports.utils import (
     load_account_bundesland_mapping,
     load_account_party_mapping,
+)
+from ddcs.website.methods_lists import (
+    build_methods_lists_xlsx,
+    get_methods_lists_payload,
+    load_monitored_accounts,
+    load_monitored_keywords,
 )
 
 
@@ -231,6 +238,45 @@ class PublicDashboardView(UserPassesTestMixin, TemplateView):
             parties = PublicDashboardView._filtered_parties(filtered_usernames)
             return [r for r in post_data if r["party"] in parties]
         return [r for r in post_data if r["username"] in filtered_usernames]
+
+
+class MethodsListsView(TemplateView):
+    """Public page listing monitored keywords and accounts (from fixture CSVs)."""
+
+    template_name = "website/methods_lists.html"
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
+        context = super().get_context_data(**kwargs)
+        keywords = load_monitored_keywords()
+        accounts = load_monitored_accounts()
+        context["keywords"] = keywords
+        context["accounts"] = accounts
+        context["keyword_count"] = len(keywords)
+        context["account_count"] = len(accounts)
+        return context
+
+
+class MethodsListsJsonExportView(View):
+    def get(self, request: HttpRequest) -> JsonResponse:
+        response = JsonResponse(
+            get_methods_lists_payload(),
+            json_dumps_params={"ensure_ascii": False, "indent": 2},
+        )
+        response["Content-Disposition"] = 'attachment; filename="monitored_lists.json"'
+        return response
+
+
+class MethodsListsExcelExportView(View):
+    def get(self, request: HttpRequest) -> HttpResponse:
+        content = build_methods_lists_xlsx()
+        response = HttpResponse(
+            content,
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = 'attachment; filename="monitored_lists.xlsx"'
+        return response
 
 
 # ---- Exception Views ----

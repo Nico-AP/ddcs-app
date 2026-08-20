@@ -1,0 +1,107 @@
+{% extends "website/base.html" %}
+
+{% load static %}
+
+{% block page_title %}Methoden – Listen zur Beobachtung politischer Inhalte auf TikTok – Dein Feed, Deine Wahl.{% endblock page_title %}
+
+{% block main %}
+  {% include "website/components/navigation.html" %}
+
+  <section class="container pt-5 pb-5 content-page methods-lists">
+    <div class="row justify-content-center">
+      <div class="col-12 col-lg-10">
+        <div class="eyebrow">Methoden</div>
+        <h1>Listen zur Beobachtung politischer Inhalte auf TikTok zu den Wahlen September&nbsp;2026</h1>
+        <p class="text-muted mb-4">
+          Diese Seite zeigt die aktuell verwendeten Keyword- und Account-Listen,
+          mit denen wir politische TikTok-Inhalte über die Research API
+          beobachten. Parteizugehörigkeit und Bundesland stammen aus der
+          Account-Zuordnungstabelle.
+        </p>
+
+        <div class="methods-lists__citation mb-4">
+          <h2 class="h5 mb-2">Vorgeschlagene Zitation</h2>
+          <blockquote class="methods-lists__citation-text mb-0">
+            Lion Wedel, Michel Wicke, Carolina Damm und Nico Pfiffner (2026):
+            Listen zur Beobachtung politischer Inhalte auf TikTok zu den Wahlen September&nbsp;2026.
+            Dein Feed, Deine Wahl.
+            {{ request.build_absolute_uri }}
+          </blockquote>
+        </div>
+
+        <div class="methods-lists__exports mb-4">
+          <a class="btn btn-outline-dark btn-sm"
+             href="{% url 'website:methods_lists_json' %}">
+            Als JSON herunterladen
+          </a>
+          <a class="btn btn-outline-dark btn-sm"
+             href="{% url 'website:methods_lists_xlsx' %}">
+            Als Excel herunterladen
+          </a>
+        </div>
+
+        <h2 id="keywords">Keywords ({{ keyword_count }})</h2>
+        <div class="methods-lists__table-wrap mb-5">
+          <table class="table table-sm table-striped methods-lists__table">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Keyword</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for keyword in keywords %}
+                <tr>
+                  <td>{{ forloop.counter }}</td>
+                  <td>{{ keyword }}</td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="2" class="text-muted">Keine Keywords vorhanden.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <h2 id="accounts">Accounts ({{ account_count }})</h2>
+        <div class="methods-lists__table-wrap">
+          <table class="table table-sm table-striped methods-lists__table">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">Username</th>
+                <th scope="col">Partei</th>
+                <th scope="col">Bundesland</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for account in accounts %}
+                <tr>
+                  <td>{{ forloop.counter }}</td>
+                  <td>@{{ account.username }}</td>
+                  <td>{{ account.party|default:"—" }}</td>
+                  <td>
+                    {% if account.bundesland_label %}
+                      {{ account.bundesland_label }}
+                    {% elif account.bundesland %}
+                      {{ account.bundesland }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="4" class="text-muted">Keine Accounts vorhanden.</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {% include "website/components/footer.html" %}
+{% endblock main %}
