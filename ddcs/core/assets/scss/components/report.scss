@@ -755,10 +755,6 @@
   }
 }
 
-.tierzeichen-section {
-  min-height: 28rem;
-}
-
 .tierzeichen-chart {
   display: flex;
   flex-direction: column;
@@ -799,4 +795,209 @@
     text-align: right;
     color: var(--text-primary);
   }
+
+  &--compact {
+    gap: 0.5rem;
+    justify-content: space-evenly;
+    height: 100%;
+
+    .tierzeichen-chart__img {
+      width: 3.3rem;
+      height: 3.3rem;
+    }
+
+    .tierzeichen-chart__bar-wrap {
+      height: 3.3rem;
+    }
+
+    .tierzeichen-chart__count {
+      min-width: 2.25rem;
+      font-size: 0.95rem;
+    }
+
+    .tierzeichen-chart__item {
+      gap: 0.7rem;
+    }
+  }
+}
+
+// Portrait kiosk dashboard (1440x2560 target): fill viewport, no scroll
+.public-dashboard {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 3.5rem);
+  max-height: calc(100dvh - 3.5rem);
+  overflow: hidden;
+  padding: 0.5rem 1rem 0.4rem;
+  box-sizing: border-box;
+
+  &__metrics {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  &__metric {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 4.25rem;
+    padding: 0.35rem 0.55rem;
+    background: var(--bg-surface, #f3f4f6);
+    border-radius: var(--radius-md, 6px);
+  }
+
+  &__metric-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  &__metric-label {
+    font-size: 0.7rem;
+    color: var(--text-muted, #6b7280);
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    gap: 0.35rem;
+  }
+
+  &__tierzeichen {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 26.2%;
+    min-height: 0;
+    overflow: hidden;
+
+    .carousel {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .carousel-inner {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .carousel-item.active {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .tierzeichen-chart--compact {
+      flex: 1;
+      min-height: 0;
+    }
+  }
+
+  &__parties {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  &__section-head {
+    flex: 0 0 auto;
+    margin-bottom: 0.15rem;
+
+    &--row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+  }
+
+  &__h {
+    font-size: 1.8rem;
+    font-weight: 600;
+    margin: 0;
+    line-height: 1.2;
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__tabs,
+  &__filters {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 0.25rem;
+  }
+
+  // 2 cols: treemap full width on row 1, bar charts on rows 2–3
+  &__plots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    gap: 0.45rem;
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__plot {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+
+    &--treemap {
+      grid-column: 1 / -1;
+      grid-row: 1;
+    }
+  }
+
+  &__plot-title {
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin: 0 0 0.15rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  &__plot-body {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
+
+    .js-plotly-plot,
+    .plotly-graph-div {
+      width: 100% !important;
+      height: 100% !important;
+      max-height: 100%;
+    }
+  }
+
+  &__footnote {
+    flex: 0 0 auto;
+    margin: 0.25rem 0 0;
+    font-size: 0.65rem;
+    color: var(--text-muted, #6b7280);
+    text-align: right;
+  }
+}
+
+body.public-dashboard-page {
+  overflow: hidden;
 }
