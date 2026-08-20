@@ -4,14 +4,16 @@ from csp.constants import UNSAFE_INLINE
 from csp.decorators import csp_update
 from django.conf import settings
 from django.contrib.auth.mixins import UserPassesTestMixin
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.utils.decorators import method_decorator
+from django.views import View
 from django.views.generic import TemplateView
 
 from ddcs.reports.factories import get_synthetic_post_data
 from ddcs.reports.metrics.account_metrics import get_post_data
 from ddcs.reports.metrics.public_dashboard import (
+    get_donation_stats,
     get_likes_per_party,
     get_monitored_video_stats,
     get_tierzeichen_distribution,
@@ -28,6 +30,12 @@ from ddcs.reports.user_types import USER_TYPES
 from ddcs.reports.utils import (
     load_account_bundesland_mapping,
     load_account_party_mapping,
+)
+from ddcs.website.methods_lists import (
+    build_methods_lists_xlsx,
+    get_methods_lists_payload,
+    load_monitored_accounts,
+    load_monitored_keywords,
 )
 
 
@@ -123,6 +131,8 @@ class PublicDashboardView(UserPassesTestMixin, TemplateView):
     template_name = "website/public_dashboard.html"
 
     def test_func(self) -> bool:
+        if settings.DEBUG:
+            return True
         return self.request.user.is_staff
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
@@ -148,6 +158,16 @@ class PublicDashboardView(UserPassesTestMixin, TemplateView):
             d["count"] for d in tierzeichen_historic
         )
 
+        if settings.DEBUG:
+            context["donation_stats"] = {
+                "n_donations": 1284,
+                "total_videos_watched": 4_820_000,
+                "total_likes": 312_400,
+                "avg_likes_per_video": 0.06,
+            }
+        else:
+            context["donation_stats"] = get_donation_stats()
+
         if selected_bundesland:
             filtered_usernames: set[str] | None = {
                 u for u, bl in bundesland_map.items() if bl == selected_bundesland
@@ -159,15 +179,19 @@ class PublicDashboardView(UserPassesTestMixin, TemplateView):
         post_data = self._get_post_data(filtered_usernames)
 
         context["party_distribution_plot"] = get_party_distribution_all_accounts(
-            post_data
+            post_data, compact=True
         )
-        context["total_views_plot"] = get_total_views_per_party_plot(party_stats_data)
+        context["total_views_plot"] = get_total_views_per_party_plot(
+            party_stats_data, compact=True
+        )
         context["views_per_video_plot"] = get_views_per_video_per_party_plot(
-            party_stats_data
+            party_stats_data, compact=True
         )
-        context["total_likes_plot"] = get_total_likes_per_party_plot(party_stats_data)
+        context["total_likes_plot"] = get_total_likes_per_party_plot(
+            party_stats_data, compact=True
+        )
         context["likes_per_video_plot"] = get_likes_per_video_per_party_plot(
-            party_stats_data
+            party_stats_data, compact=True
         )
 
         if settings.DEBUG:
@@ -214,6 +238,45 @@ class PublicDashboardView(UserPassesTestMixin, TemplateView):
             parties = PublicDashboardView._filtered_parties(filtered_usernames)
             return [r for r in post_data if r["party"] in parties]
         return [r for r in post_data if r["username"] in filtered_usernames]
+
+
+class MethodsListsView(TemplateView):
+    """Public page listing monitored keywords and accounts (from fixture CSVs)."""
+
+    template_name = "website/methods_lists.html"
+
+    def get_context_data(self, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
+        context = super().get_context_data(**kwargs)
+        keywords = load_monitored_keywords()
+        accounts = load_monitored_accounts()
+        context["keywords"] = keywords
+        context["accounts"] = accounts
+        context["keyword_count"] = len(keywords)
+        context["account_count"] = len(accounts)
+        return context
+
+
+class MethodsListsJsonExportView(View):
+    def get(self, request: HttpRequest) -> JsonResponse:
+        response = JsonResponse(
+            get_methods_lists_payload(),
+            json_dumps_params={"ensure_ascii": False, "indent": 2},
+        )
+        response["Content-Disposition"] = 'attachment; filename="monitored_lists.json"'
+        return response
+
+
+class MethodsListsExcelExportView(View):
+    def get(self, request: HttpRequest) -> HttpResponse:
+        content = build_methods_lists_xlsx()
+        response = HttpResponse(
+            content,
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+        response["Content-Disposition"] = 'attachment; filename="monitored_lists.xlsx"'
+        return response
 
 
 # ---- Exception Views ----

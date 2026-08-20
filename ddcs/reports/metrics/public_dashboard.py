@@ -67,6 +67,54 @@ def get_tierzeichen_distribution(
     return result
 
 
+_DONATION_STATS_CACHE_KEY = "reports:public_donation_stats"
+
+
+def _rate_like_from_comparisons(comparisons: list) -> float:
+    for row in comparisons or []:
+        if row.get("metric") == "rate_like":
+            try:
+                return float(row.get("value") or 0)
+            except (TypeError, ValueError):
+                return 0.0
+    return 0.0
+
+
+def get_donation_stats(*, force_refresh: bool = False) -> dict:
+    """Aggregate Datenspende Kennzahlen across ParticipantReportStatistics.
+
+    Likes are estimated as rate_like * videos_seen_count_total per donation.
+    """
+    if not force_refresh:
+        cached = cache.get(_DONATION_STATS_CACHE_KEY)
+        if cached is not None:
+            return cached
+
+    n_donations = 0
+    total_videos = 0
+    total_likes = 0.0
+    for stats in ParticipantReportStatistics.objects.only(
+        "videos_seen_count_total",
+        "behaviour_comparisons",
+    ).iterator():
+        n_donations += 1
+        videos = int(stats.videos_seen_count_total or 0)
+        total_videos += videos
+        total_likes += (
+            _rate_like_from_comparisons(stats.behaviour_comparisons or []) * videos
+        )
+
+    total_likes_i = round(total_likes)
+    result = {
+        "n_donations": n_donations,
+        "total_videos_watched": total_videos,
+        "total_likes": total_likes_i,
+        "avg_likes_per_video": round(total_likes_i / max(total_videos, 1), 2),
+    }
+    cache.set(_DONATION_STATS_CACHE_KEY, result, _CACHE_TIMEOUT)
+    return result
+
+
 _HISTORIC_METRICS = (
     "frac_instant_skip",
     "avg_session_length_sec",
