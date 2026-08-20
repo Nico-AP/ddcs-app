@@ -975,6 +975,16 @@
     gap: 0.25rem;
   }
 
+  &__h .btn-link,
+  &__plot-title .btn-link {
+    line-height: 1;
+    text-decoration: none;
+
+    &[disabled] {
+      opacity: 0.45;
+    }
+  }
+
   &__plot-body {
     flex: 1;
     min-height: 0;
