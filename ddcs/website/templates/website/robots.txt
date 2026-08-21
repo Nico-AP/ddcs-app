@@ -1,0 +1,12 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /cms/
+Disallow: /metadata/
+Disallow: /report/
+Disallow: /api/
+Disallow: /ddm/
+Disallow: /documents/
+Disallow: /tiktok/
+Allow: /
+
+Sitemap: https://dein-feed-deine-wahl.de/sitemap.xml
