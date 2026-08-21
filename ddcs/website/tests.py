@@ -68,8 +68,10 @@ class MethodsListsTests(TestCase):
         self.assertEqual(len(payload["keywords"]), len(load_monitored_keywords()))
         self.assertEqual(len(payload["accounts"]), len(load_monitored_accounts()))
         sample = next(a for a in payload["accounts"] if a["username"] == "insidecdu")
-        self.assertEqual(sample["party"], "CDU")
+        self.assertEqual(sample["party"], "CDU/CSU")
         self.assertTrue(sample["bundesland"])
+        minor = next(a for a in payload["accounts"] if a["username"] == "piratenpartei")
+        self.assertEqual(minor["party"], "Sonstige")
 
 
 class AnalyticsProcessorTests(TestCase):
