@@ -946,6 +946,25 @@ class BuildPoliticalVideoMetadataTests(TestCase):
         self.assertEqual(party_map, {})
         self.assertEqual(username_map, {})
 
+    def test_recodes_cdu_csu_and_minor_parties(self):
+        videos = [
+            self._video(1, "cdu_acc"),
+            self._video(2, "csu_acc"),
+            self._video(3, "volt_acc"),
+            self._video(4, "linke_acc"),
+        ]
+        mapping = {
+            "cdu_acc": "CDU",
+            "csu_acc": "CSU",
+            "volt_acc": "Volt",
+            "linke_acc": "LINKE",
+        }
+        party_map, _ = user_metrics._build_political_video_metadata(videos, [], mapping)
+        self.assertEqual(
+            party_map,
+            {1: "CDU/CSU", 2: "CDU/CSU", 3: "Sonstige", 4: "Linke"},
+        )
+
 
 class ComputePartyCountsTests(TestCase):
     def test_counts_per_party_and_bucket_unknown(self):
@@ -1171,6 +1190,26 @@ class PartyVideosFromWatchHistoryTests(TestCase):
         )
         self.assertEqual(party_map, {})
         self.assertEqual(username_map, {})
+
+    def test_recodes_party_labels_from_mapping(self):
+        cutoff = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=1)
+        watch_history = [
+            {
+                "date": cutoff,
+                "video_id": 1,
+                "link": "https://www.tiktok.com/@cdu_acc/video/1",
+            },
+            {
+                "date": cutoff,
+                "video_id": 2,
+                "link": "https://www.tiktok.com/@volt_acc/video/2",
+            },
+        ]
+        party_map, username_map = user_metrics._party_videos_from_watch_history(
+            watch_history, {"cdu_acc": "CDU", "volt_acc": "Volt Deutschland"}
+        )
+        self.assertEqual(party_map, {1: "CDU/CSU", 2: "Sonstige"})
+        self.assertEqual(username_map, {1: "cdu_acc", 2: "volt_acc"})
 
 
 class GetDescriptionsByVideoTests(TestCase):

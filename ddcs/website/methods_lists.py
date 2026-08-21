@@ -11,6 +11,7 @@ from typing import Any
 from openpyxl import Workbook
 
 from ddcs.reports.config import ACCOUNT_PARTY_MAPPING_CSV_PATH
+from ddcs.reports.metrics.account_metrics import _recode_party
 
 _FIXTURES_DIR = Path(__file__).resolve().parents[1] / "metadata" / "fixtures"
 MONITORED_USERS_CSV_PATH = _FIXTURES_DIR / "monitored_users.csv"
@@ -53,15 +54,20 @@ def load_monitored_keywords() -> list[str]:
 
 @lru_cache(maxsize=1)
 def load_account_affiliations() -> dict[str, dict[str, str]]:
-    """username -> {party, bundesland, bundesland_label}."""
+    """username -> {party, bundesland, bundesland_label}.
+
+    Party labels are normalized via ``_recode_party`` (CDU/CSU merge;
+    minor parties → Sonstige).
+    """
     with Path(ACCOUNT_PARTY_MAPPING_CSV_PATH).open("r", encoding="utf-8") as csv_file:
         reader = csv.DictReader(csv_file, delimiter=",")
         result: dict[str, dict[str, str]] = {}
         for row in reader:
             username = row["username"].strip()
             bundesland = row.get("bundesland", "").strip()
+            raw_party = row.get("partei", "").strip()
             result[username] = {
-                "party": row.get("partei", "").strip(),
+                "party": _recode_party(raw_party) if raw_party else "",
                 "bundesland": bundesland,
                 "bundesland_label": bundesland_label(bundesland),
             }
