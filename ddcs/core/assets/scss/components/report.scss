@@ -698,36 +698,66 @@
 
 .share-buttons {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: var(--space-3);
 
   &__btn {
+    box-sizing: border-box;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex: 0 0 2.5rem;
     width: 2.5rem;
     height: 2.5rem;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+    padding: 0;
+    margin: 0;
     border-radius: var(--radius-pill);
     border: 1px solid var(--border-default);
     background: var(--bg-surface);
     color: var(--text-secondary);
     cursor: pointer;
     transition: background-color 0.15s, color 0.15s, border-color 0.15s;
-    text-decoration: none;
+    text-decoration: none !important;
+    line-height: 0;
+    appearance: none;
+    -webkit-appearance: none;
+    -webkit-tap-highlight-color: transparent;
+    vertical-align: middle;
+    overflow: hidden;
 
-    &:hover {
+    svg {
+      display: block;
+      flex-shrink: 0;
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+
+    &:hover,
+    &:focus,
+    &:active,
+    &:visited {
+      text-decoration: none !important;
       border-color: var(--text-accent);
       color: var(--text-accent);
     }
 
-    &--whatsapp:hover {
+    &--whatsapp:hover,
+    &--whatsapp:focus {
       color: #25d366;
       border-color: #25d366;
     }
 
-    &--telegram:hover {
+    &--telegram:hover,
+    &--telegram:focus {
       color: #0088cc;
       border-color: #0088cc;
+    }
+
+    &--copy {
+      position: relative;
     }
 
     &--copied {
@@ -746,12 +776,13 @@
         color: #16a34a;
         white-space: nowrap;
         pointer-events: none;
+        line-height: 1.2;
       }
     }
   }
 
   &__icon--hidden {
-    display: none;
+    display: none !important;
   }
 }
 
