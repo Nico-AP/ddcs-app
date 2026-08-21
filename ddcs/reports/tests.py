@@ -550,7 +550,7 @@ class UserTypeAssignmentTests(TestCase):
             )
         )
         self.assertEqual(user_type["id"], "luchs")
-        self.assertEqual(user_type["trait_label"], "Der Politik-Beobachter")
+        self.assertEqual(user_type["trait_label"], "Politik-Beobachter")
         self.assertIn("politischen Videos", user_type["intro_followup"])
 
     def test_strongest_percentile_extremity_wins(self):

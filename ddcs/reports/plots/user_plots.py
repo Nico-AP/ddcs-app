@@ -107,7 +107,7 @@ _USER_SUBTITLE_SENTENCES: dict[str, str] = {
         '<span style="color: {_mean}; font-weight: 600;">Anderen</span>.'
     ),
     "frac_instant_skip": ("Bei {value} der Videos scrollst du direkt weiter."),
-    "rate_like": ("{value} der Videos, die du anschaust, likst du."),
+    "rate_like": ("{value} der Videos, die du anschaust, likest du."),
     "frac_political_engagement": (
         "{value} deiner Interaktionen (Likes, Shares, Speichern, Kommentare) "
         "betreffen politische Inhalte."
