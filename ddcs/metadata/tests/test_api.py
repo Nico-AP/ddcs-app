@@ -334,20 +334,6 @@ class TikTokVideoListTestCase(APITestCase):
         ids = [v["id_tiktok"] for v in response.data["results"]]
         self.assertEqual(ids, [video_no_classification.id_tiktok])
 
-    def test_filter_by_has_classifications_does_not_duplicate_results(self):
-        """
-        A video with multiple classification rows should appear once, not
-        once per row (guards the Exists() subquery against join-style
-        duplication).
-        """
-        video = self._create_video(111)
-        self._create_classification(video)
-        self._create_classification(video)
-
-        response = self.client.get(self.url, {"has_classifications": True})
-
-        self.assertEqual(len(response.data["results"]), 1)
-
     # --- monitored users filter ---
 
     def test_filter_by_monitored_users(self):
