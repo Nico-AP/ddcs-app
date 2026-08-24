@@ -23,6 +23,7 @@ from ddcs.reports.config import (
     PARTIES_ORDER,
     REPORT_FIRST_DATE_TO_INCLUDE,
 )
+from ddcs.reports.metrics.account_metrics import _recode_party
 from ddcs.reports.types import (
     DailyPartyCountRecord,
     PartyCountRecord,
@@ -79,7 +80,7 @@ def _party_videos_from_watch_history(
             continue
         username = _extract_username_from_link(record.get("link") or "")
         if username and username in account_party_mapping:
-            party_map[video_id] = account_party_mapping[username]
+            party_map[video_id] = _recode_party(account_party_mapping[username])
             username_map[video_id] = username
     return party_map, username_map
 
@@ -103,7 +104,8 @@ def _build_political_video_metadata(
     """Return ``(video_id -> party, video_id -> username)`` for both kinds of
     political videos.
 
-    Party-account videos map to the party from ``user_party_map``.
+    Party-account videos map to the party from ``user_party_map`` after
+    ``_recode_party`` (CDU/CSU merge; minor parties → Sonstige).
     Non-party political videos (matched via a monitored hashtag) map to
     ``NO_PARTY_KEY``; their descriptions feed the non-party wordcloud.
     """
@@ -113,7 +115,7 @@ def _build_political_video_metadata(
     for video in party_account_videos:
         username = video.user.name
         if username in user_party_map:
-            party_map[video.id_tiktok] = user_party_map[username]
+            party_map[video.id_tiktok] = _recode_party(user_party_map[username])
             username_map[video.id_tiktok] = username
 
     for video in non_party_political_videos:
