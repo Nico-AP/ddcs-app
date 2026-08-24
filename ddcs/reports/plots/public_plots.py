@@ -103,18 +103,17 @@ def _bar_chart_size_kwargs(*, compact: bool, n: int) -> dict[str, Any]:
     return {"height": _bar_chart_height(n)}
 
 
-def get_party_distribution_all_accounts(
+def build_party_distribution_figure(
     records: list[DailyAccountPostCountRecord],
     *,
     compact: bool = False,
-) -> dict[str, Any]:
-    """Create treemap of total posted-video counts per party, across all
-    monitored party accounts."""
+) -> go.Figure | None:
+    """Return the party-video treemap figure, or None when there is no data."""
     party_counts = sorted(
         aggregate_party_counts(records), key=lambda c: c["count"], reverse=True
     )
     if not party_counts:
-        return {"html": None}
+        return None
 
     labels = [c["party"] for c in party_counts]
     values = [c["count"] for c in party_counts]
@@ -165,6 +164,22 @@ def get_party_distribution_all_accounts(
     else:
         layout["height"] = 400
     fig.update_layout(**layout)
+    return fig
+
+
+def get_party_distribution_all_accounts(
+    records: list[DailyAccountPostCountRecord],
+    *,
+    compact: bool = False,
+) -> dict[str, Any]:
+    """Create treemap of total posted-video counts per party, across all
+    monitored party accounts."""
+    party_counts = sorted(
+        aggregate_party_counts(records), key=lambda c: c["count"], reverse=True
+    )
+    fig = build_party_distribution_figure(records, compact=compact)
+    if fig is None or not party_counts:
+        return {"html": None}
 
     top_party = party_counts[0]
     return {
@@ -177,14 +192,15 @@ def get_party_distribution_all_accounts(
     }
 
 
-def get_temporal_party_distribution_all_accounts(
+def build_temporal_party_distribution_figure(
     records: list[DailyAccountPostCountRecord],
-) -> dict[str, Any]:
-    """Create stacked area chart of posted-video counts per day, across all
-    monitored party accounts."""
+    *,
+    compact: bool = False,
+) -> go.Figure | None:
+    """Return the stacked daily party-video figure, or None when empty."""
     daily_party_counts = aggregate_daily_party_counts(records)
     if not daily_party_counts:
-        return {"html": None}
+        return None
 
     party_data: dict[str, dict[str, int]] = {}
     for record in daily_party_counts:
@@ -197,6 +213,14 @@ def get_temporal_party_distribution_all_accounts(
     all_dates = [
         (start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)
     ]
+
+    tick_font = 12 if compact else 20
+    body_font = 12 if compact else 25
+    hover_font = 12 if compact else 16
+    legend = {
+        **TEMPORAL_PARTY_PLOT_LEGEND,
+        "font": {"size": 11 if compact else 12},
+    }
 
     fig = go.Figure()
     for party in reversed(PARTIES_ORDER):
@@ -216,29 +240,31 @@ def get_temporal_party_distribution_all_accounts(
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
                     "bgcolor": "white",
-                    "font_size": 16,
+                    "font_size": hover_font,
                     "font_family": PLOT_FONT_FAMILY,
                 },
             )
         )
 
-    fig.update_layout(
-        xaxis_title="Datum",
-        yaxis_title="",
-        hovermode="x unified",
-        dragmode=False,
-        showlegend=True,
-        legend=TEMPORAL_PARTY_PLOT_LEGEND,
-        autosize=True,
-        height=TEMPORAL_PLOT_HEIGHT,
-        minreducedwidth=500,
-        font={"size": 25, "color": "black", "family": PLOT_FONT_FAMILY},
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        hoverdistance=100,
-        hoverlabel={"namelength": 0},
-    )
+    layout: dict[str, Any] = {
+        "xaxis_title": "Datum",
+        "yaxis_title": "",
+        "hovermode": "x unified",
+        "dragmode": False,
+        "showlegend": True,
+        "legend": legend,
+        "autosize": True,
+        "minreducedwidth": 200 if compact else 500,
+        "font": {"size": body_font, "color": "black", "family": PLOT_FONT_FAMILY},
+        "paper_bgcolor": "rgba(0,0,0,0)",
+        "plot_bgcolor": "rgba(0,0,0,0)",
+        "margin": {"l": 0, "r": 0, "t": 4 if compact else 0, "b": 0},
+        "hoverdistance": 100,
+        "hoverlabel": {"namelength": 0},
+    }
+    if not compact:
+        layout["height"] = TEMPORAL_PLOT_HEIGHT
+    fig.update_layout(**layout)
 
     fig.update_xaxes(
         tickmode="array",
@@ -252,8 +278,8 @@ def get_temporal_party_distribution_all_accounts(
         zerolinecolor="gray",
         tickangle=45,
         tickformat="%d.%m",
-        tickfont={"size": 20, "color": "black"},
-        title_font={"size": 20},
+        tickfont={"size": tick_font, "color": "black"},
+        title_font={"size": tick_font},
     )
     fig.update_yaxes(
         automargin=True,
@@ -263,11 +289,23 @@ def get_temporal_party_distribution_all_accounts(
         zeroline=True,
         zerolinewidth=1,
         zerolinecolor="gray",
-        tickfont={"size": 20, "color": "black"},
+        tickfont={"size": tick_font, "color": "black"},
         title_font={"size": 1},
         title_standoff=0,
     )
+    return fig
 
+
+def get_temporal_party_distribution_all_accounts(
+    records: list[DailyAccountPostCountRecord],
+    *,
+    compact: bool = False,
+) -> dict[str, Any]:
+    """Create stacked area chart of posted-video counts per day, across all
+    monitored party accounts."""
+    fig = build_temporal_party_distribution_figure(records, compact=compact)
+    if fig is None:
+        return {"html": None}
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
 
 

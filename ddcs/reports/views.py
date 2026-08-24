@@ -12,8 +12,9 @@ from typing import Any
 
 from ddm.participation.models import Participant
 from django.conf import settings
-from django.http import Http404, HttpRequest
+from django.http import FileResponse, Http404, HttpRequest
 from django.urls import reverse
+from django.views import View
 from django.views.generic import TemplateView
 
 from ddcs.datadonation.services import get_user_data
@@ -30,6 +31,11 @@ from ddcs.reports.factories import (
     get_synthetic_report_statistics,
 )
 from ddcs.reports.models import ParticipantReportStatistics
+from ddcs.reports.plots.public_plot_images import (
+    PUBLIC_PLOT_IMAGE_SLUGS,
+    public_plot_image_path,
+    write_public_plot_png,
+)
 from ddcs.reports.plots.public_plots import (
     get_party_distribution_all_accounts,
     get_temporal_party_distribution_all_accounts,
@@ -44,6 +50,7 @@ from ddcs.reports.services import generate_user_report_statistics
 from ddcs.reports.user_types import assign_user_type
 from ddcs.reports.utils import enrich_top_videos_for_embed
 from ddcs.reports.wordclouds import get_wordcloud
+from ddcs.website.dashboard_export import nationwide_export_meta
 
 _SYNTHETIC_BEHAVIOUR_SESSION_KEY = "reports_synthetic_behaviour_comparisons"
 
@@ -279,4 +286,34 @@ class PublicPlotsDevView(DebugOrSuperuserMixin, TemplateView):
         context["temporal_party_distribution_all_accounts"] = (
             get_temporal_party_distribution_all_accounts(records)
         )
+        context["export_meta"] = nationwide_export_meta()
+        context["public_plot_embed_urls"] = {
+            "videos_gesamt": self.request.build_absolute_uri(
+                reverse("reports:public_plot_png", kwargs={"slug": "videos-gesamt"})
+            ),
+            "videos_zeit": self.request.build_absolute_uri(
+                reverse(
+                    "reports:public_plot_png",
+                    kwargs={"slug": "videos-ueber-die-zeit"},
+                )
+            ),
+        }
         return context
+
+
+class PublicPlotPngView(View):
+    """Stable PNG URL for embedding the homepage public plots."""
+
+    def get(self, request: HttpRequest, slug: str) -> FileResponse:
+        if slug not in PUBLIC_PLOT_IMAGE_SLUGS:
+            raise Http404
+        path = public_plot_image_path(slug)
+        if not path.exists():
+            try:
+                write_public_plot_png(slug)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise Http404 from exc
+        response = FileResponse(path.open("rb"), content_type="image/png")
+        response["Cache-Control"] = "public, max-age=3600"
+        response["Content-Disposition"] = f'inline; filename="{slug}.png"'
+        return response
