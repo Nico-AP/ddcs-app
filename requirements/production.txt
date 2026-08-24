@@ -1,4 +1,3 @@
 -r base.txt
 gunicorn==26.0.0  # https://github.com/benoitc/gunicorn
-kaleido==1.2.0  # https://github.com/plotly/kaleido — PNG export for public plots
 psycopg[binary]==3.3.4  # https://www.psycopg.org/psycopg3/docs/basic/install.html

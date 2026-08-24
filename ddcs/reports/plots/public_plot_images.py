@@ -7,16 +7,13 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import matplotlib as mpl
 from django.conf import settings
 from PIL import Image, ImageDraw, ImageFont
-from plotly.graph_objects import Figure
 
 from ddcs.reports.factories import get_synthetic_post_data
 from ddcs.reports.metrics.account_metrics import get_post_data
-from ddcs.reports.plots.public_plots import (
-    build_party_distribution_figure,
-    build_temporal_party_distribution_figure,
-)
+from ddcs.reports.plots.public_plot_render import render_png_for_slug
 from ddcs.website.dashboard_export import nationwide_export_meta
 
 if TYPE_CHECKING:
@@ -27,11 +24,12 @@ logger = logging.getLogger(__name__)
 PUBLIC_PLOT_IMAGE_DIR = "public-plots"
 PUBLIC_PLOT_IMAGE_SLUGS = ("videos-gesamt", "videos-ueber-die-zeit")
 
-_PLOT_WIDTH = 1200
-_PLOT_HEIGHT = 560
+# Label metrics are authored against a 1200px-wide plot and scaled up with the
+# rendered image so the text keeps its proportions at higher resolutions.
+_BASE_PLOT_WIDTH = 1200
 _PAD = 36
-_TITLE_SIZE = 28
-_CAPTION_SIZE = 16
+_TITLE_SIZE = 42
+_CAPTION_SIZE = 20
 _LINE_GAP = 6
 _SECTION_GAP = 20
 
@@ -45,17 +43,19 @@ def public_plot_image_path(slug: str) -> Path:
 
 
 def _font(size: int, *, bold: bool = False) -> ImageFont.ImageFont:
-    names = (
-        ("DejaVuSans-Bold.ttf", "DejaVuSans.ttf")
-        if bold
-        else ("DejaVuSans.ttf", "DejaVuSans.ttf")
-    )
-    for name in names:
+    """Load DejaVu at ``size``, preferring the copy Matplotlib ships.
+
+    Resolving these by bare filename only works where fontconfig knows them,
+    which silently degrades to Pillow's fixed-size bitmap default on macOS.
+    """
+    name = "DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"
+    bundled = Path(mpl.get_data_path()) / "fonts" / "ttf" / name
+    for candidate in (str(bundled), name):
         try:
-            return ImageFont.truetype(name, size)
+            return ImageFont.truetype(candidate, size)
         except OSError:
             continue
-    return ImageFont.load_default()
+    return ImageFont.load_default(size=size)
 
 
 def _wrap_text(
@@ -81,16 +81,23 @@ def _wrap_text(
     return lines
 
 
-def _text_block_height(lines: list[str], line_height: int) -> int:
+def _text_block_height(lines: list[str], line_height: int, line_gap: int) -> int:
     if not lines:
         return 0
-    return len(lines) * line_height + max(len(lines) - 1, 0) * _LINE_GAP
+    return len(lines) * line_height + max(len(lines) - 1, 0) * line_gap
 
 
 def compose_labeled_png(plot_png: bytes, title: str, caption: str) -> bytes:
     plot = Image.open(BytesIO(plot_png)).convert("RGB")
-    title_font = _font(_TITLE_SIZE, bold=True)
-    caption_font = _font(_CAPTION_SIZE)
+    scale = max(plot.width / _BASE_PLOT_WIDTH, 1.0)
+    pad = round(_PAD * scale)
+    line_gap = round(_LINE_GAP * scale)
+    section_gap = round(_SECTION_GAP * scale)
+    title_size = round(_TITLE_SIZE * scale)
+    caption_size = round(_CAPTION_SIZE * scale)
+
+    title_font = _font(title_size, bold=True)
+    caption_font = _font(caption_size)
     text_width = plot.width
 
     scratch = ImageDraw.Draw(plot)
@@ -98,57 +105,39 @@ def compose_labeled_png(plot_png: bytes, title: str, caption: str) -> bytes:
     caption_lines = (
         _wrap_text(scratch, caption, caption_font, text_width) if caption else []
     )
-    title_lh = _TITLE_SIZE + 6
-    caption_lh = _CAPTION_SIZE + 4
-    title_h = _text_block_height(title_lines, title_lh)
-    caption_h = _text_block_height(caption_lines, caption_lh)
+    title_lh = title_size + round(6 * scale)
+    caption_lh = caption_size + round(4 * scale)
+    title_h = _text_block_height(title_lines, title_lh, line_gap)
+    caption_h = _text_block_height(caption_lines, caption_lh, line_gap)
 
     canvas_h = (
-        _PAD
+        pad
         + title_h
-        + (_SECTION_GAP if title_h else 0)
+        + (section_gap if title_h else 0)
         + plot.height
-        + (_SECTION_GAP if caption_h else 0)
+        + (section_gap if caption_h else 0)
         + caption_h
-        + _PAD
+        + pad
     )
-    canvas = Image.new("RGB", (plot.width + _PAD * 2, canvas_h), "white")
+    canvas = Image.new("RGB", (plot.width + pad * 2, canvas_h), "white")
     draw = ImageDraw.Draw(canvas)
-    y = _PAD
+    y = pad
     for line in title_lines:
-        draw.text((_PAD, y), line, fill="#111111", font=title_font)
-        y += title_lh + _LINE_GAP
+        draw.text((pad, y), line, fill="#111111", font=title_font)
+        y += title_lh + line_gap
     if title_lines:
-        y += _SECTION_GAP - _LINE_GAP
-    canvas.paste(plot, (_PAD, y))
+        y += section_gap - line_gap
+    canvas.paste(plot, (pad, y))
     y += plot.height
     if caption_lines:
-        y += _SECTION_GAP
+        y += section_gap
         for line in caption_lines:
-            draw.text((_PAD, y), line, fill="#444444", font=caption_font)
-            y += caption_lh + _LINE_GAP
+            draw.text((pad, y), line, fill="#444444", font=caption_font)
+            y += caption_lh + line_gap
 
     out = BytesIO()
     canvas.save(out, format="PNG")
     return out.getvalue()
-
-
-def _figure_to_png(fig: Figure) -> bytes:
-    export_fig = Figure(fig)
-    export_fig.update_layout(paper_bgcolor="white", plot_bgcolor="white")
-    try:
-        return export_fig.to_image(
-            format="png",
-            width=_PLOT_WIDTH,
-            height=_PLOT_HEIGHT,
-            scale=2,
-        )
-    except ValueError as exc:
-        msg = (
-            "PNG export requires the kaleido package. "
-            "Install it with: pip install kaleido"
-        )
-        raise RuntimeError(msg) from exc
 
 
 def _homepage_records() -> list[DailyAccountPostCountRecord]:
@@ -161,19 +150,6 @@ def meta_for_slug(slug: str) -> dict[str, str]:
     return meta[key]
 
 
-def figure_for_slug(
-    slug: str,
-    records: list[DailyAccountPostCountRecord] | None = None,
-) -> Figure | None:
-    data = records if records is not None else _homepage_records()
-    if slug == "videos-gesamt":
-        return build_party_distribution_figure(data)
-    if slug == "videos-ueber-die-zeit":
-        return build_temporal_party_distribution_figure(data)
-    unknown = f"Unknown public plot slug: {slug}"
-    raise ValueError(unknown)
-
-
 def write_public_plot_png(
     slug: str,
     *,
@@ -182,13 +158,14 @@ def write_public_plot_png(
     if slug not in PUBLIC_PLOT_IMAGE_SLUGS:
         unknown = f"Unknown public plot slug: {slug}"
         raise ValueError(unknown)
-    fig = figure_for_slug(slug, records)
-    if fig is None:
+    data = records if records is not None else _homepage_records()
+    plot_png = render_png_for_slug(slug, data)
+    if plot_png is None:
         missing = f"No data to render public plot '{slug}'"
         raise RuntimeError(missing)
     labels = meta_for_slug(slug)
     png = compose_labeled_png(
-        _figure_to_png(fig),
+        plot_png,
         labels["title"],
         labels["caption"],
     )
