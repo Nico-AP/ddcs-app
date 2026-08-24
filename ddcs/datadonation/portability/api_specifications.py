@@ -11,3 +11,4 @@ class Scopes(StrEnum):
     ACTIVITY = "portability.activity.single"
     POSTSANDPROFILE = "portability.postsandprofile.single"
     DIRECT_MESSAGES = "portability.directmessages.single"
+    ALL = "portability.all.single"
