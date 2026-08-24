@@ -25,8 +25,26 @@
   function findTemporalPlots(root) {
     const scope = root || document;
     return scope.querySelectorAll(
-      ".temporal-plot .plotly-graph-div, .temporal-plot .js-plotly-plot",
+      ".temporal-plot:not(.temporal-plot--compact) .plotly-graph-div, .temporal-plot:not(.temporal-plot--compact) .js-plotly-plot",
     );
+  }
+
+  function resizeCompactPlots(root) {
+    if (typeof Plotly === "undefined") {
+      return;
+    }
+    const scope = root || document;
+    scope
+      .querySelectorAll(
+        ".temporal-plot--compact .plotly-graph-div, .temporal-plot--compact .js-plotly-plot",
+      )
+      .forEach(function (plotEl) {
+        try {
+          Plotly.Plots.resize(plotEl);
+        } catch (_error) {
+          // Plotly may not have finished initialising yet.
+        }
+      });
   }
 
   function applyTemporalPlotLayout(root) {
@@ -73,11 +91,15 @@
     scheduleApply();
   });
 
-  document.body.addEventListener("shown.bs.carousel", function (event) {
+  function onPublicPlotCarouselEvent(event) {
     if (event.target?.classList?.contains("public-plot-carousel")) {
       scheduleApply(event.target);
+      resizeCompactPlots(event.target);
     }
-  });
+  }
+
+  document.body.addEventListener("shown.bs.carousel", onPublicPlotCarouselEvent);
+  document.body.addEventListener("slid.bs.carousel", onPublicPlotCarouselEvent);
 
   document.body.addEventListener("htmx:afterSettle", function (event) {
     if (event.detail.target?.id === "report-statistics") {

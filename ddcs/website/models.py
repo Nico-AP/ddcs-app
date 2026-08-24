@@ -15,6 +15,7 @@ from ddcs.reports.plots.public_plots import (
     get_party_distribution_all_accounts,
     get_temporal_party_distribution_all_accounts,
 )
+from ddcs.website.dashboard_export import nationwide_export_meta
 
 
 def _add_public_plots_to_context(context: dict[str, Any]) -> dict[str, Any]:
@@ -24,6 +25,7 @@ def _add_public_plots_to_context(context: dict[str, Any]) -> dict[str, Any]:
 
     - context["party_distribution_plot"]
     - context["temporal_party_distribution_plot"]
+    - context["export_meta"]
     """
     records = get_synthetic_post_data() if settings.DEBUG else get_post_data()
 
@@ -31,6 +33,7 @@ def _add_public_plots_to_context(context: dict[str, Any]) -> dict[str, Any]:
     context["temporal_party_distribution_plot"] = (
         get_temporal_party_distribution_all_accounts(records)
     )
+    context["export_meta"] = nationwide_export_meta()
     return context
 
 

@@ -27,6 +27,128 @@
     a.remove();
   }
 
+  function figureMetaFrom(el) {
+    if (!el) {
+      return { title: "", caption: "" };
+    }
+    return {
+      title: el.getAttribute("data-export-title") || "",
+      caption: el.getAttribute("data-export-caption") || "",
+    };
+  }
+
+  function loadImage(url) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () {
+        resolve(img);
+      };
+      img.onerror = function () {
+        reject(new Error("Failed to load export image"));
+      };
+      img.src = url;
+    });
+  }
+
+  function wrapLines(ctx, text, maxWidth) {
+    var paragraphs = String(text || "").split(/\n/);
+    var lines = [];
+    paragraphs.forEach(function (para) {
+      var words = para.trim().split(/\s+/).filter(Boolean);
+      if (!words.length) {
+        return;
+      }
+      var line = "";
+      words.forEach(function (word) {
+        var test = line ? line + " " + word : word;
+        if (ctx.measureText(test).width > maxWidth && line) {
+          lines.push(line);
+          line = word;
+        } else {
+          line = test;
+        }
+      });
+      if (line) {
+        lines.push(line);
+      }
+    });
+    return lines;
+  }
+
+  function fontsReady() {
+    if (document.fonts && document.fonts.ready) {
+      return document.fonts.ready.catch(function () {
+        return undefined;
+      });
+    }
+    return Promise.resolve();
+  }
+
+  function composeLabeledFigure(plotUrl, title, caption) {
+    if (!title && !caption) {
+      return Promise.resolve(plotUrl);
+    }
+    return fontsReady().then(function () {
+      return loadImage(plotUrl);
+    }).then(function (img) {
+      var scale = DPI_SCALE;
+      var pad = Math.round(32 * scale);
+      var titleSize = Math.round(22 * scale);
+      var captionSize = Math.round(13 * scale);
+      var titleLh = Math.round(28 * scale);
+      var captionLh = Math.round(16 * scale);
+      var gap = Math.round(16 * scale);
+      var plotW = img.width;
+      var plotH = img.height;
+      var textWidth = plotW;
+      var fontStack = "Rubik, Arial, sans-serif";
+
+      var canvas = document.createElement("canvas");
+      var ctx = canvas.getContext("2d");
+      ctx.font = "600 " + titleSize + "px " + fontStack;
+      var titleLines = title ? wrapLines(ctx, title, textWidth) : [];
+      ctx.font = "400 " + captionSize + "px " + fontStack;
+      var captionLines = caption ? wrapLines(ctx, caption, textWidth) : [];
+
+      var titleBlock = titleLines.length ? titleLines.length * titleLh + gap : 0;
+      var captionBlock = captionLines.length
+        ? gap + captionLines.length * captionLh
+        : 0;
+      canvas.width = plotW + pad * 2;
+      canvas.height = pad + titleBlock + plotH + captionBlock + pad;
+
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      var y = pad;
+      if (titleLines.length) {
+        ctx.fillStyle = "#111111";
+        ctx.font = "600 " + titleSize + "px " + fontStack;
+        ctx.textBaseline = "top";
+        titleLines.forEach(function (line) {
+          ctx.fillText(line, pad, y);
+          y += titleLh;
+        });
+        y += gap;
+      }
+      ctx.drawImage(img, pad, y);
+      y += plotH;
+      if (captionLines.length) {
+        y += gap;
+        ctx.fillStyle = "#444444";
+        ctx.font = "400 " + captionSize + "px " + fontStack;
+        ctx.textBaseline = "top";
+        captionLines.forEach(function (line) {
+          if (line) {
+            ctx.fillText(line, pad, y);
+          }
+          y += captionLh;
+        });
+      }
+      return canvas.toDataURL("image/png");
+    });
+  }
+
   function setBusy(btn, busy) {
     btn.disabled = !!busy;
     btn.setAttribute("aria-busy", busy ? "true" : "false");
@@ -36,6 +158,7 @@
     if (!window.Plotly || !gd) {
       return Promise.reject(new Error("Plotly graph not found"));
     }
+    var meta = figureMetaFrom(btn);
     setBusy(btn, true);
     return window.Plotly.toImage(gd, {
       format: "png",
@@ -43,6 +166,9 @@
       height: Math.max(gd.clientHeight, 1),
       scale: DPI_SCALE,
     })
+      .then(function (url) {
+        return composeLabeledFigure(url, meta.title, meta.caption);
+      })
       .then(function (url) {
         downloadDataUrl(url, filename);
       })
@@ -105,6 +231,7 @@
     if (!el) {
       return Promise.reject(new Error("Element not found"));
     }
+    var meta = figureMetaFrom(el);
     setBusy(btn, true);
     var width = Math.ceil(el.getBoundingClientRect().width);
     var height = Math.ceil(el.getBoundingClientRect().height);
@@ -163,6 +290,9 @@
         });
       })
       .then(function (dataUrl) {
+        return composeLabeledFigure(dataUrl, meta.title, meta.caption);
+      })
+      .then(function (dataUrl) {
         downloadDataUrl(dataUrl, filename);
       })
       .finally(function () {
@@ -171,9 +301,9 @@
   }
 
   function filenameFor(btn) {
-    var base = btn.getAttribute("data-export-filename");
+    var base = btn && btn.getAttribute("data-export-filename");
     if (!base) {
-      var title = btn.closest(".public-dashboard__plot, .public-dashboard__tierzeichen");
+      var title = btn && btn.closest(".public-dashboard__plot, .public-dashboard__tierzeichen");
       var heading = title && title.querySelector("h2, h3");
       base = slugify(heading ? heading.textContent : "figure");
     }
@@ -181,10 +311,17 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    if (window.__ddcsPublicPlotExportBound) {
+      return;
+    }
+    window.__ddcsPublicPlotExportBound = true;
+
     document.querySelectorAll(".js-export-plotly-png").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var plot = btn.closest(".public-dashboard__plot");
-        var gd = plot && plot.querySelector(".js-plotly-plot, .plotly-graph-div");
+        var scope = btn.closest(
+          ".carousel-item, .public-dashboard__plot, .public-plot-export"
+        );
+        var gd = scope && scope.querySelector(".js-plotly-plot, .plotly-graph-div");
         exportPlotly(gd, filenameFor(btn), btn).catch(function (err) {
           console.error(err);
         });
@@ -197,7 +334,8 @@
         var active =
           carousel &&
           carousel.querySelector(".carousel-item.active .tierzeichen-chart");
-        exportDomElement(active, filenameFor(btn), btn).catch(function (err) {
+        var filename = filenameFor(active || btn);
+        exportDomElement(active, filename, btn).catch(function (err) {
           console.error(err);
         });
       });

@@ -996,6 +996,46 @@
     }
   }
 
+  &__videos-carousel {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    padding: 0 0 1.4rem;
+    background: transparent;
+    border: 0;
+
+    .carousel-inner {
+      display: grid;
+      grid-template-columns: 100%;
+      grid-template-rows: minmax(0, 1fr);
+      flex: 1;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .carousel-item {
+      display: flex !important;
+      flex-direction: column;
+      min-height: 0;
+      pointer-events: none;
+    }
+
+    .carousel-item.active {
+      pointer-events: auto;
+    }
+
+    .public-dashboard__plot-body {
+      flex: 1;
+      min-height: 0;
+    }
+
+    .carousel-indicators {
+      bottom: 0;
+    }
+  }
+
   &__plot-title {
     font-size: 1.2rem;
     font-weight: 600;

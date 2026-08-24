@@ -22,6 +22,7 @@ from ddcs.reports.metrics.public_dashboard import (
 from ddcs.reports.plots.public_plots import (
     get_likes_per_video_per_party_plot,
     get_party_distribution_all_accounts,
+    get_temporal_party_distribution_all_accounts,
     get_total_likes_per_party_plot,
     get_total_views_per_party_plot,
     get_views_per_video_per_party_plot,
@@ -31,6 +32,7 @@ from ddcs.reports.utils import (
     load_account_bundesland_mapping,
     load_account_party_mapping,
 )
+from ddcs.website.dashboard_export import build_dashboard_export_meta
 from ddcs.website.methods_lists import (
     build_methods_lists_xlsx,
     get_methods_lists_payload,
@@ -181,6 +183,9 @@ class PublicDashboardView(UserPassesTestMixin, TemplateView):
         context["party_distribution_plot"] = get_party_distribution_all_accounts(
             post_data, compact=True
         )
+        context["temporal_party_distribution_plot"] = (
+            get_temporal_party_distribution_all_accounts(post_data, compact=True)
+        )
         context["total_views_plot"] = get_total_views_per_party_plot(
             party_stats_data, compact=True
         )
@@ -209,6 +214,11 @@ class PublicDashboardView(UserPassesTestMixin, TemplateView):
             context["video_stats"] = get_monitored_video_stats(
                 usernames_filter=filtered_usernames
             )
+
+        context["export_meta"] = build_dashboard_export_meta(
+            video_stats=context.get("video_stats"),
+            selected_bundesland=selected_bundesland,
+        )
 
         return context
 
