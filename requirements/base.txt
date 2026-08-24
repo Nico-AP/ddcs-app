@@ -14,6 +14,7 @@ django-two-factor-auth==1.18.1  # https://github.com/jazzband/django-two-factor-
 drf-spectacular==0.30.0  # https://github.com/tfranzel/drf-spectacular
 drf-spectacular-sidecar==2026.8.1  # https://github.com/tfranzel/drf-spectacular-sidecar
 environs[django]==15.0.1  # https://pypi.org/project/environs/
+matplotlib==3.11.0  # https://github.com/matplotlib/matplotlib - direct dependency (public plot PNGs), transitive via wordcloud
 plotly==6.8.0  # https://github.com/plotly/plotly.py
 requests==2.34.2  # https://github.com/psf/requests
 structlog==25.5.0  # https://www.structlog.org/ - direct dependency, transitive via django-structlog

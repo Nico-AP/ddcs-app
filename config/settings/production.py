@@ -59,6 +59,7 @@ CONTENT_SECURITY_POLICY = {
         "img-src": [
             SELF,
             "data:",
+            "blob:",  # Plotly.toImage rasterises the chart via a blob: URL
             "*.stuttgarter-zeitung.de",
             "*.br.de",
             "*.fu-berlin.de",
