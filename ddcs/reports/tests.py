@@ -62,6 +62,11 @@ from ddcs.reports.plots.public_plot_images import (
     public_plot_image_path,
     write_public_plot_png,
 )
+from ddcs.reports.plots.public_plot_render import (
+    render_party_treemap_png,
+    render_png_for_slug,
+    render_temporal_stacked_area_png,
+)
 from ddcs.reports.user_types import assign_user_type
 from ddcs.reports.utils import (
     build_tiktok_embed_url,
@@ -2653,14 +2658,10 @@ class PublicPlotPngTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Content-Type"], "image/png")
 
-    def test_generates_png_when_missing(self):
+    def test_generates_png_when_missing_in_debug(self):
         with (
             tempfile.TemporaryDirectory() as tmp,
             override_settings(MEDIA_ROOT=tmp, DEBUG=True),
-            patch(
-                "ddcs.reports.plots.public_plot_images._figure_to_png",
-                return_value=_tiny_png(),
-            ),
         ):
             response = self.client.get(
                 reverse(
@@ -2672,18 +2673,60 @@ class PublicPlotPngTests(TestCase):
             self.assertEqual(response["Content-Type"], "image/png")
             self.assertTrue(public_plot_image_path("videos-gesamt").exists())
 
+    def test_missing_png_returns_404_without_rendering_in_production(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            override_settings(MEDIA_ROOT=tmp, DEBUG=False),
+        ):
+            response = self.client.get(
+                reverse(
+                    "reports:public_plot_png",
+                    kwargs={"slug": "videos-gesamt"},
+                )
+            )
+            self.assertEqual(response.status_code, 404)
+            self.assertFalse(public_plot_image_path("videos-gesamt").exists())
+
     def test_write_public_plot_png_adds_caption(self):
         with (
             tempfile.TemporaryDirectory() as tmp,
             override_settings(MEDIA_ROOT=tmp, DEBUG=True),
-            patch(
-                "ddcs.reports.plots.public_plot_images._figure_to_png",
-                return_value=_tiny_png(),
-            ),
         ):
             path = write_public_plot_png("videos-gesamt")
             self.assertTrue(path.exists())
             self.assertGreater(path.stat().st_size, 8)
+
+
+class PublicPlotRenderTests(TestCase):
+    """The embed PNGs are drawn with Matplotlib, so no browser is involved."""
+
+    @staticmethod
+    def _records():
+        return [
+            {"date": "2026-07-01", "account": "a", "party": "SPD", "count": 4},
+            {"date": "2026-07-02", "account": "a", "party": "SPD", "count": 2},
+            {"date": "2026-07-01", "account": "b", "party": "AfD", "count": 7},
+            {"date": "2026-07-03", "account": "c", "party": "Sonstige", "count": 1},
+            {"date": "2026-07-02", "account": "d", "party": "SPD", "count": None},
+        ]
+
+    def test_treemap_returns_png_bytes(self):
+        png = render_party_treemap_png(self._records())
+        self.assertIsNotNone(png)
+        self.assertEqual(Image.open(BytesIO(png)).format, "PNG")
+
+    def test_stacked_area_returns_png_bytes(self):
+        png = render_temporal_stacked_area_png(self._records())
+        self.assertIsNotNone(png)
+        self.assertEqual(Image.open(BytesIO(png)).format, "PNG")
+
+    def test_renderers_return_none_without_data(self):
+        self.assertIsNone(render_party_treemap_png([]))
+        self.assertIsNone(render_temporal_stacked_area_png([]))
+
+    def test_render_png_for_slug_rejects_unknown_slug(self):
+        with self.assertRaises(ValueError):
+            render_png_for_slug("not-a-plot", self._records())
 
 
 class PublicPlotImageComposeTests(TestCase):
