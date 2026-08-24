@@ -2191,6 +2191,20 @@ class TemporalPartyDistributionAllAccountsPlotTests(TestCase):
         self.assertIsNotNone(result["html"])
         self.assertIn("scatter", result["html"])
         self.assertIn("stackgroup", result["html"])
+        self.assertIn('"height":400', result["html"])
+
+    def test_compact_omits_fixed_height(self):
+        records = [
+            {"username": "a", "party": "SPD", "date": "2026-06-01", "count": 2},
+        ]
+        html = public_plots.get_temporal_party_distribution_all_accounts(
+            records, compact=True
+        )["html"]
+        self.assertIsNotNone(html)
+        self.assertIn("scatter", html)
+        self.assertIn("stackgroup", html)
+        self.assertNotIn('"height":400', html)
+        self.assertNotIn("height:400px", html)
 
 
 # ============================================================
