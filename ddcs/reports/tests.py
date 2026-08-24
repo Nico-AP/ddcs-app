@@ -1,8 +1,10 @@
 import csv
 import os
+import tempfile
 import unittest
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,8 +14,10 @@ from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.cache import cache
 from django.http import Http404
-from django.test import RequestFactory, TestCase, override_settings
+from django.test import Client, RequestFactory, TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
+from PIL import Image
 
 import ddcs.reports.plots.utils
 from ddcs.core.types import TikTokUserData
@@ -53,6 +57,11 @@ from ddcs.reports.config import (
 from ddcs.reports.factories import get_synthetic_report_statistics
 from ddcs.reports.metrics import account_metrics, user_metrics
 from ddcs.reports.plots import public_plots, user_plots
+from ddcs.reports.plots.public_plot_images import (
+    compose_labeled_png,
+    public_plot_image_path,
+    write_public_plot_png,
+)
 from ddcs.reports.user_types import assign_user_type
 from ddcs.reports.utils import (
     build_tiktok_embed_url,
@@ -2598,3 +2607,93 @@ class PublicPlotsDevViewAccessTests(TestCase):
         response = self.view(request)
 
         self.assertEqual(response.status_code, 200)
+
+
+def _tiny_png() -> bytes:
+    buf = BytesIO()
+    Image.new("RGB", (8, 8), "white").save(buf, format="PNG")
+    return buf.getvalue()
+
+
+class PublicPlotPngTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+
+    @override_settings(DEBUG=True)
+    def test_dev_page_includes_export_and_embed_url(self):
+        response = self.client.get(reverse("reports:public_plots_dev"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "js-export-plotly-png")
+        self.assertContains(response, "/plots/public/videos-gesamt.png")
+        self.assertContains(response, "/plots/public/videos-ueber-die-zeit.png")
+        self.assertContains(
+            response, 'data-export-title="Videos von Partei-Accounts nach Partei"'
+        )
+
+    def test_unknown_slug_returns_404(self):
+        response = self.client.get(
+            reverse("reports:public_plot_png", kwargs={"slug": "not-a-plot"})
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_serves_existing_png(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            override_settings(MEDIA_ROOT=tmp),
+        ):
+            path = public_plot_image_path("videos-gesamt")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(_tiny_png())
+            response = self.client.get(
+                reverse(
+                    "reports:public_plot_png",
+                    kwargs={"slug": "videos-gesamt"},
+                )
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], "image/png")
+
+    def test_generates_png_when_missing(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            override_settings(MEDIA_ROOT=tmp, DEBUG=True),
+            patch(
+                "ddcs.reports.plots.public_plot_images._figure_to_png",
+                return_value=_tiny_png(),
+            ),
+        ):
+            response = self.client.get(
+                reverse(
+                    "reports:public_plot_png",
+                    kwargs={"slug": "videos-gesamt"},
+                )
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], "image/png")
+            self.assertTrue(public_plot_image_path("videos-gesamt").exists())
+
+    def test_write_public_plot_png_adds_caption(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            override_settings(MEDIA_ROOT=tmp, DEBUG=True),
+            patch(
+                "ddcs.reports.plots.public_plot_images._figure_to_png",
+                return_value=_tiny_png(),
+            ),
+        ):
+            path = write_public_plot_png("videos-gesamt")
+            self.assertTrue(path.exists())
+            self.assertGreater(path.stat().st_size, 8)
+
+
+class PublicPlotImageComposeTests(TestCase):
+    def test_compose_labeled_png_is_taller_than_source(self):
+        labeled = compose_labeled_png(
+            _tiny_png(),
+            "Titel",
+            "Zeitraum: 1. Juli 2026\nQuelle: TikTok Research API.",
+        )
+        source = Image.open(BytesIO(_tiny_png()))
+        result = Image.open(BytesIO(labeled))
+        self.assertGreater(result.height, source.height)
+        self.assertGreater(result.width, source.width)

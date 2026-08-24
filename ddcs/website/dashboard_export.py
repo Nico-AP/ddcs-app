@@ -5,7 +5,10 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from django.conf import settings
 from django.utils.formats import date_format
+
+from ddcs.reports.metrics.public_dashboard import get_monitored_video_stats
 
 BUNDESLAND_LABELS = {
     "BE": "Berlin",
@@ -142,3 +145,16 @@ def build_dashboard_export_meta(
             ),
         },
     }
+
+
+def nationwide_export_meta() -> dict[str, dict[str, str]]:
+    """Captions for the unfiltered homepage / public-dev party plots."""
+    if settings.DEBUG:
+        video_stats: dict[str, Any] = {
+            "start_date": "2026-07-01",
+            "end_date": "2026-08-14",
+            "n_accounts": 127,
+        }
+    else:
+        video_stats = get_monitored_video_stats()
+    return build_dashboard_export_meta(video_stats=video_stats)

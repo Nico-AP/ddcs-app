@@ -3,6 +3,7 @@ import logging
 from celery import shared_task
 
 from ddcs.reports.metrics.account_metrics import refresh_post_data
+from ddcs.reports.plots.public_plot_images import refresh_public_plot_images
 
 logger = logging.getLogger(__name__)
 
@@ -15,4 +16,9 @@ logger = logging.getLogger(__name__)
 def recompute_account_metrics() -> None:
     """Refreshes and caches the data used to render public plots."""
     records = refresh_post_data()
-    logger.info("Refreshed public post data cache: %d records.", len(records))
+    written = refresh_public_plot_images()
+    logger.info(
+        "Refreshed public post data cache: %d records; wrote %d plot PNGs.",
+        len(records),
+        len(written),
+    )

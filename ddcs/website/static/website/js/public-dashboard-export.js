@@ -311,11 +311,16 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
+    if (window.__ddcsPublicPlotExportBound) {
+      return;
+    }
+    window.__ddcsPublicPlotExportBound = true;
+
     document.querySelectorAll(".js-export-plotly-png").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var slide = btn.closest(".carousel-item");
-        var plot = btn.closest(".public-dashboard__plot");
-        var scope = slide || plot;
+        var scope = btn.closest(
+          ".carousel-item, .public-dashboard__plot, .public-plot-export"
+        );
         var gd = scope && scope.querySelector(".js-plotly-plot, .plotly-graph-div");
         exportPlotly(gd, filenameFor(btn), btn).catch(function (err) {
           console.error(err);

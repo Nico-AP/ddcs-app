@@ -5,7 +5,10 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from ddcs.website.context_processors import analytics
-from ddcs.website.dashboard_export import build_dashboard_export_meta
+from ddcs.website.dashboard_export import (
+    build_dashboard_export_meta,
+    nationwide_export_meta,
+)
 from ddcs.website.methods_lists import (
     get_methods_lists_payload,
     load_monitored_accounts,
@@ -73,6 +76,15 @@ class DashboardExportMetaTests(TestCase):
         self.assertIn("Berlin zugeordneten Partei-Accounts", caption)
         self.assertIn("Abgeordnetenhaus von Berlin", caption)
         self.assertNotIn("ganz Deutschland", caption)
+
+
+class NationwideExportMetaTests(TestCase):
+    def test_includes_homepage_plot_keys(self):
+        meta = nationwide_export_meta()
+        self.assertIn("videos_gesamt", meta)
+        self.assertIn("videos_zeit", meta)
+        caption = meta["videos_gesamt"]["caption"]
+        self.assertIn("Grafik: Dein Feed, Deine Wahl.", caption)
 
 
 class MethodsListsTests(TestCase):
