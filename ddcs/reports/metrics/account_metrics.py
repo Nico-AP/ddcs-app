@@ -1,16 +1,12 @@
-from datetime import date, timedelta
+from datetime import timedelta
 
 from django.core.cache import cache
 from django.db.models import Count
 from django.db.models.functions import TruncDate
-from django.utils import timezone
 
 from ddcs.metadata.models import SyncAttempt, TikTokVideo
-from ddcs.reports.config import (
-    PARTIES_ORDER,
-    PUBLIC_POST_DATA_END_LAG_DAYS,
-    PUBLIC_POST_DATA_START_DATE,
-)
+from ddcs.reports.config import PARTIES_ORDER
+from ddcs.reports.metrics.date_ranges import public_post_data_date_range
 from ddcs.reports.types import (
     DailyAccountPostCountRecord,
     DailyPartyCountRecord,
@@ -24,11 +20,6 @@ _POST_DATA_CACHE_KEY = "reports:public_post_data"
 # before it expires; the timeout is just a safety net if that task doesn't
 # run (see module docstring).
 _POST_DATA_CACHE_TIMEOUT = 60 * 60 * 25
-
-
-def _post_data_date_range() -> tuple[date, date]:
-    end = timezone.now().date() - timedelta(days=PUBLIC_POST_DATA_END_LAG_DAYS)
-    return PUBLIC_POST_DATA_START_DATE, end
 
 
 def _recode_party(party: str) -> str:
@@ -62,7 +53,7 @@ def _compute_post_data() -> list[DailyAccountPostCountRecord]:
     """
     account_party_map = load_account_party_mapping()
     usernames = list(account_party_map.keys())
-    start, end = _post_data_date_range()
+    start, end = public_post_data_date_range()
 
     # `APIVideoInfos.create_time` is the authoritative API-reported
     # publication timestamp.

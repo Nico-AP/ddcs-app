@@ -5,23 +5,18 @@ from __future__ import annotations
 import contextlib
 import csv
 from collections import Counter
-from datetime import date, timedelta
 from pathlib import Path
 
 from django.core.cache import cache
 from django.db.models import Count, Sum
-from django.utils import timezone
 
 from ddcs.metadata.research_api.models import (
     APIVideoInfos,
     APIVideoStatistics,
 )
-from ddcs.reports.config import (
-    BEHAVIOUR_METRICS_CSV_PATH,
-    PUBLIC_POST_DATA_END_LAG_DAYS,
-    PUBLIC_POST_DATA_START_DATE,
-)
+from ddcs.reports.config import BEHAVIOUR_METRICS_CSV_PATH
 from ddcs.reports.metrics.account_metrics import _recode_party
+from ddcs.reports.metrics.date_ranges import public_post_data_date_range
 from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.user_types import USER_TYPES, assign_user_type
 from ddcs.reports.utils import load_account_party_mapping
@@ -30,11 +25,6 @@ _TIERZEICHEN_CACHE_KEY = "reports:public_tierzeichen_dist"
 _TIERZEICHEN_HISTORIC_CACHE_KEY = "reports:public_tierzeichen_historic"
 _VIDEO_STATS_CACHE_KEY = "reports:public_video_stats"
 _CACHE_TIMEOUT = 60 * 60 * 6
-
-
-def _date_range() -> tuple[date, date]:
-    end = timezone.now().date() - timedelta(days=PUBLIC_POST_DATA_END_LAG_DAYS)
-    return PUBLIC_POST_DATA_START_DATE, end
 
 
 def get_tierzeichen_distribution(
@@ -230,7 +220,7 @@ def get_likes_per_party(
     usernames = list(account_party_map.keys())
     if usernames_filter is not None:
         usernames = [u for u in usernames if u in usernames_filter]
-    start, end = _date_range()
+    start, end = public_post_data_date_range()
 
     qs = (
         APIVideoStatistics.objects.filter(
@@ -295,7 +285,7 @@ def get_monitored_video_stats(
     usernames = list(account_party_map.keys())
     if usernames_filter is not None:
         usernames = [u for u in usernames if u in usernames_filter]
-    start, end = _date_range()
+    start, end = public_post_data_date_range()
 
     infos_qs = APIVideoInfos.objects.filter(
         video__user__name__in=usernames,
