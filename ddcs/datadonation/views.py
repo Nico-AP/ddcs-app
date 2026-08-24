@@ -1,3 +1,8 @@
+import hashlib
+import json
+import logging
+from smtplib import SMTPException
+
 from ddm.participation.views import (
     BriefingView,
     DataDonationView,
@@ -5,12 +10,19 @@ from ddm.participation.views import (
     QuestionnaireView,
 )
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.core.mail import EmailMultiAlternatives
+from django.core.validators import validate_email
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.datastructures import MultiValueDict
+from django.utils.decorators import method_decorator
 from django.views import View
+from django.views.decorators.debug import sensitive_variables
 
 from ddcs.datadonation.services import post_process_donation
 from ddcs.datadonation.session import ParticipantInSessionMixin
@@ -19,6 +31,8 @@ from ddcs.datadonation.utils import (
     get_next_step_url,
     get_participant_log,
 )
+
+logger = logging.getLogger(__name__)
 
 PARTICIPATION_FLOW_STEPS = [
     "datadonation:briefing",
@@ -149,3 +163,85 @@ class SwitchPathView(ParticipantInSessionMixin, View):
                 kwargs={"slug": settings.TIKTOK_DDM_PROJECT_SLUG},
             )
         )
+
+
+class SendStudyLink(View):
+    """Sends the link to the open report to a given e-mail address.
+
+    NOTE: This view handles sensitive personal data (the recipient's
+    email address). It must never be written to logs, error reports,
+    or any other persistent store beyond what's required to send the
+    message. The `email_address` / `post_data` locals are marked via
+    `sensitive_variables` so Django's error-reporting machinery
+    (e.g. ADMINS email reports, Sentry, etc.) redacts them from any
+    traceback captured here.
+    """
+
+    @method_decorator(sensitive_variables("email_address", "post_data"))
+    def post(self, request: HttpRequest, *args, **kwargs) -> JsonResponse:
+        try:
+            post_data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse(
+                {"status": "error", "message": "Invalid JSON"}, status=400
+            )
+
+        email_address = post_data.get("email", None)
+
+        if not email_address:
+            return JsonResponse(
+                {"status": "error", "message": "Email required"}, status=400
+            )
+
+        if not self.validate_email(email_address):
+            return JsonResponse(
+                {"status": "error", "message": "Invalid email address"}, status=422
+            )
+
+        cache_key = self._rate_limit_key(email_address)
+
+        if not cache.add(cache_key, True, timeout=120):  # noqa: FBT003
+            # Return the same success response as a real send, so this
+            # endpoint can't be used to probe whether an address was
+            # recently requested (or exists) via response differences.
+            return JsonResponse({"status": "success"})
+
+        text_content = render_to_string("email/study-reminder.txt")
+
+        try:
+            msg = EmailMultiAlternatives(
+                subject="Dein Feed, Deine Wahl: Teilnahmelink",
+                body=text_content,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[email_address],
+            )
+            msg.send()
+        except SMTPException:
+            # Do NOT include `e` here — some SMTP exceptions embed the
+            # recipient address in their message/repr.
+            logger.exception("Failed to send study-link email due to an SMTP error.")
+            return JsonResponse(
+                {"status": "error", "message": "Failed to send email"}, status=500
+            )
+
+        return JsonResponse({"status": "success"})
+
+    @staticmethod
+    def _rate_limit_key(email: str) -> str:
+        digest = hashlib.sha256(email.strip().lower().encode("utf-8")).hexdigest()
+        return f"study_link_cooldown:{digest}"
+
+    def validate_email(self, email: str) -> bool:
+        """Check if a string represents a valid email address.
+
+        Args:
+            email: The email address to check.
+
+        Returns:
+            bool: True if the email is valid, False otherwise.
+        """
+        try:
+            validate_email(email)
+            return True  # noqa: TRY300
+        except ValidationError:
+            return False

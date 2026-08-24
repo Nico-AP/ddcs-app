@@ -63,10 +63,13 @@ def get_category_selection_from_scopes(scopes: str) -> list[str]:
     #     categories.append("direct_messages")  # noqa: ERA001
     if Scopes.POSTSANDPROFILE in scopes:
         categories.extend(["video", "profile"])
+    if Scopes.ALL in scopes:
+        categories.append("all_data")
     return categories
 
 
 def issue_data_request(access_token: str, scopes: str) -> dict:
+    # Reference: https://developers.tiktok.com/docs/en/data-portability-api-add-data-request
     url = TIKTOK_DATA_ADD_URL
     category_selection_list = get_category_selection_from_scopes(scopes)
 
