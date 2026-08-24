@@ -18,4 +18,5 @@ urlpatterns = [
     ),
     path("<slug:slug>/debrief/", views.DDCSDebriefingView.as_view(), name="debriefing"),
     path("tiktok/switch-path/", views.SwitchPathView.as_view(), name="switch_path"),
+    path("send-link", views.SendStudyLink.as_view(), name="send_study_link"),
 ]

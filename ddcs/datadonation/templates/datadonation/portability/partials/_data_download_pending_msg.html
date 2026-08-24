@@ -13,7 +13,20 @@
     </div>
 
     {% if show_reminder_message %}
-      {# TODO #}
+      {% csrf_token %}
+      <div id="study-link-reminder" data-send-url="{% url 'datadonation:send_study_link' %}">
+        <p>
+          Zurzeit scheint eine Spende aufgrund technischer Probleme bei TikTok
+          länger zu dauern als üblich. Probiere es am besten morgen noch einmal.
+        </p>
+        <p>
+          Wenn du möchtest, können wir dir dafür den Teilnahme-Link als
+          Erinnerung per E-Mail zusenden:
+        </p>
+        <input id="email-input" class="w-100 mt-2" name="email" type="email" autocomplete="email" />
+        <button id="send-email-button" class="btn btn-primary-dfdw cta-btn" type="button">Link senden</button>
+        <div id="email-feedback" class="mt-2" role="status" aria-live="polite"></div>
+      </div>
     {% endif %}
 
     {% if poll_datetime %}
