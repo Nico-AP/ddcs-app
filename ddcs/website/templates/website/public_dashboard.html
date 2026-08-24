@@ -61,7 +61,10 @@
             <div class="carousel-inner">
               <div class="carousel-item active">
                 {% if tierzeichen_distribution %}
-                  <div class="tierzeichen-chart tierzeichen-chart--compact">
+                  <div class="tierzeichen-chart tierzeichen-chart--compact"
+                       data-export-title="{{ export_meta.tierzeichen_aktuell.title }}"
+                       data-export-caption="{{ export_meta.tierzeichen_aktuell.caption }}"
+                       data-export-filename="tierzeichen-aktuell">
                     {% for item in tierzeichen_distribution %}
                       <div class="tierzeichen-chart__item">
                         <img src="{% static item.image_static %}"
@@ -82,7 +85,10 @@
 
               <div class="carousel-item">
                 {% if tierzeichen_historic %}
-                  <div class="tierzeichen-chart tierzeichen-chart--compact">
+                  <div class="tierzeichen-chart tierzeichen-chart--compact"
+                       data-export-title="{{ export_meta.tierzeichen_btw2025.title }}"
+                       data-export-caption="{{ export_meta.tierzeichen_btw2025.caption }}"
+                       data-export-filename="tierzeichen-btw2025">
                     {% for item in tierzeichen_historic %}
                       <div class="tierzeichen-chart__item">
                         <img src="{% static item.image_static %}"
@@ -145,15 +151,68 @@
         </div>
 
         <div class="public-dashboard__plots">
-          {% if party_distribution_plot.html %}
+          {% if party_distribution_plot.html or temporal_party_distribution_plot.html %}
             <div class="public-dashboard__plot public-dashboard__plot--treemap">
-              <h3 class="public-dashboard__plot-title">
-                Videos gesamt
-                {% include "website/components/public_plot_info_trigger.html" %}
-                {% include "website/components/public_plot_export_png.html" with filename="videos-gesamt" extra_class="js-export-plotly-png" %}
-              </h3>
-              <div class="public-dashboard__plot-body">
-                {{ party_distribution_plot.html|safe }}
+              <div id="partyVideosCarousel"
+                   class="carousel public-plot-carousel public-dashboard__videos-carousel"
+                   data-bs-ride="false"
+                   data-bs-interval="false">
+                <div class="carousel-indicators">
+                  <button type="button"
+                          data-bs-target="#partyVideosCarousel"
+                          data-bs-slide-to="0"
+                          class="active"
+                          aria-current="true"
+                          aria-label="Videos gesamt"></button>
+                  <button type="button"
+                          data-bs-target="#partyVideosCarousel"
+                          data-bs-slide-to="1"
+                          aria-label="Videos über die Zeit"></button>
+                </div>
+                <div class="carousel-inner">
+                  <div class="carousel-item active">
+                    <h3 class="public-dashboard__plot-title">
+                      Videos gesamt
+                      {% include "website/components/public_plot_info_trigger.html" %}
+                      {% include "website/components/public_plot_export_png.html" with filename="videos-gesamt" extra_class="js-export-plotly-png" export_title=export_meta.videos_gesamt.title export_caption=export_meta.videos_gesamt.caption %}
+                    </h3>
+                    <div class="public-dashboard__plot-body visualization-container">
+                      {% if party_distribution_plot.html %}
+                        {{ party_distribution_plot.html|safe }}
+                      {% else %}
+                        <p class="text-muted small mb-0">Keine Daten verfügbar.</p>
+                      {% endif %}
+                    </div>
+                  </div>
+                  <div class="carousel-item">
+                    <h3 class="public-dashboard__plot-title">
+                      Videos über die Zeit
+                      {% include "website/components/public_plot_info_trigger.html" %}
+                      {% include "website/components/public_plot_export_png.html" with filename="videos-ueber-die-zeit" extra_class="js-export-plotly-png" export_title=export_meta.videos_zeit.title export_caption=export_meta.videos_zeit.caption %}
+                    </h3>
+                    <div class="public-dashboard__plot-body visualization-container temporal-plot temporal-plot--compact">
+                      {% if temporal_party_distribution_plot.html %}
+                        {{ temporal_party_distribution_plot.html|safe }}
+                      {% else %}
+                        <p class="text-muted small mb-0">Keine Zeitreihe verfügbar.</p>
+                      {% endif %}
+                    </div>
+                  </div>
+                </div>
+                <button class="carousel-control-prev"
+                        type="button"
+                        data-bs-target="#partyVideosCarousel"
+                        data-bs-slide="prev">
+                  <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                  <span class="visually-hidden">Previous</span>
+                </button>
+                <button class="carousel-control-next"
+                        type="button"
+                        data-bs-target="#partyVideosCarousel"
+                        data-bs-slide="next">
+                  <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                  <span class="visually-hidden">Next</span>
+                </button>
               </div>
             </div>
           {% endif %}
@@ -163,7 +222,7 @@
               <h3 class="public-dashboard__plot-title">
                 Views gesamt
                 {% include "website/components/public_plot_info_trigger.html" %}
-                {% include "website/components/public_plot_export_png.html" with filename="views-gesamt" extra_class="js-export-plotly-png" %}
+                {% include "website/components/public_plot_export_png.html" with filename="views-gesamt" extra_class="js-export-plotly-png" export_title=export_meta.views_gesamt.title export_caption=export_meta.views_gesamt.caption %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ total_views_plot.html|safe }}
@@ -176,7 +235,7 @@
               <h3 class="public-dashboard__plot-title">
                 Views / Video
                 {% include "website/components/public_plot_info_trigger.html" %}
-                {% include "website/components/public_plot_export_png.html" with filename="views-pro-video" extra_class="js-export-plotly-png" %}
+                {% include "website/components/public_plot_export_png.html" with filename="views-pro-video" extra_class="js-export-plotly-png" export_title=export_meta.views_pro_video.title export_caption=export_meta.views_pro_video.caption %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ views_per_video_plot.html|safe }}
@@ -189,7 +248,7 @@
               <h3 class="public-dashboard__plot-title">
                 Likes gesamt
                 {% include "website/components/public_plot_info_trigger.html" %}
-                {% include "website/components/public_plot_export_png.html" with filename="likes-gesamt" extra_class="js-export-plotly-png" %}
+                {% include "website/components/public_plot_export_png.html" with filename="likes-gesamt" extra_class="js-export-plotly-png" export_title=export_meta.likes_gesamt.title export_caption=export_meta.likes_gesamt.caption %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ total_likes_plot.html|safe }}
@@ -202,7 +261,7 @@
               <h3 class="public-dashboard__plot-title">
                 Likes / Video
                 {% include "website/components/public_plot_info_trigger.html" %}
-                {% include "website/components/public_plot_export_png.html" with filename="likes-pro-video" extra_class="js-export-plotly-png" %}
+                {% include "website/components/public_plot_export_png.html" with filename="likes-pro-video" extra_class="js-export-plotly-png" export_title=export_meta.likes_pro_video.title export_caption=export_meta.likes_pro_video.caption %}
               </h3>
               <div class="public-dashboard__plot-body">
                 {{ likes_per_video_plot.html|safe }}
@@ -226,16 +285,32 @@
 
 {% block extra_js %}
   <script src="{% static 'website/js/public-dashboard-export.js' %}"></script>
+  {% if temporal_party_distribution_plot.html %}
+    <script defer src="{% static 'reports/js/temporal-plot.js' %}"></script>
+  {% endif %}
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       var carousel = document.getElementById("tierzeichenCarousel");
-      if (!carousel) return;
-      var btns = document.querySelectorAll(".js-tierzeichen-tab");
-      carousel.addEventListener("slid.bs.carousel", function (e) {
-        btns.forEach(function (btn) { btn.classList.remove("active"); });
-        var active = document.querySelector('.js-tierzeichen-tab[data-bs-slide-to="' + e.to + '"]');
-        if (active) active.classList.add("active");
-      });
+      if (carousel) {
+        var btns = document.querySelectorAll(".js-tierzeichen-tab");
+        carousel.addEventListener("slid.bs.carousel", function (e) {
+          btns.forEach(function (btn) { btn.classList.remove("active"); });
+          var active = document.querySelector('.js-tierzeichen-tab[data-bs-slide-to="' + e.to + '"]');
+          if (active) active.classList.add("active");
+        });
+      }
+
+      function resizeDashboardPlots() {
+        if (typeof Plotly === "undefined") return;
+        document.querySelectorAll(".public-dashboard .js-plotly-plot").forEach(function (gd) {
+          try { Plotly.Plots.resize(gd); } catch (e) {}
+        });
+      }
+      var videosCarousel = document.getElementById("partyVideosCarousel");
+      if (videosCarousel) {
+        videosCarousel.addEventListener("slid.bs.carousel", resizeDashboardPlots);
+      }
+      window.addEventListener("load", resizeDashboardPlots);
     });
   </script>
 {% endblock extra_js %}

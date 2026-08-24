@@ -1,6 +1,8 @@
 <button type="button"
         class="btn btn-link p-0 align-baseline text-muted ms-1 {{ extra_class }}"
         data-export-filename="{{ filename }}"
+        {% if export_title %}data-export-title="{{ export_title }}"{% endif %}
+        {% if export_caption %}data-export-caption="{{ export_caption }}"{% endif %}
         aria-label="Als PNG exportieren (300 dpi)"
         title="PNG exportieren (300 dpi)">
   <i class="bi bi-download" aria-hidden="true"></i>

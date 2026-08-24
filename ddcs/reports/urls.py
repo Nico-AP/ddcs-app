@@ -34,4 +34,9 @@ urlpatterns = [
         views.PublicPlotsDevView.as_view(),
         name="public_plots_dev",
     ),
+    path(
+        "plots/public/<slug:slug>.png",
+        views.PublicPlotPngView.as_view(),
+        name="public_plot_png",
+    ),
 ]

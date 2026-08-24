@@ -10,14 +10,22 @@
     <div class="carousel-inner">
 
       <div class="carousel-item active">
-        <div class="carousel-slide-title text-bold">So viel posten die Parteien über die Zeit gesehen...{% include "website/components/public_plot_info_trigger.html" %}</div>
+        <div class="carousel-slide-title text-bold">
+          So viel posten die Parteien über die Zeit gesehen...
+          {% include "website/components/public_plot_info_trigger.html" %}
+          {% include "website/components/public_plot_export_png.html" with filename="videos-ueber-die-zeit" extra_class="js-export-plotly-png" export_title=export_meta.videos_zeit.title export_caption=export_meta.videos_zeit.caption %}
+        </div>
         <div class="visualization-container temporal-plot w-100 min-w-0 overflow-hidden">
           {{ temporal_party_distribution_plot.html|safe }}
         </div>
       </div>
 
       <div class="carousel-item">
-        <div class="carousel-slide-title">...und so viel insgesamt seit dem 1. Juli 2026{% include "website/components/public_plot_info_trigger.html" %}</div>
+        <div class="carousel-slide-title">
+          ...und so viel insgesamt seit dem 1. Juli 2026
+          {% include "website/components/public_plot_info_trigger.html" %}
+          {% include "website/components/public_plot_export_png.html" with filename="videos-gesamt" extra_class="js-export-plotly-png" export_title=export_meta.videos_gesamt.title export_caption=export_meta.videos_gesamt.caption %}
+        </div>
         <div class="visualization-container w-100 min-w-0 overflow-hidden">
           {{ party_distribution_plot.html|safe }}
         </div>
@@ -37,6 +45,7 @@
 
     {% include "website/components/public_plot_info_modal.html" %}
 
+    <script src="{% static 'website/js/public-dashboard-export.js' %}"></script>
     {% if temporal_party_distribution_plot.html %}
       <script defer src="{% static 'reports/js/temporal-plot.js' %}"></script>
     {% endif %}

@@ -5,6 +5,10 @@ from django.urls import reverse
 from openpyxl import load_workbook
 
 from ddcs.website.context_processors import analytics
+from ddcs.website.dashboard_export import (
+    build_dashboard_export_meta,
+    nationwide_export_meta,
+)
 from ddcs.website.methods_lists import (
     get_methods_lists_payload,
     load_monitored_accounts,
@@ -21,6 +25,66 @@ class WebsiteTests(TestCase):
         url = reverse("website:dfdw_2025")
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
+
+    @override_settings(DEBUG=True)
+    def test_public_dashboard_party_videos_carousel(self):
+        response = self.client.get(reverse("website:public_dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="partyVideosCarousel"')
+        self.assertContains(response, "Videos über die Zeit")
+        self.assertContains(response, "Videos gesamt")
+        self.assertIsNotNone(
+            response.context["temporal_party_distribution_plot"]["html"]
+        )
+        self.assertIsNotNone(response.context["party_distribution_plot"]["html"])
+        self.assertContains(
+            response, 'data-export-title="Videos von Partei-Accounts nach Partei"'
+        )
+        self.assertContains(response, "ganz Deutschland")
+        self.assertContains(response, "1. Juli 2026")
+
+
+class DashboardExportMetaTests(TestCase):
+    def test_nationwide_scope_and_period(self):
+        meta = build_dashboard_export_meta(
+            video_stats={
+                "start_date": "2026-07-01",
+                "end_date": "2026-08-14",
+                "n_accounts": 127,
+            }
+        )
+        caption = meta["videos_gesamt"]["caption"]
+        self.assertEqual(
+            meta["videos_gesamt"]["title"],
+            "Videos von Partei-Accounts nach Partei",
+        )
+        self.assertIn("1. Juli 2026", caption)
+        self.assertIn("14. August 2026", caption)
+        self.assertIn("127 Accounts", caption)
+        self.assertIn("ganz Deutschland", caption)
+        self.assertIn("Bundes- und Landesverbände", caption)
+        self.assertIn("Kandidierende", caption)
+        self.assertIn("Grafik: Dein Feed, Deine Wahl.", caption)
+        self.assertIn("\nQuelle: TikTok Research API.\n", caption)
+        self.assertNotIn("\n\n", caption)
+
+    def test_berlin_scope_uses_state_accounts(self):
+        caption = build_dashboard_export_meta(
+            video_stats={"start_date": "2026-07-01", "end_date": "2026-08-14"},
+            selected_bundesland="BE",
+        )["likes_gesamt"]["caption"]
+        self.assertIn("Berlin zugeordneten Partei-Accounts", caption)
+        self.assertIn("Abgeordnetenhaus von Berlin", caption)
+        self.assertNotIn("ganz Deutschland", caption)
+
+
+class NationwideExportMetaTests(TestCase):
+    def test_includes_homepage_plot_keys(self):
+        meta = nationwide_export_meta()
+        self.assertIn("videos_gesamt", meta)
+        self.assertIn("videos_zeit", meta)
+        caption = meta["videos_gesamt"]["caption"]
+        self.assertIn("Grafik: Dein Feed, Deine Wahl.", caption)
 
 
 class MethodsListsTests(TestCase):
