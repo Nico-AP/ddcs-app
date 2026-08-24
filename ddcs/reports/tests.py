@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 from collections import Counter
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -55,12 +55,17 @@ from ddcs.reports.config import (
     REPORT_FIRST_DATE_TO_INCLUDE,
 )
 from ddcs.reports.factories import get_synthetic_report_statistics
-from ddcs.reports.metrics import account_metrics, user_metrics
+from ddcs.reports.metrics import account_metrics, date_ranges, user_metrics
 from ddcs.reports.plots import public_plots, user_plots
 from ddcs.reports.plots.public_plot_images import (
     compose_labeled_png,
     public_plot_image_path,
     write_public_plot_png,
+)
+from ddcs.reports.plots.public_plot_render import (
+    render_party_treemap_png,
+    render_png_for_slug,
+    render_temporal_stacked_area_png,
 )
 from ddcs.reports.user_types import assign_user_type
 from ddcs.reports.utils import (
@@ -1985,12 +1990,71 @@ class HexToRgbaTests(TestCase):
 
 class PostDataDateRangeTests(TestCase):
     def test_range_starts_at_configured_start_date_and_ends_with_lag(self):
-        start, end = account_metrics._post_data_date_range()
+        start, end = date_ranges.configured_date_range()
         self.assertEqual(start, ddcs.reports.config.PUBLIC_POST_DATA_START_DATE)
         expected_end = timezone.now().date() - timedelta(
             days=ddcs.reports.config.PUBLIC_POST_DATA_END_LAG_DAYS
         )
         self.assertEqual(end, expected_end)
+
+
+class PublicPostDataDateRangeFallbackTests(TestCase):
+    """Environments without data in the configured window fall back to theirs."""
+
+    def setUp(self):
+        self.user = TikTokUser.objects.create(
+            name="alice", added_by=DataOrigins.DONATION
+        )
+        self.mapping = patch.object(
+            date_ranges, "load_account_party_mapping", return_value={"alice": "SPD"}
+        )
+        self.mapping.start()
+        self.addCleanup(self.mapping.stop)
+
+    def _add_video(self, id_tiktok: int, created: datetime):
+        video = TikTokVideo.objects.create(
+            id_tiktok=id_tiktok,
+            user=self.user,
+            added_by=DataOrigins.DONATION,
+            inferred_create_time=created,
+        )
+        APIVideoInfos.objects.create(video=video, create_time=created)
+        return video
+
+    def test_uses_configured_range_when_it_holds_data(self):
+        configured_start, _ = date_ranges.configured_date_range()
+        self._add_video(1, datetime.combine(configured_start, time(10), tzinfo=UTC))
+        self.assertEqual(
+            date_ranges.public_post_data_date_range(),
+            date_ranges.configured_date_range(),
+        )
+
+    def test_falls_back_to_available_range_when_configured_window_is_empty(self):
+        first = datetime(2026, 5, 2, 10, tzinfo=UTC)
+        last = datetime(2026, 6, 20, 10, tzinfo=UTC)
+        self._add_video(1, first)
+        self._add_video(2, last)
+        self.assertEqual(
+            date_ranges.public_post_data_date_range(),
+            (first.date(), last.date()),
+        )
+
+    def test_keeps_configured_range_when_there_is_no_data_at_all(self):
+        self.assertEqual(
+            date_ranges.public_post_data_date_range(),
+            date_ranges.configured_date_range(),
+        )
+
+    def test_fallback_range_feeds_the_public_plot_data(self):
+        moment = datetime(2026, 6, 20, 10, tzinfo=UTC)
+        self._add_video(1, moment)
+        with patch.object(
+            account_metrics, "load_account_party_mapping", return_value={"alice": "SPD"}
+        ):
+            records = account_metrics._compute_post_data()
+        counted = [r for r in records if r["count"]]
+        self.assertEqual(len(counted), 1)
+        self.assertEqual(counted[0]["date"], moment.date().isoformat())
 
 
 class ComputePostDataTests(TestCase):
@@ -2009,7 +2073,7 @@ class ComputePostDataTests(TestCase):
     def _patch_range(self, start: date, end: date):
         return patch.object(
             account_metrics,
-            "_post_data_date_range",
+            "public_post_data_date_range",
             return_value=(start, end),
         )
 
@@ -2653,14 +2717,10 @@ class PublicPlotPngTests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Content-Type"], "image/png")
 
-    def test_generates_png_when_missing(self):
+    def test_generates_png_when_missing_in_debug(self):
         with (
             tempfile.TemporaryDirectory() as tmp,
             override_settings(MEDIA_ROOT=tmp, DEBUG=True),
-            patch(
-                "ddcs.reports.plots.public_plot_images._figure_to_png",
-                return_value=_tiny_png(),
-            ),
         ):
             response = self.client.get(
                 reverse(
@@ -2672,18 +2732,60 @@ class PublicPlotPngTests(TestCase):
             self.assertEqual(response["Content-Type"], "image/png")
             self.assertTrue(public_plot_image_path("videos-gesamt").exists())
 
+    def test_missing_png_returns_404_without_rendering_in_production(self):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            override_settings(MEDIA_ROOT=tmp, DEBUG=False),
+        ):
+            response = self.client.get(
+                reverse(
+                    "reports:public_plot_png",
+                    kwargs={"slug": "videos-gesamt"},
+                )
+            )
+            self.assertEqual(response.status_code, 404)
+            self.assertFalse(public_plot_image_path("videos-gesamt").exists())
+
     def test_write_public_plot_png_adds_caption(self):
         with (
             tempfile.TemporaryDirectory() as tmp,
             override_settings(MEDIA_ROOT=tmp, DEBUG=True),
-            patch(
-                "ddcs.reports.plots.public_plot_images._figure_to_png",
-                return_value=_tiny_png(),
-            ),
         ):
             path = write_public_plot_png("videos-gesamt")
             self.assertTrue(path.exists())
             self.assertGreater(path.stat().st_size, 8)
+
+
+class PublicPlotRenderTests(TestCase):
+    """The embed PNGs are drawn with Matplotlib, so no browser is involved."""
+
+    @staticmethod
+    def _records():
+        return [
+            {"date": "2026-07-01", "account": "a", "party": "SPD", "count": 4},
+            {"date": "2026-07-02", "account": "a", "party": "SPD", "count": 2},
+            {"date": "2026-07-01", "account": "b", "party": "AfD", "count": 7},
+            {"date": "2026-07-03", "account": "c", "party": "Sonstige", "count": 1},
+            {"date": "2026-07-02", "account": "d", "party": "SPD", "count": None},
+        ]
+
+    def test_treemap_returns_png_bytes(self):
+        png = render_party_treemap_png(self._records())
+        self.assertIsNotNone(png)
+        self.assertEqual(Image.open(BytesIO(png)).format, "PNG")
+
+    def test_stacked_area_returns_png_bytes(self):
+        png = render_temporal_stacked_area_png(self._records())
+        self.assertIsNotNone(png)
+        self.assertEqual(Image.open(BytesIO(png)).format, "PNG")
+
+    def test_renderers_return_none_without_data(self):
+        self.assertIsNone(render_party_treemap_png([]))
+        self.assertIsNone(render_temporal_stacked_area_png([]))
+
+    def test_render_png_for_slug_rejects_unknown_slug(self):
+        with self.assertRaises(ValueError):
+            render_png_for_slug("not-a-plot", self._records())
 
 
 class PublicPlotImageComposeTests(TestCase):

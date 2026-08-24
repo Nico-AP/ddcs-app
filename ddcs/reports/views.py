@@ -8,6 +8,7 @@ This is the intended access model for the donation flow; no additional
 session/auth check is required.
 """
 
+import logging
 from typing import Any
 
 from ddm.participation.models import Participant
@@ -51,6 +52,8 @@ from ddcs.reports.user_types import assign_user_type
 from ddcs.reports.utils import enrich_top_videos_for_embed
 from ddcs.reports.wordclouds import get_wordcloud
 from ddcs.website.dashboard_export import nationwide_export_meta
+
+logger = logging.getLogger(__name__)
 
 _SYNTHETIC_BEHAVIOUR_SESSION_KEY = "reports_synthetic_behaviour_comparisons"
 
@@ -309,6 +312,16 @@ class PublicPlotPngView(View):
             raise Http404
         path = public_plot_image_path(slug)
         if not path.exists():
+            # In production these are written by the daily Celery task; rendering
+            # them inside a web request would put chart generation on the request
+            # path. Locally there is no beat schedule, so build on first access.
+            if not settings.DEBUG:
+                logger.warning(
+                    "Public plot PNG %s is missing; run the "
+                    "refresh_public_plot_images management command.",
+                    slug,
+                )
+                raise Http404
             try:
                 write_public_plot_png(slug)
             except (OSError, RuntimeError, ValueError) as exc:
