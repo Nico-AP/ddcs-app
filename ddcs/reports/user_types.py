@@ -40,7 +40,7 @@ USER_TYPES: dict[str, UserTypeRecord] = {
     "kolibri": {
         "id": "kolibri",
         "animal": "Kolibri",
-        "trait_label": "Der Skip-Spezialist",
+        "trait_label": "Skip-Spezialist",
         "headline": "Du bist der Kolibri",
         "attention": (
             "Bei politischen Videos lohnt sich manchmal der zweite Blick, "
@@ -55,7 +55,7 @@ USER_TYPES: dict[str, UserTypeRecord] = {
     "faultier": {
         "id": "faultier",
         "animal": "Faultier",
-        "trait_label": "Der chillige Watcher",
+        "trait_label": "chilliger Watcher",
         "headline": "Du bist das Faultier",
         "attention": (
             "Pass auf, dass du dich nicht zu sehr treiben lässt. "
@@ -71,7 +71,7 @@ USER_TYPES: dict[str, UserTypeRecord] = {
     "eule": {
         "id": "eule",
         "animal": "Eule",
-        "trait_label": "Die Nachteule",
+        "trait_label": "Nachteule",
         "headline": "Du bist die Eule",
         "attention": (
             "Nachts triffst du Entscheidungen lockerer, auch beim Liken "
@@ -86,7 +86,7 @@ USER_TYPES: dict[str, UserTypeRecord] = {
     "waschbaer": {
         "id": "waschbaer",
         "animal": "Waschbär",
-        "trait_label": "Der Wochenend-Gucker",
+        "trait_label": "Wochenend-Gucker",
         "headline": "Du bist der Waschbär",
         "attention": (
             "In langen Wochenend-Sessions ähneln sich die Inhalte schnell. "
@@ -102,7 +102,7 @@ USER_TYPES: dict[str, UserTypeRecord] = {
     "papagei": {
         "id": "papagei",
         "animal": "Papagei",
-        "trait_label": "Der Fan",
+        "trait_label": "Fan",
         "headline": "Du bist der Papagei",
         "attention": (
             "Jeder Like formt deinen Feed. Achte darauf, auch mal auf Neues "
@@ -118,7 +118,7 @@ USER_TYPES: dict[str, UserTypeRecord] = {
     "luchs": {
         "id": "luchs",
         "animal": "Luchs",
-        "trait_label": "Der Politik-Beobachter",
+        "trait_label": "Politik-Beobachter",
         "headline": "Du bist der Luchs",
         "attention": (
             "Achte darauf, aus welchen Quellen politische Clips kommen — "

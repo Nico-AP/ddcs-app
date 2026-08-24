@@ -96,6 +96,8 @@ THIRD_PARTY_APPS = [
     "wagtail.images",
     "wagtail.search",
     "wagtail.admin",
+    "django.contrib.sitemaps",
+    "wagtail.contrib.sitemaps",
     "wagtail",
     "modelcluster",
     "taggit",

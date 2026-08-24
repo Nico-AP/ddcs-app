@@ -35,6 +35,9 @@ class TikTokVideoFilter(django_filters.FilterSet):
         field_name="latest_create_time",
         lookup_expr="date__lte",
     )
+    create_date = django_filters.DateFilter(
+        field_name="latest_create_time", lookup_expr="date"
+    )
     region_codes = CharInFilter(field_name="latest_region_code", lookup_expr="in")
     keywords = CharInFilter(method="filter_keywords")
     has_api_infos = django_filters.BooleanFilter(method="filter_has_api_infos")
