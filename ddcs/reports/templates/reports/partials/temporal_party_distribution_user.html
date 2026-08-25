@@ -6,8 +6,13 @@
   <div class="visualization-container temporal-plot">
     {{ temporal_party_distribution_user.html | safe }}
     <div class="description text-center fs-6 text-secondary">
-      Für eine bessere Übersicht kannst du einzelne Parteien in der Legende
-      ausblenden.
+      <span class="d-none d-md-inline">
+        Für eine bessere Übersicht kannst du einzelne Parteien in der Legende
+        ausblenden.
+      </span>
+      <span class="d-md-none">
+        Tippe auf den Graphen, um die Aufteilung nach Partei zu sehen.
+      </span>
     </div>
   </div>
 </div>

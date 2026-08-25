@@ -29,6 +29,8 @@ from ddcs.reports.plots.utils import (
     PLOT_CORNER_RADIUS,
     PLOT_FONT_FAMILY,
     TEMPORAL_AREA_LINE,
+    TEMPORAL_HOVER_BG,
+    TEMPORAL_HOVER_BORDER,
     TEMPORAL_PARTY_PLOT_LEGEND,
     TEMPORAL_PLOT_HEIGHT,
     create_plot_html,
@@ -239,7 +241,8 @@ def build_temporal_party_distribution_figure(
                 fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
-                    "bgcolor": "white",
+                    "bgcolor": TEMPORAL_HOVER_BG,
+                    "bordercolor": TEMPORAL_HOVER_BORDER,
                     "font_size": hover_font,
                     "font_family": PLOT_FONT_FAMILY,
                 },
@@ -260,7 +263,11 @@ def build_temporal_party_distribution_figure(
         "plot_bgcolor": "rgba(0,0,0,0)",
         "margin": {"l": 0, "r": 0, "t": 4 if compact else 0, "b": 0},
         "hoverdistance": 100,
-        "hoverlabel": {"namelength": 0},
+        "hoverlabel": {
+            "namelength": 0,
+            "bgcolor": TEMPORAL_HOVER_BG,
+            "bordercolor": TEMPORAL_HOVER_BORDER,
+        },
     }
     if not compact:
         layout["height"] = TEMPORAL_PLOT_HEIGHT

@@ -59,7 +59,14 @@ class HeroBlock(blocks.StructBlock):
     include_public_plots = blocks.BooleanBlock(default=False, required=False)
 
     # Call to action section
-    show_cta_button = blocks.BooleanBlock(required=False)
+    show_cta_button = blocks.BooleanBlock(
+        required=False,
+        help_text="Show the CTA button at the bottom of the hero (after intro / plots)",
+    )
+    show_cta_under_subtitle = blocks.BooleanBlock(
+        required=False,
+        help_text="Also show the same CTA button directly under the subtitle",
+    )
     cta_button_label = blocks.CharBlock(required=False)
     cta_button_link = blocks.URLBlock(required=False)
 
@@ -67,6 +74,11 @@ class HeroBlock(blocks.StructBlock):
     secondary_link_label = blocks.CharBlock(required=False)
     secondary_link = blocks.URLBlock(required=False)
     secondary_link_target = UrlTargetChoiceBlock(default="_self")
+
+    show_follow_banner = blocks.BooleanBlock(
+        required=False,
+        help_text="Show TikTok, Instagram, and newsletter links at the end of the hero",
+    )
 
     class Meta:
         template = "website/components/hero.html"
