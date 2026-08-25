@@ -72,12 +72,14 @@ def hash_open_id(open_id: str) -> str:
 
 class DataRequestMixin(ConnectionInSessionMixin):
     """Ensures a TikTokConnection is present in the session and a related
-    active DataRequest exists.
+    DataRequest in an allowed status exists.
 
-    If an active DataRequest exists, it is added to self.data_request.
+    By default only TikTok-side active requests are accepted (poll/download).
+    Donation overrides this to also accept already-downloaded requests.
     """
 
     data_request: TikTokDataRequest
+    data_request_allowed_statuses: list[str] = TikTokDataRequest.ACTIVE_STATES
 
     def dispatch(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
         self.connection = get_tiktok_connection_from_session(request)
@@ -87,7 +89,7 @@ class DataRequestMixin(ConnectionInSessionMixin):
         try:
             self.data_request = TikTokDataRequest.objects.filter(
                 connection=self.connection,
-                status__in=TikTokDataRequest.ACTIVE_STATES,
+                status__in=self.data_request_allowed_statuses,
             ).latest("issued_at")
         except TikTokDataRequest.DoesNotExist:
             return redirect(reverse("datadonation:tiktok_connection"))
@@ -521,6 +523,12 @@ class PortabilityDonationView(DataRequestMixin, DDCSDownloadUploadView):
 
     steps = API_PARTICIPATION_FLOW_STEPS
     step_name = "datadonation:portability_donation"
+    # Donation runs after the takeout was fetched from TikTok; DOWNLOADED must
+    # still be allowed or submit is blocked once tiktok-download.js finishes.
+    data_request_allowed_statuses = [
+        TikTokDataRequest.State.READY,
+        TikTokDataRequest.State.DOWNLOADED,
+    ]
 
     def get_uploader_configs(self) -> list:
         project_uploaders = FileUploader.objects.filter(project=self.object)
