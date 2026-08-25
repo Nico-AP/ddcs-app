@@ -1,0 +1,20 @@
+{# Expects `value` from HeroBlock, same fields as the bottom CTA. #}
+<div class="row justify-content-center text-center {{ spacing_classes }}">
+  <div class="col-12">
+    <div class="d-flex flex-row align-items-center justify-content-center">
+      <div class="me-3 cta-bg">
+        <a href="{{ value.cta_button_link }}" class="btn btn-dark btn-primary-dfdw cta-btn">
+          {{ value.cta_button_label }}
+        </a>
+      </div>
+
+      {% if value.show_secondary_link %}
+        <div class="me-3 ms-3">
+          <a href="{{ value.secondary_link }}" target="{{ value.secondary_link_target }}">
+            {{ value.secondary_link_label }}
+          </a>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>

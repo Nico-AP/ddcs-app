@@ -17,6 +17,8 @@ from ddcs.reports.plots.utils import (
     PLOT_CONFIG,
     PLOT_FONT_FAMILY,
     TEMPORAL_AREA_LINE,
+    TEMPORAL_HOVER_BG,
+    TEMPORAL_HOVER_BORDER,
     TEMPORAL_PARTY_PLOT_LEGEND,
     TEMPORAL_PLOT_HEIGHT,
     create_deferred_plot_html,
@@ -107,7 +109,7 @@ _USER_SUBTITLE_SENTENCES: dict[str, str] = {
         '<span style="color: {_mean}; font-weight: 600;">Anderen</span>.'
     ),
     "frac_instant_skip": ("Bei {value} der Videos scrollst du direkt weiter."),
-    "rate_like": ("{value} der Videos, die du anschaust, likest du."),
+    "rate_like": ("{value} der Videos, die du anschaust, likst du."),
     "frac_political_engagement": (
         "{value} deiner Interaktionen (Likes, Shares, Speichern, Kommentare) "
         "betreffen politische Inhalte."
@@ -836,7 +838,11 @@ def _temporal_party_layout() -> dict[str, Any]:
         "plot_bgcolor": "rgba(0,0,0,0)",
         "margin": {"l": 0, "r": 0, "t": 0, "b": 0},
         "hoverdistance": 100,
-        "hoverlabel": {"namelength": 0},
+        "hoverlabel": {
+            "namelength": 0,
+            "bgcolor": TEMPORAL_HOVER_BG,
+            "bordercolor": TEMPORAL_HOVER_BORDER,
+        },
     }
 
 
@@ -867,7 +873,8 @@ def get_temporal_party_distribution_plot_user(
                 fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
-                    "bgcolor": "white",
+                    "bgcolor": TEMPORAL_HOVER_BG,
+                    "bordercolor": TEMPORAL_HOVER_BORDER,
                     "font_size": 16,
                     "font_family": PLOT_FONT_FAMILY,
                 },
