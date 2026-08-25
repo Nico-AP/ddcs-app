@@ -19,6 +19,7 @@ from ddcs.reports.plots.utils import (
     TEMPORAL_AREA_LINE,
     TEMPORAL_HOVER_BG,
     TEMPORAL_HOVER_BORDER,
+    TEMPORAL_HOVER_FONT_SIZE,
     TEMPORAL_PARTY_PLOT_LEGEND,
     TEMPORAL_PLOT_HEIGHT,
     create_deferred_plot_html,
@@ -842,6 +843,8 @@ def _temporal_party_layout() -> dict[str, Any]:
             "namelength": 0,
             "bgcolor": TEMPORAL_HOVER_BG,
             "bordercolor": TEMPORAL_HOVER_BORDER,
+            "font_size": TEMPORAL_HOVER_FONT_SIZE,
+            "font_family": PLOT_FONT_FAMILY,
         },
     }
 
@@ -875,7 +878,7 @@ def get_temporal_party_distribution_plot_user(
                 hoverlabel={
                     "bgcolor": TEMPORAL_HOVER_BG,
                     "bordercolor": TEMPORAL_HOVER_BORDER,
-                    "font_size": 16,
+                    "font_size": TEMPORAL_HOVER_FONT_SIZE,
                     "font_family": PLOT_FONT_FAMILY,
                 },
             )
