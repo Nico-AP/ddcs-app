@@ -88,6 +88,7 @@
         return;
       }
       try {
+        Plotly.Plots.resize(plotEl);
         Plotly.relayout(plotEl, layoutForViewport());
       } catch (_error) {
         // Plotly may not have finished initialising yet.

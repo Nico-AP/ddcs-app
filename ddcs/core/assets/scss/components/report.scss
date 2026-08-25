@@ -1040,10 +1040,12 @@
       flex-direction: column;
       min-height: 0;
       pointer-events: none;
+      z-index: 0;
     }
 
     .carousel-item.active {
       pointer-events: auto;
+      z-index: 1;
     }
 
     .public-dashboard__plot-body {
