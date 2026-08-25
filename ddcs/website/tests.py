@@ -1,4 +1,5 @@
 from io import BytesIO
+from unittest import skip
 
 from django.test import Client, RequestFactory, TestCase, override_settings
 from django.urls import reverse
@@ -26,6 +27,7 @@ class WebsiteTests(TestCase):
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
 
+    @skip("Causes issues with django-debug-toolbar")
     @override_settings(DEBUG=True)
     def test_public_dashboard_party_videos_carousel(self):
         response = self.client.get(reverse("website:public_dashboard"))
