@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.http import Http404, HttpRequest
 from django.urls import include, path
 from django.views.generic import TemplateView
 from drf_spectacular.views import (
@@ -14,6 +15,12 @@ from wagtail.contrib.sitemaps.views import sitemap
 from wagtail.documents import urls as wagtaildocs_urls
 
 from ddcs.auth.views import Admin2FALoginView, CMS2FALoginView
+
+
+def force_404_view(request: HttpRequest) -> None:
+    """Simple 404 view used to overwrite ddm login endpoints"""
+    raise Http404
+
 
 urlpatterns = [
     # Auth (overrides base admin and CMS login views).
@@ -36,6 +43,8 @@ urlpatterns = [
     path("api/redoc/", SpectacularRedocView.as_view(url_name="schema"), name="redoc"),
     # DDM
     path("ddm/", include("ddm.core.urls")),
+    path("ddm/login/", force_404_view, name="ddm_login"),
+    path("ddm/logout/", force_404_view, name="ddm_logout"),
     path("ckeditor5/", include("django_ckeditor_5.urls")),
     # CMS - Wagtail
     path("cms/", include(wagtailadmin_urls)),

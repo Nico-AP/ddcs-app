@@ -23,8 +23,9 @@
           angezeigt.
         </p>
 
-        {# TODO: Handle cases where participant has not donated anything. #}
-        <a class="btn btn-dark btn-primary-dfdw text-white" href="{% url 'reports:report' participant_id %}">zum Report</a>
+        {% if participant_id %}
+          <a class="btn btn-dark btn-primary-dfdw text-white" href="{% url 'reports:report' participant_id %}">zum Report</a>
+        {% endif %}
       </div>
     </div>
   </div>
