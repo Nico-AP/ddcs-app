@@ -16,10 +16,10 @@ oauth.register(
     access_token_url=TIKTOK_TOKEN_URL,
     client_kwargs={
         "scope": (
-            "user.info.basic,"
-            "portability.postsandprofile.single,"
-            "portability.directmessages.single,"
-            "portability.activity.single"
+            "user.info.basic,portability.all.single"
+            # "portability.postsandprofile.single,"
+            # "portability.directmessages.single,"
+            # "portability.activity.single"
         )
     },
     # TikTok expects client_key, not the standard client_id
