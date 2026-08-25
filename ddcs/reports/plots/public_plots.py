@@ -28,6 +28,7 @@ from ddcs.reports.plots.utils import (
     PLOT_CONFIG,
     PLOT_CORNER_RADIUS,
     PLOT_FONT_FAMILY,
+    STATIC_PLOT_CONFIG,
     TEMPORAL_AREA_LINE,
     TEMPORAL_HOVER_BG,
     TEMPORAL_HOVER_BORDER,
@@ -187,7 +188,9 @@ def get_party_distribution_all_accounts(
 
     top_party = party_counts[0]
     return {
-        "html": create_plot_html(fig, config=PLOT_CONFIG),
+        # Static: tiles already show labels; interactive hover steals taps from
+        # the stacked temporal slide in the homepage carousel.
+        "html": create_plot_html(fig, config=STATIC_PLOT_CONFIG),
         "data": {
             "party": top_party["party"],
             "value": top_party["count"],
