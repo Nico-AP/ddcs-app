@@ -65,6 +65,8 @@ class DDCSBriefingView(BriefingView):
         self.participant.save()
 
     def current_step_url(self) -> str:
+        if self.current_step == 1:
+            return reverse("datadonation:tiktok_connection")
         return get_current_step_url(self.steps, self.current_step, self.object.slug)
 
     def next_step_url(self) -> str:

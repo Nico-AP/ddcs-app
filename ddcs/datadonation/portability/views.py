@@ -496,6 +496,10 @@ class TikTokDownloadView(ParticipantInSessionMixin, DataRequestMixin, View):
                 self.data_request.download_succeeded = succeeded
                 self.data_request.download_attempted = True
                 self.data_request.downloaded_at = timezone.now()
+                if succeeded:
+                    self.data_request.status = TikTokDataRequest.State.DOWNLOADED
+                else:
+                    self.data_request.status = TikTokDataRequest.State.FAILED
                 self.data_request.save()
 
         streaming_response = StreamingHttpResponse(

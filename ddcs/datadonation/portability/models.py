@@ -72,13 +72,14 @@ class TikTokDataRequest(models.Model):
     class State(models.TextChoices):
         """These are the official status strings returned by the TikTok API.
 
-        DOWNLOADED was added for completion, not part of the API schema.
+        DOWNLOADED and FAILED were added for completion, not part of the API schema.
         """
 
         NOT_POLLED = "not polled", "not polled"
         PENDING = "pending", "pending"
         READY = "downloading", "ready to download"
         DOWNLOADED = "downloaded", "downloaded"
+        FAILED = "failed", "failed"
         EXPIRED = "expired", "expired"
         CANCELLED = "cancelled", "cancelled"
 
