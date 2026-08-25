@@ -15,8 +15,18 @@ from requests.exceptions import HTTPError
 
 from ddcs.datadonation.portability.models import TikTokConnection, TikTokDataRequest
 from ddcs.datadonation.portability.services import get_valid_token
-from ddcs.datadonation.portability.views import hash_open_id
+from ddcs.datadonation.portability.views import (
+    API_PARTICIPATION_FLOW_STEPS,
+    hash_open_id,
+)
 from ddcs.datadonation.utils import get_participant_log
+
+
+def _dummy_webpack_loader(_config_name):
+    loader = MagicMock()
+    loader.config = {}
+    loader.get_bundle.return_value = []
+    return loader
 
 
 class TikTokConnectionIsExpiredTest(TestCase):
@@ -871,3 +881,74 @@ class PortabilityFlowIntegrationTest(PortabilityViewTestCase):
 
         data_request.refresh_from_db()
         self.assertTrue(data_request.download_succeeded)
+        self.assertEqual(data_request.status, TikTokDataRequest.State.DOWNLOADED)
+
+
+class PortabilityDonationGateTest(PortabilityViewTestCase):
+    """Donation must remain reachable after the takeout was marked DOWNLOADED."""
+
+    def setUp(self):
+        super().setUp()
+        self.connection = self._create_connection()
+        self._seed_connection_session(self.connection)
+        self.participant.current_step = API_PARTICIPATION_FLOW_STEPS.index(
+            "datadonation:portability_donation"
+        )
+        self.participant.save()
+
+    def _donation_url(self):
+        return reverse(
+            "datadonation:portability_donation",
+            kwargs={"slug": settings.TIKTOK_DDM_PROJECT_SLUG},
+        )
+
+    @patch("webpack_loader.utils.get_loader", side_effect=_dummy_webpack_loader)
+    def test_donation_page_reachable_after_download(self, mock_loader):
+        TikTokDataRequest.objects.create(
+            connection=self.connection,
+            request_id=1001,
+            status=TikTokDataRequest.State.DOWNLOADED,
+            download_succeeded=True,
+        )
+
+        response = self.client.get(self._donation_url())
+
+        self.assertEqual(response.status_code, 200)
+        mock_loader.assert_called()
+
+    def test_donation_page_rejects_failed_request(self):
+        TikTokDataRequest.objects.create(
+            connection=self.connection,
+            request_id=1002,
+            status=TikTokDataRequest.State.FAILED,
+        )
+
+        response = self.client.get(self._donation_url())
+
+        self.assertRedirects(response, reverse("datadonation:tiktok_connection"))
+
+    @patch("webpack_loader.utils.get_loader", side_effect=_dummy_webpack_loader)
+    def test_donation_page_reachable_while_still_ready(self, mock_loader):
+        TikTokDataRequest.objects.create(
+            connection=self.connection,
+            request_id=1003,
+            status=TikTokDataRequest.State.READY,
+        )
+
+        response = self.client.get(self._donation_url())
+
+        self.assertEqual(response.status_code, 200)
+        mock_loader.assert_called()
+
+    def test_check_endpoint_still_requires_active_request_after_download(self):
+        # Poll/download keep the stricter ACTIVE_STATES gate.
+        TikTokDataRequest.objects.create(
+            connection=self.connection,
+            request_id=1004,
+            status=TikTokDataRequest.State.DOWNLOADED,
+            download_succeeded=True,
+        )
+
+        response = self.client.get(reverse("datadonation:tiktok_check_request"))
+
+        self.assertRedirects(response, reverse("datadonation:tiktok_connection"))
