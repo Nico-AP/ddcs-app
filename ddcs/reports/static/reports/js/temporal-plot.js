@@ -13,13 +13,21 @@
         height: MOBILE_HEIGHT,
         "yaxis.showticklabels": false,
         "margin.l": 0,
+        // On small screens the horizontal legend eats vertical space;
+        // party names remain available via the unified hover/tap tooltip.
+        showlegend: false,
       };
     }
     return {
       height: DESKTOP_HEIGHT,
       "yaxis.showticklabels": true,
       "margin.l": 0,
+      showlegend: true,
     };
+  }
+
+  function compactLegendLayout() {
+    return { showlegend: !isMobile() };
   }
 
   function findTemporalPlots(root) {
@@ -29,22 +37,45 @@
     );
   }
 
+  function findCompactTemporalPlots(root) {
+    const scope = root || document;
+    return scope.querySelectorAll(
+      ".temporal-plot--compact .plotly-graph-div, .temporal-plot--compact .js-plotly-plot",
+    );
+  }
+
+  function findAllTemporalPlotEls(root) {
+    const scope = root || document;
+    return scope.querySelectorAll(
+      ".temporal-plot .plotly-graph-div, .temporal-plot .js-plotly-plot",
+    );
+  }
+
+  function clearTemporalHovers() {
+    if (typeof Plotly === "undefined" || !Plotly.Fx) {
+      return;
+    }
+    findAllTemporalPlotEls().forEach(function (plotEl) {
+      try {
+        Plotly.Fx.unhover(plotEl);
+      } catch (_error) {
+        // Plot not ready / already cleared.
+      }
+    });
+  }
+
   function resizeCompactPlots(root) {
     if (typeof Plotly === "undefined") {
       return;
     }
-    const scope = root || document;
-    scope
-      .querySelectorAll(
-        ".temporal-plot--compact .plotly-graph-div, .temporal-plot--compact .js-plotly-plot",
-      )
-      .forEach(function (plotEl) {
-        try {
-          Plotly.Plots.resize(plotEl);
-        } catch (_error) {
-          // Plotly may not have finished initialising yet.
-        }
-      });
+    findCompactTemporalPlots(root).forEach(function (plotEl) {
+      try {
+        Plotly.Plots.resize(plotEl);
+        Plotly.relayout(plotEl, compactLegendLayout());
+      } catch (_error) {
+        // Plotly may not have finished initialising yet.
+      }
+    });
   }
 
   function applyTemporalPlotLayout(root) {
@@ -67,14 +98,18 @@
   function scheduleApply(root) {
     requestAnimationFrame(function () {
       applyTemporalPlotLayout(root);
+      resizeCompactPlots(root);
       window.setTimeout(function () {
         applyTemporalPlotLayout(root);
+        resizeCompactPlots(root);
       }, 100);
       window.setTimeout(function () {
         applyTemporalPlotLayout(root);
+        resizeCompactPlots(root);
       }, 400);
       window.setTimeout(function () {
         applyTemporalPlotLayout(root);
+        resizeCompactPlots(root);
       }, 1800);
     });
   }
@@ -94,7 +129,6 @@
   function onPublicPlotCarouselEvent(event) {
     if (event.target?.classList?.contains("public-plot-carousel")) {
       scheduleApply(event.target);
-      resizeCompactPlots(event.target);
     }
   }
 
@@ -106,4 +140,24 @@
       scheduleApply(event.detail.target);
     }
   });
+
+  // Sticky mobile hover: dismiss when tapping outside the chart.
+  document.addEventListener(
+    "pointerdown",
+    function (event) {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      if (
+        target.closest(
+          ".temporal-plot .js-plotly-plot, .temporal-plot .plotly-graph-div",
+        )
+      ) {
+        return;
+      }
+      clearTemporalHovers();
+    },
+    true,
+  );
 })();

@@ -21,6 +21,10 @@
       </div>
     </div>
 
+    {% if value.show_cta_under_subtitle %}
+      {% include "website/components/hero_cta.html" with spacing_classes="pt-0 pb-4" %}
+    {% endif %}
+
     <div class="row justify-content-center text-center">
       <div class="col-12 col-md-8 col-lg-8 text-hero-lead">
         {{ value.intro }}
@@ -42,22 +46,47 @@
     {% endif %}
 
     {% if value.show_cta_button %}
-      <div class="row justify-content-center text-center pt-5 pb-5">
-        <div class="col-12">
-          <div class="d-flex flex-row align-items-center justify-content-center">
-            <div class="me-3 cta-bg">
-              <a href="{{ value.cta_button_link }}" class="btn btn-dark btn-primary-dfdw cta-btn">
-                {{ value.cta_button_label }}
-              </a>
-            </div>
+      {% include "website/components/hero_cta.html" with spacing_classes="pt-5 pb-5" %}
+    {% endif %}
 
-            {% if value.show_secondary_link %}
-              <div class="me-3 ms-3">
-                <a href="{{ value.secondary_link }}" target="{{ value.secondary_link_target }}">
-                  {{ value.secondary_link_label }}
-                </a>
-              </div>
-            {% endif %}
+    {% if value.show_follow_banner %}
+      <div class="row justify-content-center text-center {% if value.show_cta_button %}pt-0 pb-5{% else %}pt-5 pb-5{% endif %}">
+        <div class="col-12 col-md-8 col-lg-8">
+          <p class="hero-follow__label mb-3">
+            Folge uns und bleib auf dem Laufenden
+          </p>
+          <div class="hero-follow">
+            <a class="hero-follow__btn hero-follow__btn--tiktok"
+               href="https://www.tiktok.com/@deinfeeddeinewahl"
+               target="_blank"
+               rel="noopener noreferrer"
+               aria-label="Folge uns auf TikTok">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 0010.86 4.47V9.42a8.16 8.16 0 004.77 1.52V7.49a4.85 4.85 0 01-1.19-.8z"/>
+              </svg>
+              <span>TikTok</span>
+            </a>
+            <a class="hero-follow__btn hero-follow__btn--instagram"
+               href="https://www.instagram.com/deinfeeddeinewahl/"
+               target="_blank"
+               rel="noopener noreferrer"
+               aria-label="Folge uns auf Instagram">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+                <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/>
+              </svg>
+              <span>Instagram</span>
+            </a>
+            <a class="hero-follow__btn hero-follow__btn--newsletter"
+               href="https://limesurvey.weizenbaum-institut.de/index.php/329322?lang=de-informal"
+               target="_blank"
+               rel="noopener noreferrer"
+               aria-label="Newsletter abonnieren">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2" y="4" width="20" height="16" rx="2" />
+                <path d="M22 7l-10 7L2 7" />
+              </svg>
+              <span>Newsletter</span>
+            </a>
           </div>
         </div>
       </div>
