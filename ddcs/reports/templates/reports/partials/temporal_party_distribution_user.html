@@ -3,17 +3,9 @@
     ... und so hat sich die Zahl der Videos von offiziellen Partei-Accounts
     in deinem Feed während des Wahlkampfs <span class="report-highlight">entwickelt</span>.
   </p>
-  <div class="visualization-container temporal-plot">
+    <div class="visualization-container temporal-plot">
     {{ temporal_party_distribution_user.html | safe }}
-    <div class="description text-center fs-6 text-secondary">
-      <span class="d-none d-md-inline">
-        Für eine bessere Übersicht kannst du einzelne Parteien in der Legende
-        ausblenden.
-      </span>
-      <span class="d-md-none">
-        Tippe auf den Graphen, um die Aufteilung nach Partei zu sehen.
-      </span>
-    </div>
+    {% include "reports/partials/temporal_plot_hint.html" %}
   </div>
 </div>
 <hr />
