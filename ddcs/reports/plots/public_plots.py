@@ -31,6 +31,8 @@ from ddcs.reports.plots.utils import (
     TEMPORAL_AREA_LINE,
     TEMPORAL_HOVER_BG,
     TEMPORAL_HOVER_BORDER,
+    TEMPORAL_HOVER_FONT_SIZE,
+    TEMPORAL_HOVER_FONT_SIZE_COMPACT,
     TEMPORAL_PARTY_PLOT_LEGEND,
     TEMPORAL_PLOT_HEIGHT,
     create_plot_html,
@@ -218,7 +220,9 @@ def build_temporal_party_distribution_figure(
 
     tick_font = 12 if compact else 20
     body_font = 12 if compact else 25
-    hover_font = 12 if compact else 16
+    hover_font = (
+        TEMPORAL_HOVER_FONT_SIZE_COMPACT if compact else TEMPORAL_HOVER_FONT_SIZE
+    )
     legend = {
         **TEMPORAL_PARTY_PLOT_LEGEND,
         "font": {"size": 11 if compact else 12},
@@ -267,6 +271,8 @@ def build_temporal_party_distribution_figure(
             "namelength": 0,
             "bgcolor": TEMPORAL_HOVER_BG,
             "bordercolor": TEMPORAL_HOVER_BORDER,
+            "font_size": hover_font,
+            "font_family": PLOT_FONT_FAMILY,
         },
     }
     if not compact:

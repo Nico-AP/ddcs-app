@@ -43,6 +43,8 @@ TEMPORAL_AREA_LINE = {"width": 0, "shape": "spline", "smoothing": 0.65}
 # See-through so the stacked areas stay visible under the unified hover box.
 TEMPORAL_HOVER_BG = "rgba(255, 255, 255, 0.72)"
 TEMPORAL_HOVER_BORDER = "rgba(0, 0, 0, 0.15)"
+TEMPORAL_HOVER_FONT_SIZE = 12
+TEMPORAL_HOVER_FONT_SIZE_COMPACT = 11
 
 
 def temporal_plot_xaxis_tickvals(

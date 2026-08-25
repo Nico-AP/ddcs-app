@@ -15,8 +15,9 @@
           {% include "website/components/public_plot_info_trigger.html" %}
           {% include "website/components/public_plot_export_png.html" with filename="videos-ueber-die-zeit" extra_class="js-export-plotly-png" export_title=export_meta.videos_zeit.title export_caption=export_meta.videos_zeit.caption %}
         </div>
-        <div class="visualization-container temporal-plot w-100 min-w-0 overflow-hidden">
+        <div class="visualization-container temporal-plot w-100 min-w-0">
           {{ temporal_party_distribution_plot.html|safe }}
+          {% include "reports/partials/temporal_plot_hint.html" %}
         </div>
       </div>
 

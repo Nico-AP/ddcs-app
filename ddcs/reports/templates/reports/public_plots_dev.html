@@ -66,6 +66,7 @@
     <div class="visualization-container temporal-plot">
       {% if temporal_party_distribution_all_accounts.html %}
         {{ temporal_party_distribution_all_accounts.html|safe }}
+        {% include "reports/partials/temporal_plot_hint.html" %}
       {% else %}
         <p>No data.</p>
       {% endif %}
