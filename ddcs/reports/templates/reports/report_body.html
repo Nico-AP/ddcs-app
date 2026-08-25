@@ -30,6 +30,13 @@
 
   {% include "reports/partials/share_invite.html" %}
 
+  <div class="report-block text-center">
+    <p class="mb-0 text-muted small">
+      Wenn du später im Wahlkampf nochmal einen aktuellen Report erhalten möchtest:
+      Einfach den Browser-Cache für dein-feed-deine-wahl.de löschen und nochmal mitmachen!
+    </p>
+  </div>
+
   {% if behaviour_user_type %}
   <script nonce="{{ request.csp_nonce }}">
     (function () {

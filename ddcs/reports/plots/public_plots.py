@@ -28,7 +28,12 @@ from ddcs.reports.plots.utils import (
     PLOT_CONFIG,
     PLOT_CORNER_RADIUS,
     PLOT_FONT_FAMILY,
+    STATIC_PLOT_CONFIG,
     TEMPORAL_AREA_LINE,
+    TEMPORAL_HOVER_BG,
+    TEMPORAL_HOVER_BORDER,
+    TEMPORAL_HOVER_FONT_SIZE,
+    TEMPORAL_HOVER_FONT_SIZE_COMPACT,
     TEMPORAL_PARTY_PLOT_LEGEND,
     TEMPORAL_PLOT_HEIGHT,
     create_plot_html,
@@ -183,7 +188,9 @@ def get_party_distribution_all_accounts(
 
     top_party = party_counts[0]
     return {
-        "html": create_plot_html(fig, config=PLOT_CONFIG),
+        # Static: tiles already show labels; interactive hover steals taps from
+        # the stacked temporal slide in the homepage carousel.
+        "html": create_plot_html(fig, config=STATIC_PLOT_CONFIG),
         "data": {
             "party": top_party["party"],
             "value": top_party["count"],
@@ -216,7 +223,9 @@ def build_temporal_party_distribution_figure(
 
     tick_font = 12 if compact else 20
     body_font = 12 if compact else 25
-    hover_font = 12 if compact else 16
+    hover_font = (
+        TEMPORAL_HOVER_FONT_SIZE_COMPACT if compact else TEMPORAL_HOVER_FONT_SIZE
+    )
     legend = {
         **TEMPORAL_PARTY_PLOT_LEGEND,
         "font": {"size": 11 if compact else 12},
@@ -239,7 +248,8 @@ def build_temporal_party_distribution_figure(
                 fillcolor=hex_to_rgba(PARTY_COLORS.get(party, PARTY_COLOR_OTHER)),
                 hovertemplate="%{y} Videos<extra></extra>",
                 hoverlabel={
-                    "bgcolor": "white",
+                    "bgcolor": TEMPORAL_HOVER_BG,
+                    "bordercolor": TEMPORAL_HOVER_BORDER,
                     "font_size": hover_font,
                     "font_family": PLOT_FONT_FAMILY,
                 },
@@ -260,7 +270,13 @@ def build_temporal_party_distribution_figure(
         "plot_bgcolor": "rgba(0,0,0,0)",
         "margin": {"l": 0, "r": 0, "t": 4 if compact else 0, "b": 0},
         "hoverdistance": 100,
-        "hoverlabel": {"namelength": 0},
+        "hoverlabel": {
+            "namelength": 0,
+            "bgcolor": TEMPORAL_HOVER_BG,
+            "bordercolor": TEMPORAL_HOVER_BORDER,
+            "font_size": hover_font,
+            "font_family": PLOT_FONT_FAMILY,
+        },
     }
     if not compact:
         layout["height"] = TEMPORAL_PLOT_HEIGHT

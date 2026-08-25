@@ -702,6 +702,14 @@
   justify-content: center;
   gap: var(--space-3);
 
+  &__divider {
+    flex: 0 0 1px;
+    width: 1px;
+    height: 1.25rem;
+    background: var(--border-default);
+    align-self: center;
+  }
+
   &__btn {
     box-sizing: border-box;
     display: inline-flex;
@@ -754,6 +762,18 @@
     &--telegram:focus {
       color: #0088cc;
       border-color: #0088cc;
+    }
+
+    &--tiktok:hover,
+    &--tiktok:focus {
+      color: #000000;
+      border-color: #000000;
+    }
+
+    &--instagram:hover,
+    &--instagram:focus {
+      color: #e4405f;
+      border-color: #e4405f;
     }
 
     &--copy {
@@ -1020,10 +1040,12 @@
       flex-direction: column;
       min-height: 0;
       pointer-events: none;
+      z-index: 0;
     }
 
     .carousel-item.active {
       pointer-events: auto;
+      z-index: 1;
     }
 
     .public-dashboard__plot-body {
