@@ -37,11 +37,16 @@ from ddcs.reports.behaviour_metrics import (
     _format_metric_value,
     _format_seconds_duration,
     _hourly_watch_means,
+    _load_reference_distributions,
+    _load_reference_participants,
+    _mean_series,
+    _mean_weekday_active_hours,
     _peak_hour_same_fraction,
     _reference_row_weekday_active_hours,
     _weekday_active_hours,
     apply_reference_demographic_filter,
     avg_inferred_watch_sec_by_video,
+    clear_behaviour_reference_cache,
     compute_behaviour_comparisons,
     compute_engagement_metrics,
     compute_watch_history_metrics,
@@ -185,6 +190,7 @@ class FracInstantSkipTests(TestCase):
     def test_single_watch_has_zero_instant_skip_fraction(self):
         metrics = compute_watch_history_metrics(self._watch_history([0]))
         self.assertEqual(metrics["frac_instant_skip"], 0.0)
+        self.assertEqual(metrics["avg_active_hours_per_day"], 0.0)
 
     def test_counts_gaps_shorter_than_one_second(self):
         metrics = compute_watch_history_metrics(self._watch_history([0, 0.5, 10]))
@@ -245,11 +251,23 @@ class WatchSessionTests(TestCase):
         metrics = compute_watch_history_metrics(self._watch_history([0, 30, 60]))
         self.assertEqual(metrics["avg_session_length_sec"], 60.0)
         self.assertEqual(metrics["avg_videos_per_session"], 3.0)
+        # Session-gap hours: 30s + 30s on one watch-day.
+        self.assertAlmostEqual(metrics["avg_active_hours_per_day"], 60.0 / 3600.0)
 
     def test_ninety_second_break_starts_new_session(self):
         metrics = compute_watch_history_metrics(self._watch_history([0, 50, 200]))
         self.assertEqual(metrics["avg_session_length_sec"], 25.0)
         self.assertEqual(metrics["avg_videos_per_session"], 1.5)
+        # Only the 50s in-session gap counts; 150s is a break.
+        self.assertAlmostEqual(metrics["avg_active_hours_per_day"], 50.0 / 3600.0)
+
+    def test_exact_ninety_second_gap_is_break_not_watch_time(self):
+        metrics = compute_watch_history_metrics(self._watch_history([0, 90]))
+        # Session membership still uses > 90, so this stays one session.
+        self.assertEqual(metrics["avg_session_length_sec"], 90.0)
+        self.assertEqual(metrics["avg_videos_per_session"], 2.0)
+        # Watch-time estimator: gap == 90 is a break → 0s on the watch-day.
+        self.assertEqual(metrics["avg_active_hours_per_day"], 0.0)
 
 
 class PoliticalEngagementTests(TestCase):
@@ -755,6 +773,47 @@ class HourlyWatchMeansTests(TestCase):
         # Saturday: 60s → 60/3600 hours.
         self.assertAlmostEqual(means[5], 60.0 / 3600.0)
         self.assertEqual(means[0], 0.0)
+        data = TikTokUserData(watch_history=watches)
+        metrics = compute_watch_history_metrics(data)
+        # Same session-gap map, aggregated over all watch-days (not by weekday).
+        self.assertAlmostEqual(
+            metrics["avg_active_hours_per_day"],
+            ((90.0 + 60.0) / 2) / 3600.0,
+        )
+
+    def test_single_watch_day_stays_zero_in_weekday_and_overall(self):
+        friday = REPORT_FIRST_DATE_TO_INCLUDE.replace(
+            day=3, hour=10, minute=0, second=0
+        )
+        saturday = friday + timedelta(days=1)
+        watches = [
+            {"date": friday, "link": "a", "video_id": 1},
+            {"date": saturday, "link": "b", "video_id": 2},
+            {
+                "date": saturday + timedelta(seconds=30),
+                "link": "c",
+                "video_id": 3,
+            },
+        ]
+        means = _weekday_active_hours(watches)
+        self.assertEqual(means[4], 0.0)
+        self.assertAlmostEqual(means[5], 30.0 / 3600.0)
+        metrics = compute_watch_history_metrics(TikTokUserData(watch_history=watches))
+        self.assertAlmostEqual(
+            metrics["avg_active_hours_per_day"],
+            (0.0 + 30.0) / 2 / 3600.0,
+        )
+
+    def test_weekday_exact_ninety_second_gap_is_not_watch_time(self):
+        friday = REPORT_FIRST_DATE_TO_INCLUDE.replace(
+            day=3, hour=10, minute=0, second=0
+        )
+        watches = [
+            {"date": friday, "link": "a", "video_id": 1},
+            {"date": friday + timedelta(seconds=90), "link": "b", "video_id": 2},
+        ]
+        means = _weekday_active_hours(watches)
+        self.assertEqual(means[4], 0.0)
 
     def test_reference_weekday_hours_convert_watch_sec_csv(self):
         hours = _reference_row_weekday_active_hours(
@@ -775,6 +834,38 @@ class HourlyWatchMeansTests(TestCase):
         self.assertEqual(hours[4], 0.0)
         self.assertEqual(hours[5], 0.25)
         self.assertEqual(hours[6], 1.25)
+
+    def test_mean_series_drops_negative_values(self):
+        means = _mean_series(
+            [
+                [1.0, 2.0],
+                [-100.0, 4.0],
+                [3.0, -1.0],
+            ],
+            2,
+        )
+        self.assertEqual(means[0], 2.0)
+        self.assertEqual(means[1], 3.0)
+
+    @unittest.skipIf(
+        os.getenv("GITHUB_ACTIONS") == "true",
+        "Skipping integration test in CI environment",
+    )
+    def test_reference_csv_drops_negative_hours_from_means(self):
+        clear_behaviour_reference_cache()
+        dist = _load_reference_distributions()
+        daily = dist["avg_active_hours_per_day"]
+        self.assertTrue(daily)
+        self.assertTrue(all(value >= 0 for value in daily))
+
+        participants = _load_reference_participants()
+        for participant in participants:
+            for value in participant["metrics"].values():
+                self.assertGreaterEqual(value, 0)
+
+        weekday_means = _mean_weekday_active_hours(list(participants))
+        self.assertEqual(len(weekday_means), 7)
+        self.assertTrue(all(value >= 0 for value in weekday_means))
 
 
 class ReferenceDemographicFilterTests(TestCase):
