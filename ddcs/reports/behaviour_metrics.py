@@ -148,6 +148,13 @@ def _parse_float(value: str | None) -> float | None:
     return parsed
 
 
+def _non_negative(value: float | None) -> float | None:
+    """Drop negatives (and missing) so they never enter reference/donor means."""
+    if value is None or value < 0:
+        return None
+    return value
+
+
 def _filtered_watch_history(
     data: TikTokUserData,
 ) -> list[WatchHistoryRecord]:
@@ -284,17 +291,17 @@ def _hourly_watch_means(watches: list[WatchHistoryRecord]) -> list[float]:
     return [hour_counts.get(hour, 0) / n_days for hour in range(_HOURS_PER_DAY)]
 
 
-def _weekday_active_hours(watches: list[WatchHistoryRecord]) -> list[float]:
-    """Mean inferred watch hours for each weekday (Mon=0 .. Sun=6).
+def _session_gap_sec_by_watch_day(
+    watches: list[WatchHistoryRecord],
+) -> dict[date, float]:
+    """Seconds of in-session gaps attributed to each watch-day.
 
-    Donated data has no true watch duration. For each consecutive watch pair,
-    the gap is counted as watch time for the earlier event's calendar day when
-    it is within a session (≤ ``_SESSION_BREAK_SEC``). Longer gaps are session
-    breaks and are ignored. Daily totals are averaged per weekday.
+    Consecutive watches are sorted by start time. A gap counts as watch time
+    for the earlier event's calendar day iff ``0 <= gap < _SESSION_BREAK_SEC``.
+    ``gap == 90`` is a session break, not watch time. Watch-days with no
+    qualifying gaps stay at 0 (including a single watch). Last-video duration
+    is not added.
     """
-    if not watches:
-        return [0.0] * _WEEKDAYS_PER_WEEK
-
     dated: list[datetime] = []
     days_with_watches: set[date] = set()
     for record in watches:
@@ -303,18 +310,32 @@ def _weekday_active_hours(watches: list[WatchHistoryRecord]) -> list[float]:
             continue
         dated.append(ts)
         days_with_watches.add(ts.date())
-    if len(dated) < _MIN_WATCH_EVENTS_FOR_GAP:
-        return [0.0] * _WEEKDAYS_PER_WEEK
+    if not days_with_watches:
+        return {}
 
     dated.sort()
     daily_sec: dict[date, float] = dict.fromkeys(days_with_watches, 0.0)
     for prev_ts, next_ts in pairwise(dated):
         gap = (next_ts - prev_ts).total_seconds()
-        if 0 <= gap <= _SESSION_BREAK_SEC:
+        if 0 <= gap < _SESSION_BREAK_SEC:
             daily_sec[prev_ts.date()] += gap
+    return daily_sec
+
+
+def _weekday_active_hours(watches: list[WatchHistoryRecord]) -> list[float]:
+    """Mean inferred watch hours for each weekday (Mon=0 .. Sun=6).
+
+    Uses the same session-gap map as ``avg_active_hours_per_day``: daily
+    totals are averaged per weekday. Days with no qualifying gaps stay 0.
+    """
+    daily_sec = _session_gap_sec_by_watch_day(watches)
+    if not daily_sec:
+        return [0.0] * _WEEKDAYS_PER_WEEK
 
     hours_by_weekday: dict[int, list[float]] = defaultdict(list)
     for day, seconds in daily_sec.items():
+        if _non_negative(seconds) is None:
+            continue
         hours_by_weekday[day.weekday()].append(seconds / _SECONDS_PER_HOUR)
 
     return [
@@ -352,10 +373,15 @@ def _mean_series(
 ) -> list[float]:
     if not series_list:
         return [0.0] * length
-    return [
-        sum(series[index] for series in series_list) / len(series_list)
-        for index in range(length)
-    ]
+    means: list[float] = []
+    for index in range(length):
+        values = [
+            series[index]
+            for series in series_list
+            if _non_negative(series[index]) is not None
+        ]
+        means.append(sum(values) / len(values) if values else 0.0)
+    return means
 
 
 def _mean_hourly_watch_means(
@@ -452,7 +478,7 @@ def _load_reference_participants() -> tuple[ReferenceParticipantRow, ...]:
         for row in reader:
             metrics: dict[str, float] = {}
             for metric in PROFILE_METRICS:
-                val = _parse_float(row.get(metric))
+                val = _non_negative(_parse_float(row.get(metric)))
                 if val is not None:
                     metrics[metric] = val
             if not metrics:
@@ -651,7 +677,7 @@ def _load_reference_distributions() -> dict[str, list[float]]:
             for key, raw in row.items():
                 if key == "participant_id":
                     continue
-                val = _parse_float(raw)
+                val = _non_negative(_parse_float(raw))
                 if val is not None:
                     values_by_metric[key].append(val)
 
@@ -667,7 +693,6 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
         return {}
 
     daily_watches: dict[date, int] = defaultdict(int)
-    daily_hours: dict[date, set[int]] = defaultdict(set)
     hour_counts: dict[int, int] = defaultdict(int)
     timestamps: list[datetime] = []
     weekend_watches = 0
@@ -680,7 +705,6 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
         timestamps.append(ts)
         day = ts.date()
         daily_watches[day] += 1
-        daily_hours[day].add(ts.hour)
         hour_counts[ts.hour] += 1
         if ts.weekday() >= _SATURDAY_WEEKDAY:
             weekend_watches += 1
@@ -690,7 +714,15 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
             night_watches += 1
 
     active_days = len(daily_watches)
-    active_hours_per_day = [len(hours) for hours in daily_hours.values()]
+    daily_sec = _session_gap_sec_by_watch_day(watches)
+    active_hours = [
+        sec / _SECONDS_PER_HOUR
+        for sec in daily_sec.values()
+        if _non_negative(sec) is not None
+    ]
+    avg_active_hours_per_day = (
+        sum(active_hours) / len(active_hours) if active_hours else 0.0
+    )
     peak_hour = max(hour_counts, key=hour_counts.get)
     sessions = _watch_sessions(timestamps)
     session_lengths = [duration for duration, _ in sessions]
@@ -703,8 +735,7 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
         "active_weeks": float(len({day.isocalendar()[:2] for day in daily_watches})),
         "avg_session_length_sec": sum(session_lengths) / len(session_lengths),
         "avg_videos_per_session": sum(videos_per_session) / len(videos_per_session),
-        "avg_active_hours_per_day": sum(active_hours_per_day)
-        / len(active_hours_per_day),
+        "avg_active_hours_per_day": avg_active_hours_per_day,
         "weekend_activity_frac": weekend_watches / (weekend_watches + weekday_watches),
         "night_activity_frac": night_watches / watch_count,
         "frac_instant_skip": _frac_instant_skip(timestamps),
