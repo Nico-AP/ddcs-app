@@ -3,7 +3,7 @@ from pathlib import Path
 from csp.constants import NONE, SELF, UNSAFE_INLINE
 
 from .base import *  # noqa: F403
-from .base import STATIC_ROOT, env
+from .base import REDIS_URL, STATIC_ROOT, env
 
 # Database
 # ------------------------------------------------------------------------------
@@ -105,6 +105,15 @@ EMAIL_SUBJECT_PREFIX = env.str(
     default="",
 )
 
+
+# Cache
+# ------------------------------------------------------------------------------
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+    }
+}
 
 # DDM
 # ------------------------------------------------------------------------------
