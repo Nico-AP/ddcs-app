@@ -2,8 +2,12 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
-from tiktok_metadata_kit.research_api import ResearchAPIClient
+from tiktok_metadata_kit.research_api import (
+    ResearchAPIClient,
+    ResearchAPIRateLimitExceededError,
+)
 
 from ddcs.metadata.models import (
     DataOrigins,
@@ -137,6 +141,10 @@ class ResearchAPIService:
             for video in page.get("data", {}).get("videos", []):
                 try:
                     self._process_api_response(video)
+                except (SoftTimeLimitExceeded, ResearchAPIRateLimitExceededError):
+                    # Control-flow signals, not data errors — re-raise without
+                    # dumping the whole video payload to the log.
+                    raise
                 except Exception:
                     logger.exception(
                         "Exception while processing video data. Data: %s", video

@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import Enum
@@ -7,6 +9,7 @@ from typing import Any
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
+from django.db import connection
 from django.db.models import Exists, OuterRef, QuerySet
 from django.utils import timezone
 from redis import Redis
@@ -173,6 +176,40 @@ def _record_sync_attempts(  # noqa: PLR0913
     )
 
 
+def _recover_db_connection() -> None:
+    """Drop a possibly-poisoned DB connection before recovery-path writes.
+
+    ``SoftTimeLimitExceeded`` can be raised by the signal handler while
+    psycopg is mid-query, leaving the connection unusable (query still in
+    progress). Any ORM write afterwards then raises or blocks until the hard
+    time limit SIGKILLs the worker. We close the socket unconditionally
+    rather than probe it. Django reconnects lazily on the next query.
+    """
+    try:
+        connection.close()
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to close DB connection during recovery.", exc_info=True)
+
+
+@contextmanager
+def _guarded_bookkeeping(description: str) -> Iterator[None]:
+    """Wrap a recovery-path DB write; log and swallow if it still fails.
+
+    A swallowed failure means the tracker may stay ``STARTED`` and/or some
+    ``SyncAttempt`` rows may be missing. That is acceptable:
+    ``reap_stale_query_trackers`` finalizes stranded trackers, and
+    ``backfill_missing_syncs`` re-queries any (item, date) without a
+    ``SUCCESS`` attempt.
+    """
+    try:
+        yield
+    except Exception:
+        logger.exception(
+            "Recovery bookkeeping failed (%s); leaving to reaper/backfill.",
+            description,
+        )
+
+
 def _run_query_task(  # noqa: PLR0913
     sync_target: _SyncTargetConfig,
     target_date: date,
@@ -264,17 +301,24 @@ def _run_query_task(  # noqa: PLR0913
                 batch_idx,
                 total_batches,
             )
-            _record_sync_attempts(
-                sync_target, batch_ids, target_date, SyncAttempt.Status.TIMEOUT, tracker
-            )
-            update_query_tracker(
-                tracker,
-                service.sync_stats,
-                ResearchAPIQueryTracker.Status.SOFT_TIME_LIMIT_EXCEEDED,
-                exception_details=(
-                    {"failed batches": failed_batches} if failed_batches else None
-                ),
-            )
+            _recover_db_connection()
+            with _guarded_bookkeeping("timeout sync attempts"):
+                _record_sync_attempts(
+                    sync_target,
+                    batch_ids,
+                    target_date,
+                    SyncAttempt.Status.TIMEOUT,
+                    tracker,
+                )
+            with _guarded_bookkeeping("timeout tracker finalize"):
+                update_query_tracker(
+                    tracker,
+                    service.sync_stats,
+                    ResearchAPIQueryTracker.Status.SOFT_TIME_LIMIT_EXCEEDED,
+                    exception_details=(
+                        {"failed batches": failed_batches} if failed_batches else None
+                    ),
+                )
             return _RunResult(
                 retry=_Retry.HALVE_BATCH,
                 pages_consumed=service.sync_stats["pages_retrieved"] - pages_before,
@@ -287,21 +331,24 @@ def _run_query_task(  # noqa: PLR0913
                 batch_idx,
                 total_batches,
             )
-            _record_sync_attempts(
-                sync_target,
-                batch_ids,
-                target_date,
-                SyncAttempt.Status.RATE_LIMITED,
-                tracker,
-            )
-            update_query_tracker(
-                tracker,
-                service.sync_stats,
-                ResearchAPIQueryTracker.Status.RATE_LIMIT_EXCEEDED,
-                exception_details=(
-                    {"failed batches": failed_batches} if failed_batches else None
-                ),
-            )
+            _recover_db_connection()
+            with _guarded_bookkeeping("rate-limit sync attempts"):
+                _record_sync_attempts(
+                    sync_target,
+                    batch_ids,
+                    target_date,
+                    SyncAttempt.Status.RATE_LIMITED,
+                    tracker,
+                )
+            with _guarded_bookkeeping("rate-limit tracker finalize"):
+                update_query_tracker(
+                    tracker,
+                    service.sync_stats,
+                    ResearchAPIQueryTracker.Status.RATE_LIMIT_EXCEEDED,
+                    exception_details=(
+                        {"failed batches": failed_batches} if failed_batches else None
+                    ),
+                )
             return _RunResult(
                 retry=_Retry.SAME_BATCH,
                 pages_consumed=service.sync_stats["pages_retrieved"] - pages_before,
@@ -314,14 +361,16 @@ def _run_query_task(  # noqa: PLR0913
             )
             logger.exception(msg)
             failed_batches.append({"batch": batch_idx, "error": msg})
-            _record_sync_attempts(
-                sync_target,
-                batch_ids,
-                target_date,
-                SyncAttempt.Status.API_ERROR,
-                tracker,
-                error_details={"type": type(exc).__name__, "message": str(exc)},
-            )
+            _recover_db_connection()
+            with _guarded_bookkeeping(f"batch {batch_idx} error sync attempts"):
+                _record_sync_attempts(
+                    sync_target,
+                    batch_ids,
+                    target_date,
+                    SyncAttempt.Status.API_ERROR,
+                    tracker,
+                    error_details={"type": type(exc).__name__, "message": str(exc)},
+                )
 
     if failed_batches:
         logger.warning(
@@ -464,6 +513,43 @@ def update_query_tracker(
     query_tracker.save()
 
 
+# Longest legitimate single run is one task's hard ``time_limit`` (120 min for
+# the backfill task). A tracker still ``STARTED`` well past that means its task
+# died without running cleanup — SIGKILL on the hard limit, worker crash, or a
+# poisoned DB connection that defeated even the guarded recovery path.
+_STALE_TRACKER_MAX_AGE = timedelta(hours=3)
+
+
+@shared_task
+def reap_stale_query_trackers() -> int:
+    """Finalize ``ResearchAPIQueryTracker`` rows stranded in ``STARTED``.
+
+    Marks them ``FAILED`` with an ``end_time`` so dashboards and
+    ``latest()`` lookups are not misled by runs that never reported an
+    outcome. Returns the number of rows updated.
+    """
+    cutoff = timezone.now() - _STALE_TRACKER_MAX_AGE
+    updated = ResearchAPIQueryTracker.objects.filter(
+        query_status=ResearchAPIQueryTracker.Status.STARTED,
+        start_time__lt=cutoff,
+    ).update(
+        query_status=ResearchAPIQueryTracker.Status.FAILED,
+        end_time=timezone.now(),
+        query_exception_details={
+            "reaped": True,
+            "reason": (
+                "Left in STARTED past the stale threshold; originating task "
+                "presumed dead (hard time limit / crash)."
+            ),
+        },
+    )
+    if updated:
+        logger.warning(
+            "reap_stale_query_trackers: marked %d stale tracker(s) FAILED.", updated
+        )
+    return updated
+
+
 # ---------------------------------------------------------------------------
 # Backfill task
 # ---------------------------------------------------------------------------
@@ -472,7 +558,7 @@ _BACKFILL_LOCK_KEY = "ddcs:research_api:backfill_lock"
 # Order matters: users get first pick of the quota, then keywords.
 _BACKFILL_ORDER: list[tuple[_SyncTargetConfig, int]] = [
     (_USER_SYNC_TARGET_CONFIG, 200),  # config, batch_size
-    (_KEYWORD_SYNC_TARGET_CONFIG, 50),
+    (_KEYWORD_SYNC_TARGET_CONFIG, 5),
 ]
 
 
