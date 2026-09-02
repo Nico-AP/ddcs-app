@@ -4,7 +4,7 @@ celery[redis]==5.6.3  # https://github.com/celery/celery
 django==5.2.17  # https://www.djangoproject.com/ / https://github.com/django/django (stay with 5.2.x - LTS until 2028)
 django-celery-beat==2.9.0  # https://github.com/celery/django-celery-beat/
 django-csp==4.0  # https://django-csp.readthedocs.io/en/latest/installation.html
-django-ddm==3.0.0b1  # https://github.com/uzh/ddm
+django-ddm==3.0.0b3  # https://github.com/uzh/ddm
 django-fernet-encrypted-fields==0.4.0  # https://github.com/jazzband/django-fernet-encrypted-fields
 django-filter==26.1  # https://github.com/carltongibson/django-filter
 django-htmx==1.27.0  # https://github.com/adamchainz/django-htmx
