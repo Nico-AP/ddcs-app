@@ -421,7 +421,7 @@ def daily_sync_users(
 def daily_sync_keywords(
     self,  # noqa: ANN001
     target_date: str | None = None,
-    batch_size: int = 50,
+    batch_size: int = 5,
     max_retries: int | None = None,
     force_resync: bool = False,  # noqa: FBT002
 ) -> None:
