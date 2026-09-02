@@ -21,6 +21,7 @@ from ddcs.metadata.models import (
     SyncAttempt,
     TikTokUser,
 )
+from ddcs.metadata.research_api.credentials import get_research_api_credentials
 from ddcs.metadata.research_api.service import ResearchAPIService
 
 logger = logging.getLogger(__name__)
@@ -263,6 +264,7 @@ def _run_query_task(  # noqa: PLR0913
             "batch_size": batch_size,
             "n_items": len(items),
             "origin": origin,
+            "credentials_available": len(get_research_api_credentials()),
         },
     )
 
@@ -326,7 +328,7 @@ def _run_query_task(  # noqa: PLR0913
 
         except ResearchAPIRateLimitExceededError:
             logger.warning(
-                "%s hit rate limit after %d/%d batches.",
+                "%s exhausted all Research API credential pairs after %d/%d batches.",
                 sync_target.task_name,
                 batch_idx,
                 total_batches,
@@ -598,15 +600,16 @@ def backfill_missing_syncs(
     doesn't carry over. Natural governors keep this safe:
 
     * The Celery soft time limit caps wall-clock work per run.
-    * Hitting the API rate limit ends this run (see below); the next
-      scheduled run picks up where it left off.
+    * Exhausting the API rate limit on every configured credential pair ends
+      this run (see below); the next scheduled run picks up where it left off.
     * A Redis lock prevents overlapping invocations from stacking work.
 
-    On rate-limit, the whole task returns early instead of iterating to
-    the next ``(target, date)`` and re-experiencing the same limit.
-    The lock is held only for the duration of this run, so
-    the next scheduled run can proceed once the rate-limit window has
-    passed.
+    On rate-limit (all credential pairs exhausted), the whole task returns
+    early instead of iterating to the next ``(target, date)`` and
+    re-experiencing the same limit. The lock is held only for the duration of
+    this run, so the next scheduled run can proceed once the rate-limit window
+    has passed; a fresh service on the next run consults the Redis exhaustion
+    hint and starts directly on the surviving pair.
     """
     redis_client = Redis.from_url(settings.CELERY_BROKER_URL)
     lock = redis_client.lock(_BACKFILL_LOCK_KEY, timeout=self.soft_time_limit + 60)
@@ -636,11 +639,12 @@ def backfill_missing_syncs(
                     origin="backfill",
                 )
                 if result.retry is _Retry.SAME_BATCH:
-                    # Rate-limited. Moving to the next (target, date) would
-                    # just hit the same limit again; bail out and let the
-                    # next scheduled run pick up.
+                    # Every credential pair is rate-limited. Moving to the next
+                    # (target, date) would just hit the same limit again; bail
+                    # out and let the next scheduled run pick up.
                     logger.info(
-                        "backfill_missing_syncs: hit rate limit; stopping this run."
+                        "backfill_missing_syncs: all credential pairs exhausted; "
+                        "stopping this run."
                     )
                     return
     finally:

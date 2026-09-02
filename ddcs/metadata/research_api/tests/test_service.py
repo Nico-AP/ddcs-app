@@ -1,11 +1,14 @@
 from datetime import UTC, date, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from celery.exceptions import SoftTimeLimitExceeded
 from django.db import OperationalError
 from django.test import TestCase, override_settings
 from django.utils import timezone
-from tiktok_metadata_kit.research_api import ResearchAPIRateLimitExceededError
+from tiktok_metadata_kit.research_api import (
+    ResearchAPIAccessTokenRetrievalError,
+    ResearchAPIRateLimitExceededError,
+)
 
 from ddcs.metadata.models import (
     DataOrigins,
@@ -386,6 +389,172 @@ class ResearchAPIServiceGetUserVideosTests(TestCase):
         log_mock.exception.assert_called_once()
 
 
+_TWO_PAIRS = [("k1", "s1"), ("k2", "s2")]
+
+
+@patch("ddcs.metadata.research_api.service.mark_credentials_exhausted")
+@patch(
+    "ddcs.metadata.research_api.service.is_credentials_exhausted", return_value=False
+)
+@patch("ddcs.metadata.research_api.service.get_research_api_credentials")
+@patch("ddcs.metadata.research_api.service.ResearchAPIClient")
+class ResearchAPIServiceCredentialFailoverTests(TestCase):
+    """Fail-over to the secondary credential pair on a rate limit."""
+
+    @staticmethod
+    def _page(video_id: int, username: str) -> dict:
+        return {"data": {"videos": [make_api_payload(id=video_id, username=username)]}}
+
+    def test_switches_to_secondary_on_rate_limit(
+        self, client_cls, creds_mock, exh_mock, mark_mock
+    ):
+        creds_mock.return_value = _TWO_PAIRS
+        inst1, inst2 = MagicMock(), MagicMock()
+        client_cls.side_effect = [inst1, inst2]
+        inst1.query_videos_pages.side_effect = ResearchAPIRateLimitExceededError("x")
+        inst2.query_videos_pages.return_value = iter(
+            [self._page(7100000000000000001, "alice")]
+        )
+
+        service = ResearchAPIService()
+        service.get_user_videos(["alice"], start_date="x", end_date="y")
+
+        self.assertEqual(service.sync_stats["credential_switches"], 1)
+        self.assertEqual(service._credential_index, 1)
+        self.assertEqual(
+            client_cls.call_args_list[1].kwargs,
+            {"api_key": "k2", "api_secret": "s2"},
+        )
+        inst1.close.assert_called_once()
+        mark_mock.assert_called_once_with(0)
+        self.assertEqual(TikTokVideo.objects.count(), 1)
+
+    def test_only_primary_configured_rate_limit_propagates(
+        self, client_cls, creds_mock, exh_mock, mark_mock
+    ):
+        creds_mock.return_value = [("k1", "s1")]
+        client_cls.return_value.query_videos_pages.side_effect = (
+            ResearchAPIRateLimitExceededError("x")
+        )
+
+        service = ResearchAPIService()
+        with self.assertRaises(ResearchAPIRateLimitExceededError):
+            service.get_user_videos(["alice"])
+
+        self.assertEqual(service.sync_stats["credential_switches"], 0)
+        mark_mock.assert_not_called()
+
+    def test_both_pairs_rate_limited_raises(
+        self, client_cls, creds_mock, exh_mock, mark_mock
+    ):
+        creds_mock.return_value = _TWO_PAIRS
+        inst1, inst2 = MagicMock(), MagicMock()
+        client_cls.side_effect = [inst1, inst2]
+        inst1.query_videos_pages.side_effect = ResearchAPIRateLimitExceededError("x")
+        inst2.query_videos_pages.side_effect = ResearchAPIRateLimitExceededError("x")
+
+        service = ResearchAPIService()
+        with self.assertRaises(ResearchAPIRateLimitExceededError):
+            service.get_user_videos(["alice"])
+
+        # One switch happened; only the abandoned primary is flagged (there is
+        # nothing to fall back to past the last pair).
+        self.assertEqual(service.sync_stats["credential_switches"], 1)
+        self.assertEqual(mark_mock.call_args_list, [call(0)])
+
+    def test_starts_on_secondary_when_primary_hint_live(
+        self, client_cls, creds_mock, exh_mock, mark_mock
+    ):
+        creds_mock.return_value = _TWO_PAIRS
+        exh_mock.side_effect = lambda idx: idx == 0
+
+        service = ResearchAPIService()
+
+        self.assertEqual(service._credential_index, 1)
+        client_cls.assert_called_once_with(api_key="k2", api_secret="s2")
+
+    def test_secondary_token_fetch_fails_during_advance(
+        self, client_cls, creds_mock, exh_mock, mark_mock
+    ):
+        creds_mock.return_value = _TWO_PAIRS
+        inst1 = MagicMock()
+        inst1.query_videos_pages.side_effect = ResearchAPIRateLimitExceededError("x")
+        client_cls.side_effect = [
+            inst1,
+            ResearchAPIAccessTokenRetrievalError("nope"),
+        ]
+
+        service = ResearchAPIService()
+        with self.assertRaises(ResearchAPIRateLimitExceededError):
+            service.get_user_videos(["alice"])
+
+        self.assertEqual(service.sync_stats["credential_switches"], 0)
+        mark_mock.assert_called_once_with(0)
+
+    def test_restart_is_idempotent_for_statistics(
+        self, client_cls, creds_mock, exh_mock, mark_mock
+    ):
+        creds_mock.return_value = _TWO_PAIRS
+        inst1, inst2 = MagicMock(), MagicMock()
+        client_cls.side_effect = [inst1, inst2]
+        rate_limit = ResearchAPIRateLimitExceededError("x")
+
+        def primary_pages(*_args, **_kwargs):
+            yield self._page(7100000000000000001, "alice")
+            raise rate_limit
+
+        inst1.query_videos_pages.side_effect = primary_pages
+        inst2.query_videos_pages.side_effect = lambda *a, **k: iter(
+            [
+                self._page(7100000000000000001, "alice"),
+                self._page(7100000000000000002, "bob"),
+            ]
+        )
+
+        service = ResearchAPIService()
+        service.get_user_videos(["alice"])
+
+        self.assertEqual(TikTokVideo.objects.count(), 2)
+        self.assertEqual(
+            APIVideoStatistics.objects.filter(
+                video__id_tiktok=7100000000000000001
+            ).count(),
+            1,
+        )
+        self.assertEqual(service.sync_stats["videos_retrieved"], 2)
+
+    def test_soft_time_limit_does_not_trigger_failover(
+        self, client_cls, creds_mock, exh_mock, mark_mock
+    ):
+        creds_mock.return_value = _TWO_PAIRS
+        inst1 = MagicMock()
+        client_cls.side_effect = [inst1, MagicMock()]
+        inst1.query_videos_pages.return_value = iter(
+            [self._page(7100000000000000001, "alice")]
+        )
+
+        service = ResearchAPIService()
+        with (
+            patch.object(
+                service, "_process_api_response", side_effect=SoftTimeLimitExceeded()
+            ),
+            self.assertRaises(SoftTimeLimitExceeded),
+        ):
+            service.get_user_videos(["alice"])
+
+        self.assertEqual(service.sync_stats["credential_switches"], 0)
+        mark_mock.assert_not_called()
+
+    def test_feature_dormant_when_single_pair(
+        self, client_cls, creds_mock, exh_mock, mark_mock
+    ):
+        creds_mock.return_value = [("k1", "s1")]
+
+        ResearchAPIService()
+
+        exh_mock.assert_not_called()
+
+
 TARGET = date(2025, 6, 10)
 
 
@@ -415,6 +584,7 @@ def _configure_service_mock(cls_mock, pages_per_call: int = 0):
         "music_created": 0,
         "videos_retrieved": 0,
         "pages_retrieved": 0,
+        "credential_switches": 0,
     }
     cls_mock.return_value.sync_stats = stats
 
@@ -727,6 +897,29 @@ class RunQueryTaskTest(TestCase):
         result = _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=10)
 
         self.assertIs(result.retry, _Retry.HALVE_BATCH)
+
+    @patch(
+        "ddcs.metadata.research_api.tasks.get_research_api_credentials",
+        return_value=[("k", "s"), ("k2", "s2")],
+    )
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_tracker_records_credentials_available(self, cls_mock, creds_mock):
+        _configure_service_mock(cls_mock)
+
+        _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=10)
+
+        tracker = ResearchAPIQueryTracker.objects.latest("start_time")
+        self.assertEqual(tracker.query_parameters["credentials_available"], 2)
+
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    def test_credential_switches_flows_to_tracker_result(self, cls_mock):
+        _configure_service_mock(cls_mock)
+        cls_mock.return_value.sync_stats["credential_switches"] = 1
+
+        _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=10)
+
+        tracker = ResearchAPIQueryTracker.objects.latest("start_time")
+        self.assertEqual(tracker.query_result["credential_switches"], 1)
 
 
 class ReapStaleQueryTrackersTest(TestCase):

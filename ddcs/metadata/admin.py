@@ -250,12 +250,17 @@ class ResearchAPIQueryTrackerAdmin(admin.ModelAdmin):
         "query_parameters",
         "query_result",
         "query_status",
+        "credential_switches",
     )
     list_filter = ("query_function", "query_status", TrackerOriginFilter)
 
     @admin.display(description="Origin")
     def origin(self, obj: ResearchAPIQueryTracker) -> str:
         return (obj.query_parameters or {}).get("origin", "—")
+
+    @admin.display(description="Cred. switches")
+    def credential_switches(self, obj: ResearchAPIQueryTracker) -> int | str:
+        return (obj.query_result or {}).get("credential_switches", "—")
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False

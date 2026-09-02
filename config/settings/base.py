@@ -365,6 +365,14 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {"visibility_timeout": 7200}
 TIKTOK_RESEARCH_API_KEY = env.str("TIKTOK_RESEARCH_API_KEY", "")
 TIKTOK_RESEARCH_API_SECRET = env.str("TIKTOK_RESEARCH_API_SECRET", "")
 
+# Optional fallback pair, used only when the primary hits its rate limit.
+# Only helps if it belongs to a SEPARATE TikTok app with an independent quota.
+# Leave both blank to disable failover.
+TIKTOK_RESEARCH_API_KEY_SECONDARY = env.str("TIKTOK_RESEARCH_API_KEY_SECONDARY", "")
+TIKTOK_RESEARCH_API_SECRET_SECONDARY = env.str(
+    "TIKTOK_RESEARCH_API_SECRET_SECONDARY", ""
+)
+
 # Earliest date the backfill task will look for coverage gaps.
 API_MONITORING_START_DATE: date = env.date(
     "API_MONITORING_START_DATE", default=date(2026, 5, 1)

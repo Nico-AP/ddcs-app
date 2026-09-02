@@ -5,6 +5,7 @@ from typing import Any
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from tiktok_metadata_kit.research_api import (
+    ResearchAPIAccessTokenRetrievalError,
     ResearchAPIClient,
     ResearchAPIRateLimitExceededError,
 )
@@ -16,6 +17,11 @@ from ddcs.metadata.models import (
     TikTokMusic,
     TikTokUser,
     TikTokVideo,
+)
+from ddcs.metadata.research_api.credentials import (
+    get_research_api_credentials,
+    is_credentials_exhausted,
+    mark_credentials_exhausted,
 )
 from ddcs.metadata.research_api.models import (
     APIHashtagInfos,
@@ -48,17 +54,14 @@ class ResearchAPIService:
     """
 
     def __init__(self) -> None:
-        self.client = ResearchAPIClient(
-            api_key=settings.TIKTOK_RESEARCH_API_KEY,
-            api_secret=settings.TIKTOK_RESEARCH_API_SECRET,
-        )
-        # Cap the client's retry chain. Its default (5 retries with
-        # exponential backoff up to 30s per sleep) can burn ~30s of
-        # wall-clock time per persistently-failing batch, which was
-        # observed to inflate daily-sync runtime by ~20 min. Our tasks
-        # already cover recovery via the halving-batch retry inside
-        # `_run_query_task` and the periodic `backfill_missing_syncs`.
-        self.client.MAX_RETRIES = settings.TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES
+        # Ordered credential pairs (primary at index 0, optional secondary at 1).
+        # `or [...]` keeps the historical behaviour when nothing is configured:
+        # one client built from the (possibly empty) primary strings.
+        self._credentials = get_research_api_credentials() or [
+            (settings.TIKTOK_RESEARCH_API_KEY, settings.TIKTOK_RESEARCH_API_SECRET)
+        ]
+        self._credential_index = self._initial_credential_index()
+        self.client = self._build_client(*self._credentials[self._credential_index])
 
         # Track how many objects are created
         self.sync_stats = {
@@ -68,9 +71,83 @@ class ResearchAPIService:
             "music_created": 0,
             "videos_retrieved": 0,
             "pages_retrieved": 0,
+            "credential_switches": 0,
         }
 
         self._monitored_keywords: list[Keyword] | None = None
+
+    def _build_client(self, api_key: str, api_secret: str) -> ResearchAPIClient:
+        client = ResearchAPIClient(api_key=api_key, api_secret=api_secret)
+        # Cap the client's retry chain. Its default (5 retries with
+        # exponential backoff up to 30s per sleep) can burn ~30s of
+        # wall-clock time per persistently-failing batch, which was
+        # observed to inflate daily-sync runtime by ~20 min. Our tasks
+        # already cover recovery via the halving-batch retry inside
+        # `_run_query_task` and the periodic `backfill_missing_syncs`.
+        client.MAX_RETRIES = settings.TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES
+        return client
+
+    def _initial_credential_index(self) -> int:
+        """Pick the starting pair, skipping any the Redis hint flags exhausted.
+
+        The last pair is always a candidate (nothing to fall back to past it),
+        so only the earlier pairs consult the hint — a single-pair setup
+        iterates an empty range and never touches Redis.
+        """
+        for idx in range(len(self._credentials) - 1):
+            if is_credentials_exhausted(idx):
+                logger.info(
+                    "Research API credential index %d flagged exhausted; skipping it.",
+                    idx,
+                )
+                continue
+            return idx
+        return len(self._credentials) - 1
+
+    def _advance_credentials(self) -> bool:
+        """Fail over to the next credential pair. Returns False if none is left.
+
+        The abandoned pair is flagged exhausted in Redis (best-effort) so later
+        service instances start on the surviving pair.
+        """
+        abandoned = self._credential_index
+        if abandoned + 1 >= len(self._credentials):
+            logger.warning(
+                "Research API rate limit on credential index %d; "
+                "no fallback pair left.",
+                abandoned,
+            )
+            return False
+
+        next_index = abandoned + 1
+        try:
+            new_client = self._build_client(*self._credentials[next_index])
+        except ResearchAPIAccessTokenRetrievalError:
+            logger.exception(
+                "Research API fallback credential index %d failed token retrieval; "
+                "treating the current pair as exhausted.",
+                next_index,
+            )
+            mark_credentials_exhausted(abandoned)
+            return False
+
+        try:
+            self.client.close()
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "Failed to close the previous Research API client.", exc_info=True
+            )
+
+        mark_credentials_exhausted(abandoned)
+        self.client = new_client
+        self._credential_index = next_index
+        self.sync_stats["credential_switches"] += 1
+        logger.warning(
+            "Research API rate limit on credential index %d; switched to index %d.",
+            abandoned,
+            next_index,
+        )
+        return True
 
     @property
     def monitored_keywords(self) -> list[Keyword] | None:
@@ -135,25 +212,47 @@ class ResearchAPIService:
     def _query_videos_pages(self, query: dict[str, Any], **kwargs) -> tuple[int, int]:
         videos_retrieved = 0
         pages_retrieved = 0
-        for page in self.client.query_videos_pages(query, **kwargs):
-            pages_retrieved += 1
-            self.sync_stats["pages_retrieved"] += 1
-            for video in page.get("data", {}).get("videos", []):
-                try:
-                    self._process_api_response(video)
-                except (SoftTimeLimitExceeded, ResearchAPIRateLimitExceededError):
-                    # Control-flow signals, not data errors — re-raise without
-                    # dumping the whole video payload to the log.
-                    raise
-                except Exception:
-                    logger.exception(
-                        "Exception while processing video data. Data: %s", video
-                    )
-                    raise
-                videos_retrieved += 1
-                self.sync_stats["videos_retrieved"] += 1
+        # IDs already persisted this call — lets a credential fail-over restart
+        # the query from the top without re-processing (and double-appending
+        # `APIVideoStatistics` for) the pages the abandoned key already returned.
+        seen: set = set()
 
-        return videos_retrieved, pages_retrieved
+        while True:
+            try:
+                for page in self.client.query_videos_pages(query, **kwargs):
+                    pages_retrieved += 1
+                    self.sync_stats["pages_retrieved"] += 1
+                    for video in page.get("data", {}).get("videos", []):
+                        if video.get("id") in seen:
+                            continue
+                        try:
+                            self._process_api_response(video)
+                        except (
+                            SoftTimeLimitExceeded,
+                            ResearchAPIRateLimitExceededError,
+                        ):
+                            # Control-flow signals, not data errors — re-raise
+                            # without dumping the whole video payload to the log.
+                            raise
+                        except Exception:
+                            logger.exception(
+                                "Exception while processing video data. Data: %s",
+                                video,
+                            )
+                            raise
+                        seen.add(video.get("id"))
+                        videos_retrieved += 1
+                        self.sync_stats["videos_retrieved"] += 1
+            except ResearchAPIRateLimitExceededError:
+                if not self._advance_credentials():
+                    raise
+                logger.warning(
+                    "Restarting query on Research API credential index %d "
+                    "after rate limit.",
+                    self._credential_index,
+                )
+                continue
+            return videos_retrieved, pages_retrieved
 
     def _process_api_response(self, data: dict) -> None:
         data = self._sanitize(data)
