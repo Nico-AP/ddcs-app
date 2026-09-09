@@ -70,6 +70,7 @@ CONTENT_SECURITY_POLICY = {
             "*.radioeins.de",
             "*.heise.de",
             "*.deutschlandfunk.de",
+            "*.zdfheute.de",
         ],
         "media-src": [SELF, "https://www.tiktok.com"],
         "font-src": [SELF],
