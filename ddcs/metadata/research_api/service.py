@@ -196,7 +196,12 @@ class ResearchAPIService:
                     "operation": "IN",
                     "field_name": "keyword",
                     "field_values": keywords,
-                }
+                },
+                {
+                    "operation": "IN",
+                    "field_name": "region_code",
+                    "field_values": ["DE", "de", "CH", "ch", "AT", "at"],
+                },
             ]
         }
 
