@@ -43,4 +43,6 @@
 {% block extra_js %}
   <script src="{% static 'datadonation/update-ddm-ui.js' %}"></script>
   <script src="{% static 'datadonation/tiktok-download.js' %}"></script>
+  <script id="switch-path-url" type="application/json">{"url": "{% url 'datadonation:switch_path' %}"}</script>
+  <script src="{% static 'datadonation/show-zip-extraction-failed-hint.js' %}"></script>
 {% endblock extra_js %}
