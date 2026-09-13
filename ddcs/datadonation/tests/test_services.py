@@ -193,6 +193,18 @@ class ExtractIdFromLinkTests(TestCase):
             12345,
         )
 
+    def test_ignores_query_string_and_fragment(self):
+        self.assertEqual(
+            _extract_id_from_link(
+                "https://www.tiktok.com/@user/video/12345?_r=1&u_code=abc"
+            ),
+            12345,
+        )
+        self.assertEqual(
+            _extract_id_from_link("https://www.tiktok.com/@user/photo/99#foo"),
+            99,
+        )
+
     def test_returns_none_when_trailing_segment_not_int(self):
         self.assertIsNone(
             _extract_id_from_link("https://www.tiktok.com/@user/video/abc")

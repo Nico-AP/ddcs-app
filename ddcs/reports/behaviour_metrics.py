@@ -166,15 +166,26 @@ def _filtered_watch_history(
     ]
 
 
-def _filtered_engagement_records(
+def _filtered_dated_records(
     records: list[LikedVideoRecord] | None,
 ) -> list[LikedVideoRecord]:
+    """Engagement/like events in the report window (date only; video_id optional)."""
     return [
         record
         for record in records or []
         if isinstance(record.get("date"), datetime)
         and record["date"] >= REPORT_FIRST_DATE_TO_INCLUDE
-        and record.get("video_id") is not None
+    ]
+
+
+def _filtered_engagement_records(
+    records: list[LikedVideoRecord] | None,
+) -> list[LikedVideoRecord]:
+    """Dated engagement events that also have a parseable video id."""
+    return [
+        record
+        for record in _filtered_dated_records(records)
+        if record.get("video_id") is not None
     ]
 
 
@@ -727,7 +738,9 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
     sessions = _watch_sessions(timestamps)
     session_lengths = [duration for duration, _ in sessions]
     videos_per_session = [count for _, count in sessions]
-    like_count = len(_filtered_engagement_records(data.liked_videos))
+    # Count likes by date only — video_id is optional (links may lack a
+    # parseable id; political engagement still requires video_id).
+    like_count = len(_filtered_dated_records(data.liked_videos))
 
     return {
         "total_watches": float(watch_count),

@@ -362,6 +362,33 @@ class RateLikeTests(TestCase):
         metrics = compute_watch_history_metrics(data)
         self.assertEqual(metrics["rate_like"], 0.5)
 
+    def test_counts_likes_without_video_id(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        data = TikTokUserData(
+            watch_history=[
+                {"date": base, "video_id": 1},
+                {"date": base + timedelta(seconds=1), "video_id": 2},
+            ],
+            liked_videos=[
+                {"date": base, "link": "https://www.tiktok.com/@u/video/9?_r=1"},
+                {"date": base, "link": "unparseable"},
+            ],
+        )
+        metrics = compute_watch_history_metrics(data)
+        self.assertEqual(metrics["rate_like"], 1.0)
+
+    def test_ignores_likes_before_report_cutoff(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        data = TikTokUserData(
+            watch_history=[{"date": base, "video_id": 1}],
+            liked_videos=[
+                {"date": base - timedelta(days=1), "video_id": 9},
+                {"date": base, "video_id": 10},
+            ],
+        )
+        metrics = compute_watch_history_metrics(data)
+        self.assertEqual(metrics["rate_like"], 1.0)
+
 
 class FormatHoursDurationTests(TestCase):
     def test_whole_hours(self):

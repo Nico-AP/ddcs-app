@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from ddm.datadonation.models import DataDonation
 from ddm.encryption.models import Decryption
@@ -176,8 +177,14 @@ def _clean_donated_data(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_id_from_link(link: str) -> int | None:
+    """Parse the trailing numeric id from a TikTok video/photo URL.
+
+    Query strings and fragments are ignored so ``.../video/123?_r=1`` still
+    yields ``123``.
+    """
     try:
-        return int(link.strip("/").split("/")[-1])
+        path = urlparse(link).path or link
+        return int(path.strip("/").split("/")[-1])
     except ValueError:
         return None
 
