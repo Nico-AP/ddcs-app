@@ -738,9 +738,9 @@ def compute_watch_history_metrics(data: TikTokUserData) -> dict[str, float]:
     sessions = _watch_sessions(timestamps)
     session_lengths = [duration for duration, _ in sessions]
     videos_per_session = [count for _, count in sessions]
-    # Count likes by date only — video_id is optional (links may lack a
-    # parseable id; political engagement still requires video_id).
-    like_count = len(_filtered_dated_records(data.liked_videos))
+    # All donated likes — no date/video_id filter. Denominator watches stay
+    # clipped to the report window (from 2026-07-01).
+    like_count = len(data.liked_videos or [])
 
     return {
         "total_watches": float(watch_count),
