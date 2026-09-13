@@ -12,10 +12,12 @@ from ddcs.datadonation.config import (
     WATCH_HISTORY_BP_NAME,
 )
 from ddcs.datadonation.services import (
+    _BLUEPRINT_NAMES_INCL_BACKUPS,
     _add_video_id_to_record,
     _clean_donated_data,
     _clean_record,
     _clean_records,
+    _donation_records_for_blueprint,
     _extract_id_from_link,
     _get_decryptor,
     _map_to_user_data,
@@ -291,6 +293,63 @@ class MapToUserDataTests(TestCase):
         self.assertIsNone(result.watch_history)
         self.assertIsNone(result.followed_accounts)
         self.assertIsNone(result.liked_videos)
+
+
+class DonationRecordsForBlueprintTests(TestCase):
+    def test_includes_old_api_in_queried_blueprint_names(self):
+        self.assertIn(f"{LIKED_VIDEOS_BP_NAME}_old_api", _BLUEPRINT_NAMES_INCL_BACKUPS)
+        self.assertIn(f"{FOLLOWED_BP_NAME}_old_api", _BLUEPRINT_NAMES_INCL_BACKUPS)
+
+    def test_prefers_base_over_old_api(self):
+        donations = {
+            LIKED_VIDEOS_BP_NAME: [{"id": "base"}],
+            f"{LIKED_VIDEOS_BP_NAME}_old_api": [{"id": "old_api"}],
+        }
+        self.assertEqual(
+            _donation_records_for_blueprint(donations, LIKED_VIDEOS_BP_NAME),
+            [{"id": "base"}],
+        )
+
+    def test_falls_back_to_old_api_when_base_and_txt_missing(self):
+        donations = {
+            f"{LIKED_VIDEOS_BP_NAME}_old_api": [{"id": "old_api"}],
+        }
+        self.assertEqual(
+            _donation_records_for_blueprint(donations, LIKED_VIDEOS_BP_NAME),
+            [{"id": "old_api"}],
+        )
+
+    def test_prefers_txt_over_old_api(self):
+        donations = {
+            f"{LIKED_VIDEOS_BP_NAME}_txt": [{"id": "txt"}],
+            f"{LIKED_VIDEOS_BP_NAME}_old_api": [{"id": "old_api"}],
+        }
+        self.assertEqual(
+            _donation_records_for_blueprint(donations, LIKED_VIDEOS_BP_NAME),
+            [{"id": "txt"}],
+        )
+
+    def test_prefers_old_over_old_api(self):
+        donations = {
+            f"{LIKED_VIDEOS_BP_NAME}_old": [{"id": "old"}],
+            f"{LIKED_VIDEOS_BP_NAME}_old_api": [{"id": "old_api"}],
+        }
+        self.assertEqual(
+            _donation_records_for_blueprint(donations, LIKED_VIDEOS_BP_NAME),
+            [{"id": "old"}],
+        )
+
+    def test_returns_none_when_no_variant_present(self):
+        self.assertIsNone(
+            _donation_records_for_blueprint({}, LIKED_VIDEOS_BP_NAME)
+        )
+
+    def test_empty_list_counts_as_present(self):
+        donations = {f"{LIKED_VIDEOS_BP_NAME}_old_api": []}
+        self.assertEqual(
+            _donation_records_for_blueprint(donations, LIKED_VIDEOS_BP_NAME),
+            [],
+        )
 
 
 class GetDecryptorTests(TestCase):

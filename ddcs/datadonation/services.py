@@ -40,9 +40,24 @@ _BLUEPRINT_NAMES = [
     COMMENTS_BP_NAME,
 ]
 
+# Preferred order when several variants were extracted for the same blueprint.
+_BLUEPRINT_BACKUP_SUFFIXES = ("", "_txt", "_old", "_old_api")
+
 _BLUEPRINT_NAMES_INCL_BACKUPS = [
-    n for bp in _BLUEPRINT_NAMES for n in (bp, bp + "_txt", bp + "_old")
+    bp + suffix for bp in _BLUEPRINT_NAMES for suffix in _BLUEPRINT_BACKUP_SUFFIXES
 ]
+
+
+def _donation_records_for_blueprint(
+    donations_by_blueprint: dict[str, Any],
+    bp_name: str,
+) -> Any:
+    """Return records for ``bp_name``, falling back through backup variants."""
+    for suffix in _BLUEPRINT_BACKUP_SUFFIXES:
+        records = donations_by_blueprint.get(bp_name + suffix)
+        if records is not None:
+            return records
+    return None
 
 
 def _get_donation_data(participant: Participant) -> dict:
@@ -50,9 +65,10 @@ def _get_donation_data(participant: Participant) -> dict:
 
     Returns a dict keyed by blueprint name (watch history, followed accounts,
     liked videos) with the decrypted records as values. It checks whether
-    the base blueprint or the backup blueprint has been extracted and includes
+    the base blueprint or a backup blueprint has been extracted and includes
     it under the base name. Blueprints without a successful donation map to ``None``.
-    If both the base and "_txt" backup variant succeeded, the base variant is used.
+    Preference order when several variants succeeded: base, ``_txt``, ``_old``,
+    then ``_old_api`` (TikTok legacy API export path).
     """
     donations = DataDonation.objects.filter(
         participant=participant,
@@ -71,12 +87,7 @@ def _get_donation_data(participant: Participant) -> dict:
         for donation in donations
     }
     return {
-        bp_name: donations_by_blueprint.get(
-            bp_name,
-            donations_by_blueprint.get(
-                bp_name + "_txt", donations_by_blueprint.get(bp_name + "_old")
-            ),
-        )
+        bp_name: _donation_records_for_blueprint(donations_by_blueprint, bp_name)
         for bp_name in _BLUEPRINT_NAMES
     }
 
