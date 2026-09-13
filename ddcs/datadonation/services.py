@@ -49,9 +49,9 @@ _BLUEPRINT_NAMES_INCL_BACKUPS = [
 
 
 def _donation_records_for_blueprint(
-    donations_by_blueprint: dict[str, Any],
+    donations_by_blueprint: dict[str, list[dict[str, Any]] | None],
     bp_name: str,
-) -> Any:
+) -> list[dict[str, Any]] | None:
     """Return records for ``bp_name``, falling back through backup variants."""
     for suffix in _BLUEPRINT_BACKUP_SUFFIXES:
         records = donations_by_blueprint.get(bp_name + suffix)

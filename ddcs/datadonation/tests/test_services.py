@@ -340,9 +340,7 @@ class DonationRecordsForBlueprintTests(TestCase):
         )
 
     def test_returns_none_when_no_variant_present(self):
-        self.assertIsNone(
-            _donation_records_for_blueprint({}, LIKED_VIDEOS_BP_NAME)
-        )
+        self.assertIsNone(_donation_records_for_blueprint({}, LIKED_VIDEOS_BP_NAME))
 
     def test_empty_list_counts_as_present(self):
         donations = {f"{LIKED_VIDEOS_BP_NAME}_old_api": []}
