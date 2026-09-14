@@ -65,8 +65,8 @@ class ZuseAPIClient:
             headers={"Authorization": f"Bearer {self.token}"},
         )
 
-    def _get_video(self, video_id: int) -> httpx.Response:
-        """GET a single video's data. Raises httpx exceptions on failure."""
+    def _get_video(self, video_id: int) -> dict:
+        """GET a single video's data. Raises httpx/JSON exceptions on failure."""
         url = f"{self.base_url}/videos/{video_id}"
         response = self.client.get(url)
         response.raise_for_status()
@@ -94,6 +94,18 @@ class ZuseAPIClient:
                     exc,
                 )
                 continue
+            except ValueError as exc:
+                # response.json() failed to decode (e.g. empty/non-JSON body).
+                logger.warning("Video %s returned invalid JSON: %s", video_id, exc)
+                continue
+
+            if not isinstance(result, dict):
+                logger.warning(
+                    "Video %s returned unexpected payload type %s; skipping.",
+                    video_id,
+                    type(result).__name__,
+                )
+                continue
 
             results.append(result)
 
@@ -105,11 +117,24 @@ class ZuseAPIClient:
             self._process_results(results)
 
     def _process_results(self, results: list[dict]) -> None:
+        id_tiktok_values = []
+        for result in results:
+            try:
+                id_tiktok_values.append(int(result["id_tiktok"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+
+        video_pk_by_id_tiktok = dict(
+            TikTokVideo.objects.filter(id_tiktok__in=id_tiktok_values).values_list(
+                "id_tiktok", "id"
+            )
+        )
 
         objs_to_create = []
 
         for result in results:
             try:
+                video_pk = video_pk_by_id_tiktok[int(result["id_tiktok"])]
                 predictions = result.get("predictions", {})
                 sentiments = [
                     e["sentiment"]
@@ -119,23 +144,29 @@ class ZuseAPIClient:
 
                 objs_to_create.append(
                     TikTokVideoClassification(
-                        video_id=int(result["video_id"]),
+                        video_id=video_pk,
                         is_political=predictions["is_political"],
+                        political_other=predictions["political_other"],
+                        political_content=predictions["political_content"],
                         stage1_rationale=predictions["stage1_rationale"],
                         entities=predictions["entities"],
                         keyword_matches=predictions["keyword_matches"],
-                        scraped_data=result["extended"],
-                        video_path=result["video_path"],
-                        image_paths=result["image_paths"],
-                        post_scrape_prediction=result.get("predictions_div"),
+                        language=predictions["language"],
+                        plausible_party=predictions["plausible_party"],
+                        classification_ts=predictions["created_at"],
+                        # Extracted information
                         is_sentiment_positive="positive" in sentiments,
                         is_sentiment_negative="negative" in sentiments,
                         is_sentiment_neutral="neutral" in sentiments,
+                        # Scraped information
+                        prediction_scraped=result.get("predictions_div"),
+                        media=result.get("media"),
+                        scraped_data=result.get("extended"),
                     )
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 logger.warning(
-                    "Skipping malformed result %r: %s", result.get("video_id"), exc
+                    "Skipping malformed result %r: %s", result.get("id_tiktok"), exc
                 )
                 continue
 
@@ -149,15 +180,19 @@ class ZuseAPIClient:
                 unique_fields=["video"],
                 update_fields=[
                     "is_political",
+                    "political_other",
+                    "political_content",
                     "stage1_rationale",
                     "entities",
                     "keyword_matches",
-                    "scraped_data",
-                    "video_path",
-                    "image_paths",
-                    "post_scrape_prediction",
+                    "language",
+                    "plausible_party",
+                    "classification_ts",
                     "is_sentiment_positive",
                     "is_sentiment_negative",
                     "is_sentiment_neutral",
+                    "prediction_scraped",
+                    "media",
+                    "scraped_data",
                 ],
             )
