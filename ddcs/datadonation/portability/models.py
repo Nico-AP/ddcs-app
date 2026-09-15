@@ -18,7 +18,7 @@ class TikTokConnection(models.Model):
     token_type = models.CharField(max_length=255)  # usually "Bearer"
     scope = models.CharField(max_length=255)  # Comma separated list of scopes
 
-    project_slug = models.SlugField(max_length=8, default="")
+    project_slug = models.SlugField(default="")
     # used to relate a connection to a DDM project (for multi-project PAPI support)
 
     def __str__(self) -> str:
