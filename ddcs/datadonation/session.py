@@ -5,20 +5,28 @@ from django.conf import settings
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse
+from django.utils import timezone
 
 from ddcs.datadonation.portability.models import TikTokConnection
 
-
-def get_main_donation_project() -> DonationProject:
-    return DonationProject.objects.get(slug=settings.TIKTOK_DDM_PROJECT_SLUG)
+SESSION_KEY_DDM_SLUG = "ddm_project_slug"  # used to store a slug, datetime-str tuple
 
 
-def get_participant_from_session(request: HttpRequest) -> Participant | None:
-    """Gets participant from session.
+def get_donation_project(project_slug: str) -> DonationProject:
+    """Gets donation project based on passed slug - if slug does not exist,
+    falls back to the main project."""
+    try:
+        return DonationProject.objects.get(slug=project_slug)
+    except DonationProject.DoesNotExist:
+        return DonationProject.objects.get(slug=settings.TIKTOK_DDM_PROJECT_SLUG)
 
-    If participant does not exist, returns None.
-    """
-    project = get_main_donation_project()
+
+def get_participant_from_session(
+    request: HttpRequest, project_slug: str
+) -> Participant | None:
+    """Gets participant related to a given project from session.
+    If participant does not exist, returns None."""
+    project = get_donation_project(project_slug)
     session_id = get_participation_session_id(project)
     try:
         participant_id = request.session[session_id]["participant_id"]
@@ -50,6 +58,25 @@ def get_tiktok_connection_from_session(
     return tiktok_connection
 
 
+def store_project_slug_in_session(request: HttpRequest, slug: str) -> None:
+    """Stashes the project slug in the session so it survives the
+    redirect to TikTok's OAuth flow and back - necessary because the callback URL
+    is fixed/not project specific.
+    Retrieve it in the callback via `get_project_slug_from_session`.
+    """
+    request.session[SESSION_KEY_DDM_SLUG] = (slug, timezone.now().isoformat())
+    request.session.modified = True
+
+
+def get_project_slug_from_session(request: HttpRequest) -> str | None:
+    """Retrieves the project slug stored in the session (set by
+    `store_project_slug_in_session`). Falls back to the default DDM
+    project slug if none is stored.
+    """
+    slug = request.session.get(SESSION_KEY_DDM_SLUG)
+    return slug[0] if slug else settings.TIKTOK_DDM_PROJECT_SLUG
+
+
 class ParticipantInSessionMixin:
     """Ensures a participant is present in the session before dispatching.
 
@@ -62,16 +89,26 @@ class ParticipantInSessionMixin:
     participant: Participant
 
     def dispatch(self, request: HttpRequest, *args, **kwargs) -> HttpResponse:
-        participant = get_participant_from_session(request)
+        slug = self.get_ddm_project_slug(self.request)
+        participant = get_participant_from_session(request, slug)
         if not participant:
             return redirect(self.get_no_participant_redirect_url())
         self.participant = participant
         return super().dispatch(request, *args, **kwargs)
 
+    def get_ddm_project_slug(self, request: HttpRequest) -> str:
+        return (
+            getattr(self, "kwargs", {}).get("slug")  # Slug present in url
+            or get_project_slug_from_session(request)  # Slug present in session
+            or settings.TIKTOK_DDM_PROJECT_SLUG  # Fallback: main project slug
+        )
+
     def get_no_participant_redirect_url(self) -> str:
+        slug = self.get_ddm_project_slug(self.request)
+
         return reverse(
             "datadonation:portability_briefing",
-            kwargs={"slug": settings.TIKTOK_DDM_PROJECT_SLUG},
+            kwargs={"slug": slug},
         )
 
 
@@ -90,7 +127,12 @@ class ConnectionInSessionMixin:
         return super().dispatch(request, *args, **kwargs)
 
     def get_no_connection_redirect_url(self) -> str:
+        if hasattr(self, "participant"):
+            slug = self.participant.project.slug
+        else:
+            slug = settings.TIKTOK_DDM_PROJECT_SLUG
+
         return reverse(
             "datadonation:portability_briefing",
-            kwargs={"slug": settings.TIKTOK_DDM_PROJECT_SLUG},
+            kwargs={"slug": slug},
         )
