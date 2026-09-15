@@ -7,7 +7,8 @@ from ddm.participation.views import get_participation_session_id
 from ddm.projects.models import DonationProject, ResearchProfile
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.http import HttpResponse
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from requests.exceptions import ConnectionError as RequestsConnectionError
@@ -140,6 +141,7 @@ class TikTokDataRequestIsActiveTest(TestCase):
         self.assertFalse(req.is_active())
 
 
+@override_settings(TIKTOK_DDM_PROJECT_SLUG="tiktok")
 class PortabilityViewTestCase(TestCase):
     """Base class providing a donation project, a participant, and a session
     seeded the way `ddm.participation.views.create_participation_session` does.
@@ -184,13 +186,19 @@ class PortabilityViewTestCase(TestCase):
             refresh_token_expires_at=timezone.now() + timedelta(days=30),
             token_type="Bearer",
             scope="user.info.basic",
+            project_slug=settings.TIKTOK_DDM_PROJECT_SLUG,
         )
 
 
 class ParticipantInSessionMixinTest(PortabilityViewTestCase):
     def test_redirects_with_slug_when_no_participant_in_session(self):
         self.client.session.flush()
-        response = self.client.get(reverse("datadonation:tiktok_connection"))
+        response = self.client.get(
+            reverse(
+                "datadonation:tiktok_connection",
+                kwargs={"slug": settings.TIKTOK_DDM_PROJECT_SLUG},
+            ),
+        )
         self.assertRedirects(
             response,
             reverse(
@@ -200,12 +208,21 @@ class ParticipantInSessionMixinTest(PortabilityViewTestCase):
         )
 
     def test_passes_through_with_valid_participant(self):
-        response = self.client.get(reverse("datadonation:tiktok_connection"))
+        response = self.client.get(
+            reverse(
+                "datadonation:tiktok_connection", kwargs={"slug": self.project.slug}
+            )
+        )
         self.assertEqual(response.status_code, 200)
 
     def test_redirects_when_participant_was_deleted(self):
         self.participant.delete()
-        response = self.client.get(reverse("datadonation:tiktok_connection"))
+        response = self.client.get(
+            reverse(
+                "datadonation:tiktok_connection",
+                kwargs={"slug": settings.TIKTOK_DDM_PROJECT_SLUG},
+            )
+        )
         self.assertRedirects(
             response,
             reverse(
@@ -463,7 +480,12 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
 
     def test_redirects_when_no_active_data_request(self):
         response = self.client.get(self._check_url())
-        self.assertRedirects(response, reverse("datadonation:tiktok_connection"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:tiktok_connection", kwargs={"slug": self.project.slug}
+            ),
+        )
 
     def _exception_redirect_url(self, code):
         return reverse("datadonation:portability_exception", kwargs={"code": code})
@@ -659,7 +681,12 @@ class CheckDataAvailabilityViewTest(PortabilityViewTestCase):
 
         # A second poll should no longer find the (now expired) request active.
         response = self.client.get(self._check_url())
-        self.assertRedirects(response, reverse("datadonation:tiktok_connection"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:tiktok_connection", kwargs={"slug": self.project.slug}
+            ),
+        )
 
 
 class TikTokDownloadViewTest(PortabilityViewTestCase):
@@ -838,7 +865,11 @@ class PortabilityFlowIntegrationTest(PortabilityViewTestCase):
         mock_extract,
     ):
         # Step 1: connection info page is reachable.
-        response = self.client.get(reverse("datadonation:tiktok_connection"))
+        response = self.client.get(
+            reverse(
+                "datadonation:tiktok_connection", kwargs={"slug": self.project.slug}
+            )
+        )
         self.assertEqual(response.status_code, 200)
 
         # Step 2: OAuth callback creates the connection and a data request.
@@ -884,6 +915,100 @@ class PortabilityFlowIntegrationTest(PortabilityViewTestCase):
         self.assertEqual(data_request.status, TikTokDataRequest.State.DOWNLOADED)
 
 
+@override_settings(TIKTOK_DDM_PROJECT_SLUG="tiktok")
+class MultiProjectFlowIntegrationTest(TestCase):
+    """Regression test for a project whose slug differs from the configured
+    TIKTOK_DDM_PROJECT_SLUG default.
+
+    Several steps of the flow (callback, await, check, download) have no
+    slug in their URL and must resolve the participant's project via the
+    session instead of the default - this walks that path end-to-end.
+    """
+
+    def setUp(self):
+        user = get_user_model().objects.create_user(
+            username="researcher-other", password="test-pass"
+        )
+        owner_profile = ResearchProfile.objects.create(user=user)
+        self.project = DonationProject.objects.create(
+            name="Other Project",
+            slug="other-project",
+            contact_information="test@example.com",
+            data_protection_statement="test",
+            owner=owner_profile,
+        )
+        self.participant = Participant.objects.create(
+            project=self.project,
+            external_id="y" * 24,
+            start_time=timezone.now(),
+        )
+        session = self.client.session
+        session_id = get_participation_session_id(self.project)
+        session[session_id] = {"participant_id": self.participant.id}
+        session.save()
+
+    @patch("ddcs.datadonation.portability.views.extract_request_id")
+    @patch("ddcs.datadonation.portability.views.issue_data_request")
+    @patch("ddcs.datadonation.portability.views.get_valid_token")
+    @patch("ddcs.datadonation.portability.views.poll_data_request_status")
+    @patch("ddcs.datadonation.portability.views.download_data_request")
+    @patch("ddcs.datadonation.portability.views.oauth")
+    def test_full_flow_for_project_with_non_default_slug(  # noqa: PLR0913
+        self,
+        mock_oauth,
+        mock_download,
+        mock_poll,
+        mock_get_valid_token,
+        mock_issue,
+        mock_extract,
+    ):
+        # Step 1: kick off auth. This is what stashes the project slug in
+        # the session so it survives the redirect to TikTok and back - the
+        # callback URL that follows has no slug of its own.
+        mock_oauth.tiktok.authorize_redirect.return_value = HttpResponse(status=302)
+        response = self.client.get(
+            reverse("datadonation:tiktok_auth", kwargs={"slug": self.project.slug})
+        )
+        self.assertEqual(response.status_code, 302)
+
+        # Step 2: OAuth callback (slug-less URL) must resolve this
+        # participant's project via the stashed session slug, not silently
+        # fall back to the default TIKTOK_DDM_PROJECT_SLUG project.
+        mock_oauth.tiktok.authorize_access_token.return_value = _fake_token(
+            "raw_open_id_other"
+        )
+        mock_get_valid_token.return_value = "access-token"
+        mock_issue.return_value = {"request_id": 555}
+        mock_extract.return_value = 555
+
+        response = self.client.get(reverse("datadonation:tiktok_callback"))
+        self.assertRedirects(response, reverse("datadonation:tiktok_await_data"))
+        connection = TikTokConnection.objects.get()
+        self.assertEqual(connection.project_slug, self.project.slug)
+
+        # Step 3: await/check/download are also slug-less and must keep
+        # resolving the same (non-default) project throughout.
+        response = self.client.get(reverse("datadonation:tiktok_await_data"))
+        self.assertEqual(response.status_code, 200)
+
+        mock_poll.return_value = {"data": {"status": TikTokDataRequest.State.READY}}
+        response = self.client.get(reverse("datadonation:tiktok_check_request"))
+        template_names = [t.name for t in response.templates if t.name]
+        self.assertIn(
+            "datadonation/portability/partials/_data_download_available_msg.html",
+            template_names,
+        )
+
+        fake_download_response = MagicMock()
+        fake_download_response.iter_content.return_value = [b"zip-bytes"]
+        fake_download_response.headers = {}
+        mock_download.return_value = fake_download_response
+
+        response = self.client.post(reverse("datadonation:tiktok_download"))
+        content = b"".join(response.streaming_content)
+        self.assertEqual(content, b"zip-bytes")
+
+
 class PortabilityDonationGateTest(PortabilityViewTestCase):
     """Donation must remain reachable after the takeout was marked DOWNLOADED."""
 
@@ -925,7 +1050,12 @@ class PortabilityDonationGateTest(PortabilityViewTestCase):
 
         response = self.client.get(self._donation_url())
 
-        self.assertRedirects(response, reverse("datadonation:tiktok_connection"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:tiktok_connection", kwargs={"slug": self.project.slug}
+            ),
+        )
 
     @patch("webpack_loader.utils.get_loader", side_effect=_dummy_webpack_loader)
     def test_donation_page_reachable_while_still_ready(self, mock_loader):
@@ -951,4 +1081,28 @@ class PortabilityDonationGateTest(PortabilityViewTestCase):
 
         response = self.client.get(reverse("datadonation:tiktok_check_request"))
 
-        self.assertRedirects(response, reverse("datadonation:tiktok_connection"))
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:tiktok_connection", kwargs={"slug": self.project.slug}
+            ),
+        )
+
+    def test_redirect_falls_back_to_default_slug_when_connection_project_slug_blank(
+        self,
+    ):
+        # Connections created before the project_slug field was added default
+        # to "" - the redirect must not try to reverse a URL with an empty
+        # slug in that case.
+        self.connection.project_slug = ""
+        self.connection.save(update_fields=["project_slug"])
+
+        response = self.client.get(self._donation_url())
+
+        self.assertRedirects(
+            response,
+            reverse(
+                "datadonation:tiktok_connection",
+                kwargs={"slug": settings.TIKTOK_DDM_PROJECT_SLUG},
+            ),
+        )

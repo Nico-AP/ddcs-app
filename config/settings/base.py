@@ -386,6 +386,12 @@ TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES: int = env.int(
 )
 
 
+# Zuse Classification API
+# ------------------------------------------------------------------------------
+ZUSE_API_TOKEN = env.str("ZUSE_API_TOKEN", "")
+ZUSE_API_URL = env.str("ZUSE_API_URL", "")
+
+
 # Logging
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/dev/ref/settings/#logging
