@@ -39,15 +39,9 @@ class TestUrlUtils(TestCase):
         )
         self.assertEqual(url, expected)
 
-    def test_falls_back_to_no_kwargs_when_url_does_not_accept_slug(self):
-        # "tiktok_connection" does not accept a slug kwarg -> NoReverseMatch -> fallback
-        url = get_step_url(API_PARTICIPATION_FLOW_STEPS, 1, slug="my-project")
-        expected = reverse("datadonation:tiktok_connection")
-        self.assertEqual(url, expected)
-
-    def test_falls_back_to_no_kwargs_with_default_slug(self):
+    def test_falls_back_to_default_slug(self):
         url = get_step_url(API_PARTICIPATION_FLOW_STEPS, 1, slug=None)
-        expected = reverse("datadonation:tiktok_connection")
+        expected = reverse("datadonation:tiktok_connection", kwargs={"slug": "tiktok"})
         self.assertEqual(url, expected)
 
     def test_raises_no_reverse_match_for_completely_invalid_step(self):
@@ -68,9 +62,9 @@ class TestUrlUtils(TestCase):
         )
         self.assertEqual(url, expected)
 
-    def test_returns_url_for_current_step_without_slug_arg(self):
+    def test_returns_default_url_for_current_step_without_slug_arg(self):
         url = get_current_step_url(API_PARTICIPATION_FLOW_STEPS, 1, slug=None)
-        expected = reverse("datadonation:tiktok_connection")
+        expected = reverse("datadonation:tiktok_connection", kwargs={"slug": "tiktok"})
         self.assertEqual(url, expected)
 
     # Test get_next_step_url
@@ -78,7 +72,9 @@ class TestUrlUtils(TestCase):
     def test_returns_url_for_next_step(self):
         # current_step=0 (briefing) -> next is tiktok_connection
         url = get_next_step_url(API_PARTICIPATION_FLOW_STEPS, 0, slug="my-project")
-        expected = reverse("datadonation:tiktok_connection")
+        expected = reverse(
+            "datadonation:tiktok_connection", kwargs={"slug": "my-project"}
+        )
         self.assertEqual(url, expected)
 
     def test_next_step_with_default_slug(self):

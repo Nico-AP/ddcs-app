@@ -41,6 +41,7 @@ from ddcs.datadonation.session import (
     ConnectionInSessionMixin,
     ParticipantInSessionMixin,
     get_tiktok_connection_from_session,
+    store_project_slug_in_session,
     store_tiktok_connection_in_session,
 )
 from ddcs.datadonation.utils import (
@@ -74,8 +75,8 @@ class DataRequestMixin(ConnectionInSessionMixin):
     """Ensures a TikTokConnection is present in the session and a related
     DataRequest in an allowed status exists.
 
-    By default only TikTok-side active requests are accepted (poll/download).
-    Donation overrides this to also accept already-downloaded requests.
+    By default, only TikTok-side active requests are accepted (poll/download).
+    The Donation view overrides this to also accept already-downloaded requests.
     """
 
     data_request: TikTokDataRequest
@@ -92,7 +93,10 @@ class DataRequestMixin(ConnectionInSessionMixin):
                 status__in=self.data_request_allowed_statuses,
             ).latest("issued_at")
         except TikTokDataRequest.DoesNotExist:
-            return redirect(reverse("datadonation:tiktok_connection"))
+            slug = self.connection.project_slug or settings.TIKTOK_DDM_PROJECT_SLUG
+            return redirect(
+                reverse("datadonation:tiktok_connection", kwargs={"slug": slug})
+            )
 
         return super().dispatch(request, *args, **kwargs)
 
@@ -131,6 +135,11 @@ class TikTokConnectionInfosView(ParticipantInSessionMixin, TemplateView):
         self.log_participant_info()
         return super().get(request, *args, **kwargs)
 
+    def get_context_data(self, **kwargs) -> dict[str, Any]:
+        context = super().get_context_data(**kwargs)
+        context["project_slug"] = self.participant.project.slug
+        return context
+
     def log_participant_info(self) -> None:
         log = get_participant_log(self.participant)
         log["steps"]["papi_tiktok-connection-info_reached"] = timezone.now().isoformat()
@@ -140,12 +149,13 @@ class TikTokConnectionInfosView(ParticipantInSessionMixin, TemplateView):
 class TikTokConnectView(ParticipantInSessionMixin, View):
     """Renders the connection information page."""
 
-    def get(self, request: HttpRequest) -> HttpResponseRedirect:
+    def get(self, request: HttpRequest, slug: str) -> HttpResponseRedirect:
         """Redirects users to TikTok authentication page."""
         redirect_uri = request.build_absolute_uri(
             reverse("datadonation:tiktok_callback")
         )
         self.log_participant_info()
+        store_project_slug_in_session(request, slug=self.participant.project.slug)
         return oauth.tiktok.authorize_redirect(request, redirect_uri)
 
     def log_participant_info(self) -> None:
@@ -260,6 +270,7 @@ class TikTokCallbackView(ParticipantInSessionMixin, View):
                 "created_at": timezone.now(),
                 "token_type": token.get("token_type", ""),
                 "scope": token.get("scope", ""),
+                "project_slug": self.participant.project.slug,
             },
         )
 
@@ -431,10 +442,14 @@ class CheckDataAvailabilityView(
 
     def get_context_data(self, **kwargs) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
+        slug = (
+            self.data_request.connection.project_slug
+            or settings.TIKTOK_DDM_PROJECT_SLUG
+        )
         context.update(
             {
                 "poll_datetime": self.data_request.last_polled,
-                "project_slug": settings.TIKTOK_DDM_PROJECT_SLUG,
+                "project_slug": slug,
                 # "show_reminder_message": self.show_reminder_message(),  # noqa: ERA001
                 # TODO: Enable, once the email handling is sorted out.
             }
@@ -589,6 +604,9 @@ class PortabilityDonationViewTest(UserPassesTestMixin, DDCSDownloadUploadView):
 class PortabilityExceptionView(ParticipantInSessionMixin, TemplateView):
     template_name = "datadonation/portability/exception.html"
 
+    def get_project_slug(self) -> str:
+        return self.participant.project.slug
+
     def get_context_data(self, **kwargs) -> dict:
         context = super().get_context_data(**kwargs)
         code = self.kwargs.get("code")
@@ -615,6 +633,7 @@ class PortabilityExceptionView(ParticipantInSessionMixin, TemplateView):
                 "show_retry": show_retry,
                 "show_dl_ul_continuation": show_dl_ul_continue,
                 "exception_type": code,
+                "project_slug": self.get_project_slug(),
             }
         )
         return context
