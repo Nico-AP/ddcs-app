@@ -9,7 +9,6 @@ from typing import Any
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
-from django.db import connection
 from django.db.models import Exists, OuterRef, QuerySet
 from django.utils import timezone
 from redis import Redis
@@ -23,6 +22,7 @@ from ddcs.metadata.models import (
 )
 from ddcs.metadata.research_api.credentials import get_research_api_credentials
 from ddcs.metadata.research_api.service import ResearchAPIService
+from ddcs.metadata.utils import recover_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -51,10 +51,16 @@ class _RunResult:
     - ``pages_consumed``: number of API result pages returned during this
       run. Each page is billed as one Research API quota point, so this
       is what the backfill task decrements from its budget.
+    - ``time_budget_exceeded``: True only when this outcome was caused by
+      ``SoftTimeLimitExceeded``. ``retry`` alone can't tell that apart from
+      a poison-pill partial failure (both return ``_Retry.HALVE_BATCH``),
+      but ``backfill_missing_syncs`` needs to: a timeout means "stop and
+      respawn now," a partial failure means "move on to the next pair."
     """
 
     retry: _Retry
     pages_consumed: int
+    time_budget_exceeded: bool = False
 
 
 @dataclass(frozen=True)
@@ -177,21 +183,6 @@ def _record_sync_attempts(  # noqa: PLR0913
     )
 
 
-def _recover_db_connection() -> None:
-    """Drop a possibly-poisoned DB connection before recovery-path writes.
-
-    ``SoftTimeLimitExceeded`` can be raised by the signal handler while
-    psycopg is mid-query, leaving the connection unusable (query still in
-    progress). Any ORM write afterwards then raises or blocks until the hard
-    time limit SIGKILLs the worker. We close the socket unconditionally
-    rather than probe it. Django reconnects lazily on the next query.
-    """
-    try:
-        connection.close()
-    except Exception:  # noqa: BLE001
-        logger.warning("Failed to close DB connection during recovery.", exc_info=True)
-
-
 @contextmanager
 def _guarded_bookkeeping(description: str) -> Iterator[None]:
     """Wrap a recovery-path DB write; log and swallow if it still fails.
@@ -303,7 +294,7 @@ def _run_query_task(  # noqa: PLR0913
                 batch_idx,
                 total_batches,
             )
-            _recover_db_connection()
+            recover_db_connection()
             with _guarded_bookkeeping("timeout sync attempts"):
                 _record_sync_attempts(
                     sync_target,
@@ -324,6 +315,7 @@ def _run_query_task(  # noqa: PLR0913
             return _RunResult(
                 retry=_Retry.HALVE_BATCH,
                 pages_consumed=service.sync_stats["pages_retrieved"] - pages_before,
+                time_budget_exceeded=True,
             )
 
         except ResearchAPIRateLimitExceededError:
@@ -333,7 +325,7 @@ def _run_query_task(  # noqa: PLR0913
                 batch_idx,
                 total_batches,
             )
-            _recover_db_connection()
+            recover_db_connection()
             with _guarded_bookkeeping("rate-limit sync attempts"):
                 _record_sync_attempts(
                     sync_target,
@@ -363,7 +355,7 @@ def _run_query_task(  # noqa: PLR0913
             )
             logger.exception(msg)
             failed_batches.append({"batch": batch_idx, "error": msg})
-            _recover_db_connection()
+            recover_db_connection()
             with _guarded_bookkeeping(f"batch {batch_idx} error sync attempts"):
                 _record_sync_attempts(
                     sync_target,
@@ -562,6 +554,10 @@ _BACKFILL_ORDER: list[tuple[_SyncTargetConfig, int]] = [
     (_USER_SYNC_TARGET_CONFIG, 200),  # config, batch_size
     (_KEYWORD_SYNC_TARGET_CONFIG, 5),
 ]
+# Short, deliberate pause before a time-budget respawn so a long respawn
+# chain doesn't hot-loop. Distinct from _QUERY_TASK_OPTIONS' retry_backoff,
+# which paces transient-error retries on the daily tasks, not this.
+_BACKFILL_RESPAWN_COUNTDOWN = 10
 
 
 def _backfill_target_dates() -> list[date]:
@@ -581,7 +577,7 @@ def _backfill_target_dates() -> list[date]:
 @shared_task(
     bind=True,
     acks_late=True,
-    max_retries=0,
+    max_retries=None,
     soft_time_limit=110 * 60,
     time_limit=120 * 60,
 )
@@ -599,9 +595,14 @@ def backfill_missing_syncs(
     whatever quota is left in the day is fair game and unused quota
     doesn't carry over. Natural governors keep this safe:
 
-    * The Celery soft time limit caps wall-clock work per run.
+    * Approaching the soft time limit stops the run and respawns a fresh
+      task via ``self.retry()`` (see below) instead of racing the hard
+      limit; because ``_gap_items`` always re-queries outstanding gaps,
+      the respawned run just continues where this one left off.
     * Exhausting the API rate limit on every configured credential pair ends
-      this run (see below); the next scheduled run picks up where it left off.
+      this run (see below); the next scheduled run picks up where it left
+      off, since the exhaustion hint only clears at UTC midnight and an
+      immediate respawn wouldn't find anything different.
     * A Redis lock prevents overlapping invocations from stacking work.
 
     On rate-limit (all credential pairs exhausted), the whole task returns
@@ -638,6 +639,19 @@ def backfill_missing_syncs(
                     items=items,
                     origin="backfill",
                 )
+                if result.time_budget_exceeded:
+                    # _run_query_task already caught SoftTimeLimitExceeded
+                    # once; Celery won't raise it again for this task run, so
+                    # nothing else protects the remaining pairs from running
+                    # past the soft limit into a hard-limit SIGKILL. Stop now
+                    # and hand off to a fresh task instead.
+                    logger.info(
+                        "backfill_missing_syncs: soft time limit reached "
+                        "processing %s %s; respawning to continue.",
+                        sync_target.task_name,
+                        target_date.isoformat(),
+                    )
+                    raise self.retry(countdown=_BACKFILL_RESPAWN_COUNTDOWN)
                 if result.retry is _Retry.SAME_BATCH:
                     # Every credential pair is rate-limited. Moving to the next
                     # (target, date) would just hit the same limit again; bail
@@ -647,6 +661,16 @@ def backfill_missing_syncs(
                         "stopping this run."
                     )
                     return
+    except SoftTimeLimitExceeded:
+        # Backstop for the rare case the limit fires between _run_query_task
+        # calls (e.g. while querying the next date's gap items) rather than
+        # inside one, where the check above already covers it.
+        logger.warning(
+            "backfill_missing_syncs hit the soft time limit outside a query "
+            "batch; respawning to continue."
+        )
+        recover_db_connection()
+        raise self.retry(countdown=_BACKFILL_RESPAWN_COUNTDOWN) from None
     finally:
         try:
             lock.release()
