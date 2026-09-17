@@ -74,6 +74,7 @@ CONTENT_SECURITY_POLICY = {
             "*.rbb-online.de",
             "*.alex-berlin.de",
             "*.hiig.de",
+            "assets.nexx.cloud",
         ],
         "media-src": [SELF, "https://www.tiktok.com"],
         "font-src": [SELF],

@@ -1073,6 +1073,50 @@ class BackfillMissingSyncsTest(TestCase):
     @patch("ddcs.metadata.research_api.tasks.timezone")
     @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
     @patch("ddcs.metadata.research_api.tasks.Redis")
+    def test_small_keyword_backlog_uses_batch_size_one(
+        self, redis_cls, svc_cls, tz_mock
+    ):
+        # Fewer than 21 keywords need backfilling -> one query per keyword
+        # instead of the usual batches of 5, so each gets its own outcome.
+        _configure_service_mock(svc_cls)
+        tz_mock.localdate.return_value = date(2025, 6, 5)  # single backfill date: 6/1
+        tz_mock.now.side_effect = lambda: datetime(2025, 6, 5, tzinfo=UTC)
+        redis_cls.from_url.return_value = self._fake_redis(self._fake_lock())
+        for i in range(3):
+            _monitored_keyword(f"k{i}")
+
+        backfill_missing_syncs()
+
+        self.assertEqual(svc_cls.return_value.get_videos_by_keywords.call_count, 3)
+        for call_args in svc_cls.return_value.get_videos_by_keywords.call_args_list:
+            self.assertEqual(len(call_args.args[0]), 1)
+
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    @patch("ddcs.metadata.research_api.tasks.Redis")
+    def test_large_keyword_backlog_keeps_default_batch_size(
+        self, redis_cls, svc_cls, tz_mock
+    ):
+        # 21+ keywords need backfilling -> stays at the usual batch size of 5.
+        _configure_service_mock(svc_cls)
+        tz_mock.localdate.return_value = date(2025, 6, 5)  # single backfill date: 6/1
+        tz_mock.now.side_effect = lambda: datetime(2025, 6, 5, tzinfo=UTC)
+        redis_cls.from_url.return_value = self._fake_redis(self._fake_lock())
+        for i in range(21):
+            _monitored_keyword(f"k{i}")
+
+        backfill_missing_syncs()
+
+        # 21 items at batch_size=5 -> four batches of 5, one of 1.
+        call_sizes = sorted(
+            len(call_args.args[0])
+            for call_args in svc_cls.return_value.get_videos_by_keywords.call_args_list
+        )
+        self.assertEqual(call_sizes, [1, 5, 5, 5, 5])
+
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    @patch("ddcs.metadata.research_api.tasks.Redis")
     def test_stops_when_lock_is_held(self, redis_cls, svc_cls, tz_mock):
         tz_mock.localdate.return_value = date(2025, 6, 5)
         redis_cls.from_url.return_value = self._fake_redis(
