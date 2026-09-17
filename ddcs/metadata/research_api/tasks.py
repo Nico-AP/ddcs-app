@@ -9,7 +9,6 @@ from typing import Any
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
-from django.db import connection
 from django.db.models import Exists, OuterRef, QuerySet
 from django.utils import timezone
 from redis import Redis
@@ -23,6 +22,7 @@ from ddcs.metadata.models import (
 )
 from ddcs.metadata.research_api.credentials import get_research_api_credentials
 from ddcs.metadata.research_api.service import ResearchAPIService
+from ddcs.metadata.utils import recover_db_connection
 
 logger = logging.getLogger(__name__)
 
@@ -177,21 +177,6 @@ def _record_sync_attempts(  # noqa: PLR0913
     )
 
 
-def _recover_db_connection() -> None:
-    """Drop a possibly-poisoned DB connection before recovery-path writes.
-
-    ``SoftTimeLimitExceeded`` can be raised by the signal handler while
-    psycopg is mid-query, leaving the connection unusable (query still in
-    progress). Any ORM write afterwards then raises or blocks until the hard
-    time limit SIGKILLs the worker. We close the socket unconditionally
-    rather than probe it. Django reconnects lazily on the next query.
-    """
-    try:
-        connection.close()
-    except Exception:  # noqa: BLE001
-        logger.warning("Failed to close DB connection during recovery.", exc_info=True)
-
-
 @contextmanager
 def _guarded_bookkeeping(description: str) -> Iterator[None]:
     """Wrap a recovery-path DB write; log and swallow if it still fails.
@@ -303,7 +288,7 @@ def _run_query_task(  # noqa: PLR0913
                 batch_idx,
                 total_batches,
             )
-            _recover_db_connection()
+            recover_db_connection()
             with _guarded_bookkeeping("timeout sync attempts"):
                 _record_sync_attempts(
                     sync_target,
@@ -333,7 +318,7 @@ def _run_query_task(  # noqa: PLR0913
                 batch_idx,
                 total_batches,
             )
-            _recover_db_connection()
+            recover_db_connection()
             with _guarded_bookkeeping("rate-limit sync attempts"):
                 _record_sync_attempts(
                     sync_target,
@@ -363,7 +348,7 @@ def _run_query_task(  # noqa: PLR0913
             )
             logger.exception(msg)
             failed_batches.append({"batch": batch_idx, "error": msg})
-            _recover_db_connection()
+            recover_db_connection()
             with _guarded_bookkeeping(f"batch {batch_idx} error sync attempts"):
                 _record_sync_attempts(
                     sync_target,

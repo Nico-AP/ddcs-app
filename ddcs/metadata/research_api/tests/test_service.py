@@ -684,12 +684,12 @@ class RunQueryTaskTest(TestCase):
     def setUp(self):
         self.u1 = _monitored_user("u1")
         self.u2 = _monitored_user("u2")
-        # The recovery-path handlers call `_recover_db_connection()`, which
+        # The recovery-path handlers call `recover_db_connection()`, which
         # does a real `connection.close()`. Doing that mid-test would tear
         # down the `TestCase` transaction, so neutralize it here and expose
         # the mock for assertions.
         recover_patcher = patch(
-            "ddcs.metadata.research_api.tasks._recover_db_connection"
+            "ddcs.metadata.research_api.tasks.recover_db_connection"
         )
         self.recover_mock = recover_patcher.start()
         self.addCleanup(recover_patcher.stop)
