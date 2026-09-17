@@ -559,6 +559,27 @@ _BACKFILL_ORDER: list[tuple[_SyncTargetConfig, int]] = [
 # which paces transient-error retries on the daily tasks, not this.
 _BACKFILL_RESPAWN_COUNTDOWN = 10
 
+# get_videos_by_keywords combines a whole batch of keywords into one
+# Research API query, so every keyword in a batch shares the same
+# SyncAttempt outcome. Once the remaining backlog is small, that combining
+# buys little and just blurs per-keyword attribution — drop to one keyword
+# per query so each gets its own accurate outcome. Helpful to identify
+# poison pills and increase sync coverage - especially for repeated backfills.
+_KEYWORD_SMALL_BACKLOG_THRESHOLD = 21
+_KEYWORD_SMALL_BACKLOG_BATCH_SIZE = 1
+
+
+def _backfill_batch_size(
+    sync_target: _SyncTargetConfig, batch_size: int, item_count: int
+) -> int:
+    """Effective batch size for one (sync_target, target_date) backfill pair."""
+    if (
+        sync_target is _KEYWORD_SYNC_TARGET_CONFIG
+        and item_count < _KEYWORD_SMALL_BACKLOG_THRESHOLD
+    ):
+        return _KEYWORD_SMALL_BACKLOG_BATCH_SIZE
+    return batch_size
+
 
 def _backfill_target_dates() -> list[date]:
     """Dates the backfill task considers, most recent first.
@@ -632,10 +653,13 @@ def backfill_missing_syncs(
                     len(items),
                 )
 
+                effective_batch_size = _backfill_batch_size(
+                    sync_target, batch_size, len(items)
+                )
                 result = _run_query_task(
                     sync_target,
                     target_date,
-                    batch_size,
+                    effective_batch_size,
                     items=items,
                     origin="backfill",
                 )
