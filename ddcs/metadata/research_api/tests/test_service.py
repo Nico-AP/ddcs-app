@@ -1,7 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock, call, patch
 
-from celery.exceptions import SoftTimeLimitExceeded
+from celery.exceptions import Retry, SoftTimeLimitExceeded
 from django.db import OperationalError
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -26,6 +26,7 @@ from ddcs.metadata.research_api.models import (
 )
 from ddcs.metadata.research_api.service import ResearchAPIService
 from ddcs.metadata.research_api.tasks import (
+    _BACKFILL_RESPAWN_COUNTDOWN,
     _STALE_TRACKER_MAX_AGE,
     _USER_SYNC_TARGET_CONFIG,
     _backfill_target_dates,
@@ -730,6 +731,7 @@ class RunQueryTaskTest(TestCase):
         result = _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=10)
 
         self.assertIs(result.retry, _Retry.HALVE_BATCH)
+        self.assertTrue(result.time_budget_exceeded)
         self.assertEqual(
             SyncAttempt.objects.filter(
                 target_date=TARGET, status=SyncAttempt.Status.TIMEOUT
@@ -746,6 +748,7 @@ class RunQueryTaskTest(TestCase):
         result = _run_query_task(_USER_SYNC_TARGET_CONFIG, TARGET, batch_size=1)
 
         self.assertIs(result.retry, _Retry.HALVE_BATCH)
+        self.assertFalse(result.time_budget_exceeded)
         successes = SyncAttempt.objects.filter(
             target_date=TARGET, status=SyncAttempt.Status.SUCCESS
         )
@@ -1103,3 +1106,59 @@ class BackfillMissingSyncsTest(TestCase):
 
         svc_cls.return_value.get_user_videos.assert_called_once()
         svc_cls.return_value.get_videos_by_keywords.assert_not_called()
+
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    @patch("ddcs.metadata.research_api.tasks.ResearchAPIService")
+    @patch("ddcs.metadata.research_api.tasks.Redis")
+    def test_respawns_on_time_budget_exceeded_without_processing_more_pairs(
+        self, redis_cls, svc_cls, tz_mock
+    ):
+        # First (target, date) hits the soft time limit; the backfill should
+        # respawn immediately rather than silently continuing to the next
+        # pair with no time-budget protection left for the rest of this run.
+        _configure_service_mock(svc_cls)
+        svc_cls.return_value.get_user_videos.side_effect = SoftTimeLimitExceeded()
+        tz_mock.localdate.return_value = date(2025, 6, 5)
+        tz_mock.now.side_effect = lambda: datetime(2025, 6, 5, tzinfo=UTC)
+        redis_cls.from_url.return_value = self._fake_redis(self._fake_lock())
+        _monitored_user("u1")
+        _monitored_keyword("k1")
+
+        with (
+            patch.object(
+                backfill_missing_syncs, "retry", side_effect=Retry()
+            ) as mock_retry,
+            self.assertRaises(Retry),
+        ):
+            backfill_missing_syncs()
+
+        svc_cls.return_value.get_user_videos.assert_called_once()
+        svc_cls.return_value.get_videos_by_keywords.assert_not_called()
+        mock_retry.assert_called_once_with(countdown=_BACKFILL_RESPAWN_COUNTDOWN)
+
+    @patch("ddcs.metadata.research_api.tasks.timezone")
+    @patch("ddcs.metadata.research_api.tasks._gap_items")
+    @patch("ddcs.metadata.research_api.tasks.recover_db_connection")
+    @patch("ddcs.metadata.research_api.tasks.Redis")
+    def test_respawns_on_soft_time_limit_between_pairs(
+        self, redis_cls, mock_recover, mock_gap_items, tz_mock
+    ):
+        # SoftTimeLimitExceeded fired outside of _run_query_task entirely
+        # (e.g. while querying the next date's gap items) — the top-level
+        # backstop should still catch it, recover the connection, and
+        # respawn, rather than letting the task fail outright.
+        tz_mock.localdate.return_value = date(2025, 6, 5)
+        redis_cls.from_url.return_value = self._fake_redis(self._fake_lock())
+        mock_gap_items.side_effect = SoftTimeLimitExceeded()
+        _monitored_user("u1")
+
+        with (
+            patch.object(
+                backfill_missing_syncs, "retry", side_effect=Retry()
+            ) as mock_retry,
+            self.assertRaises(Retry),
+        ):
+            backfill_missing_syncs()
+
+        mock_recover.assert_called_once()
+        mock_retry.assert_called_once_with(countdown=_BACKFILL_RESPAWN_COUNTDOWN)
