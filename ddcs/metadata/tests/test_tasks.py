@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from unittest.mock import patch
 
+from celery.exceptions import Retry, SoftTimeLimitExceeded
 from django.test import TestCase, override_settings
 
 from ddcs.metadata.models import DataOrigins, TikTokVideo
@@ -68,10 +69,9 @@ class SyncTikTokVideoClassificationsTests(TestCase):
             _create_api_info(video, self.matching_datetime)
 
         with (
-            patch("ddcs.metadata.tasks.ZuseAPIClient.BATCH_SIZE", 2),
             patch("ddcs.metadata.tasks.ZuseAPIClient.sync_videos") as mock_sync,
         ):
-            sync_tiktok_video_classifications(self.target_date)
+            sync_tiktok_video_classifications(self.target_date, batch_size=2)
 
         self.assertEqual(mock_sync.call_count, 2)
         self.assertEqual(len(mock_sync.call_args_list[0].args[0]), 2)
@@ -87,3 +87,86 @@ class SyncTikTokVideoClassificationsTests(TestCase):
 
         mock_sync.assert_called_once()
         self.assertEqual(len(mock_sync.call_args.args[0]), 2)
+
+    def test_completes_without_retry_when_within_time_budget(self):
+        video = self._create_video(1)
+        _create_api_info(video, self.matching_datetime)
+
+        with (
+            patch("ddcs.metadata.tasks.ZuseAPIClient.sync_videos"),
+            patch.object(sync_tiktok_video_classifications, "retry") as mock_retry,
+        ):
+            sync_tiktok_video_classifications(self.target_date)
+
+        mock_retry.assert_not_called()
+
+    def test_respawns_when_approaching_soft_time_limit(self):
+        videos = [self._create_video(i) for i in range(4)]
+        for video in videos:
+            _create_api_info(video, self.matching_datetime)
+
+        # Chunk size 2 -> two chunks of 2 videos each. Budget is exceeded
+        # right after the first chunk, so the task should respawn instead
+        # of processing the second chunk.
+        with (
+            patch("ddcs.metadata.tasks.ZuseAPIClient.sync_videos") as mock_sync,
+            patch("ddcs.metadata.tasks.time.monotonic", side_effect=[0, 10_000]),
+            patch.object(
+                sync_tiktok_video_classifications, "retry", side_effect=Retry()
+            ) as mock_retry,
+            self.assertRaises(Retry),
+        ):
+            sync_tiktok_video_classifications(self.target_date, batch_size=2)
+
+        mock_sync.assert_called_once()
+        mock_retry.assert_called_once_with(
+            kwargs={"target_date": self.target_date}, countdown=5
+        )
+
+    def test_respawns_with_remaining_max_videos_on_time_budget(self):
+        videos = [self._create_video(i) for i in range(4)]
+        for video in videos:
+            _create_api_info(video, self.matching_datetime)
+
+        with (
+            patch("ddcs.metadata.tasks.ZuseAPIClient.sync_videos"),
+            patch("ddcs.metadata.tasks.time.monotonic", side_effect=[0, 10_000]),
+            patch.object(
+                sync_tiktok_video_classifications, "retry", side_effect=Retry()
+            ) as mock_retry,
+            self.assertRaises(Retry),
+        ):
+            sync_tiktok_video_classifications(
+                self.target_date, max_videos=3, batch_size=2
+            )
+
+        mock_retry.assert_called_once_with(
+            kwargs={"target_date": self.target_date, "max_videos": 1},
+            countdown=5,
+        )
+
+    def test_respawns_on_soft_time_limit_exceeded_mid_chunk(self):
+        videos = [self._create_video(i) for i in range(4)]
+        for video in videos:
+            _create_api_info(video, self.matching_datetime)
+
+        with (
+            patch(
+                "ddcs.metadata.tasks.ZuseAPIClient.sync_videos",
+                side_effect=SoftTimeLimitExceeded(),
+            ),
+            patch("ddcs.metadata.tasks.recover_db_connection") as mock_recover,
+            patch.object(
+                sync_tiktok_video_classifications, "retry", side_effect=Retry()
+            ) as mock_retry,
+            self.assertRaises(Retry),
+        ):
+            sync_tiktok_video_classifications(
+                self.target_date, max_videos=3, batch_size=2
+            )
+
+        mock_recover.assert_called_once()
+        mock_retry.assert_called_once_with(
+            kwargs={"target_date": self.target_date, "max_videos": 3},
+            countdown=5,
+        )

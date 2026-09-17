@@ -56,12 +56,13 @@ def register_donation_metadata(data: TikTokUserData) -> None:
 
 class ZuseAPIClient:
     BATCH_SIZE = 100
+    REQUEST_TIMEOUT_SECONDS = 15
 
     def __init__(self) -> None:
         self.token = settings.ZUSE_API_TOKEN
         self.base_url = settings.ZUSE_API_URL
         self.client = httpx.Client(
-            timeout=15,
+            timeout=self.REQUEST_TIMEOUT_SECONDS,
             headers={"Authorization": f"Bearer {self.token}"},
         )
 
@@ -148,11 +149,11 @@ class ZuseAPIClient:
                         is_political=predictions["is_political"],
                         political_other=predictions["political_other"],
                         political_content=predictions["political_content"],
-                        stage1_rationale=predictions["stage1_rationale"],
+                        stage1_rationale=predictions["stage1_rationale"] or "",
                         entities=predictions["entities"],
                         keyword_matches=predictions["keyword_matches"],
-                        language=predictions["language"],
-                        plausible_party=predictions["plausible_party"],
+                        language=predictions["language"] or "",
+                        plausible_party=predictions["plausible_party"] or "",
                         classification_ts=predictions["created_at"],
                         # Extracted information
                         is_sentiment_positive="positive" in sentiments,
