@@ -3,7 +3,7 @@ from typing import Any
 
 import httpx
 from django.conf import settings
-from django.db import transaction
+from django.db import models, transaction
 
 from ddcs.core.types import TikTokUserData
 from ddcs.metadata.models import (
@@ -14,6 +14,13 @@ from ddcs.metadata.models import (
 )
 
 logger = logging.getLogger(__name__)
+
+_TRUNCATION_MARKER = "<...>"
+_CLASSIFICATION_CHAR_FIELDS = [
+    field
+    for field in TikTokVideoClassification._meta.concrete_fields  # noqa: SLF001
+    if isinstance(field, models.CharField) and field.max_length
+]
 
 
 # TODO: When scraper is introduced, add a specific scrape priority to the
@@ -75,10 +82,36 @@ class ZuseAPIClient:
         return response.json()
 
     @staticmethod
-    def _truncate(value: Any, limit: int = 249, marker: str = "<...>") -> Any:  # noqa: ANN401
-        if isinstance(value, str) and len(value) > limit:
-            return value[:limit] + marker
-        return value
+    def _fit_char_fields(
+        classification: TikTokVideoClassification,
+        id_tiktok: Any,  # noqa: ANN401
+    ) -> None:
+        """Make every ``CharField`` value on ``classification`` fit its column.
+
+        Zuse values are not guaranteed to be short strings: a non-string value
+        (e.g. a list) is turned into its ``str()`` by Django on save, so it can
+        overflow the column too. A single over-long value would otherwise make
+        the whole ``bulk_create`` fail with a ``DataError`` and take the sync
+        task (and any backfill chain) down with it, so truncate instead and log
+        which video and field were affected.
+        """
+        for field in _CLASSIFICATION_CHAR_FIELDS:
+            value = getattr(classification, field.attname)
+            if value is None:
+                continue
+            text = value if isinstance(value, str) else str(value)
+            if len(text) > field.max_length:
+                logger.warning(
+                    "Truncated %s of video %s from %d to %d characters (%s).",
+                    field.name,
+                    id_tiktok,
+                    len(text),
+                    field.max_length,
+                    type(value).__name__,
+                )
+                keep = field.max_length - len(_TRUNCATION_MARKER)
+                text = text[:keep] + _TRUNCATION_MARKER
+            setattr(classification, field.attname, text)
 
     def sync_videos(self, video_ids: list[int]) -> None:
         results = []
@@ -150,29 +183,28 @@ class ZuseAPIClient:
                     if e["sentiment"] is not None
                 ]
 
-                objs_to_create.append(
-                    TikTokVideoClassification(
-                        video_id=video_pk,
-                        is_political=predictions["is_political"],
-                        political_other=predictions["political_other"],
-                        political_content=predictions["political_content"],
-                        stage1_rationale=predictions["stage1_rationale"] or "",
-                        entities=predictions["entities"],
-                        keyword_matches=predictions["keyword_matches"],
-                        language=self._truncate(predictions["language"]) or "",
-                        plausible_party=self._truncate(predictions["plausible_party"])
-                        or "",
-                        classification_ts=predictions["created_at"],
-                        # Extracted information
-                        is_sentiment_positive="positive" in sentiments,
-                        is_sentiment_negative="negative" in sentiments,
-                        is_sentiment_neutral="neutral" in sentiments,
-                        # Scraped information
-                        prediction_scraped=result.get("predictions_div"),
-                        media=result.get("media"),
-                        scraped_data=result.get("extended"),
-                    )
+                classification = TikTokVideoClassification(
+                    video_id=video_pk,
+                    is_political=predictions["is_political"],
+                    political_other=predictions["political_other"],
+                    political_content=predictions["political_content"],
+                    stage1_rationale=predictions["stage1_rationale"] or "",
+                    entities=predictions["entities"],
+                    keyword_matches=predictions["keyword_matches"],
+                    language=predictions["language"] or "",
+                    plausible_party=predictions["plausible_party"] or "",
+                    classification_ts=predictions["created_at"],
+                    # Extracted information
+                    is_sentiment_positive="positive" in sentiments,
+                    is_sentiment_negative="negative" in sentiments,
+                    is_sentiment_neutral="neutral" in sentiments,
+                    # Scraped information
+                    prediction_scraped=result.get("predictions_div"),
+                    media=result.get("media"),
+                    scraped_data=result.get("extended"),
                 )
+                self._fit_char_fields(classification, result["id_tiktok"])
+                objs_to_create.append(classification)
             except (KeyError, TypeError, ValueError) as exc:
                 logger.warning(
                     "Skipping malformed result %r: %s", result.get("id_tiktok"), exc
