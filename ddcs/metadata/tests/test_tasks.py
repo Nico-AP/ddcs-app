@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from celery.exceptions import Retry, SoftTimeLimitExceeded
@@ -6,7 +7,11 @@ from django.test import TestCase, override_settings
 
 from ddcs.metadata.models import DataOrigins, TikTokVideo
 from ddcs.metadata.research_api.models import APIVideoInfos
-from ddcs.metadata.tasks import sync_tiktok_video_classifications
+from ddcs.metadata.tasks import (
+    backfill_tiktok_video_classifications,
+    notify_backfill_chain_broken,
+    sync_tiktok_video_classifications,
+)
 
 
 def _create_api_info(video: TikTokVideo, created_at: datetime) -> APIVideoInfos:
@@ -18,6 +23,12 @@ def _create_api_info(video: TikTokVideo, created_at: datetime) -> APIVideoInfos:
 @override_settings(ZUSE_API_TOKEN="test-token", ZUSE_API_URL="https://zuse.example.com")
 class SyncTikTokVideoClassificationsTests(TestCase):
     def setUp(self):
+        redis_patcher = patch("ddcs.metadata.tasks.Redis")
+        self.mock_redis = redis_patcher.start()
+        self.addCleanup(redis_patcher.stop)
+        self.lock = self.mock_redis.from_url.return_value.lock.return_value
+        self.lock.acquire.return_value = True
+
         self.target_date = "2026-09-09"
         self.matching_datetime = datetime(2026, 9, 9, 12, 0, tzinfo=UTC)
         self.other_datetime = datetime(2026, 9, 8, 12, 0, tzinfo=UTC)
@@ -170,3 +181,163 @@ class SyncTikTokVideoClassificationsTests(TestCase):
             kwargs={"target_date": self.target_date, "max_videos": 3},
             countdown=5,
         )
+
+    def test_retries_without_syncing_when_lock_is_held(self):
+        video = self._create_video(1)
+        _create_api_info(video, self.matching_datetime)
+        self.lock.acquire.return_value = False
+
+        with (
+            patch("ddcs.metadata.tasks.ZuseAPIClient.sync_videos") as mock_sync,
+            patch.object(
+                sync_tiktok_video_classifications, "retry", side_effect=Retry()
+            ) as mock_retry,
+            self.assertRaises(Retry),
+        ):
+            sync_tiktok_video_classifications(self.target_date)
+
+        mock_sync.assert_not_called()
+        mock_retry.assert_called_once_with(countdown=60)
+        self.lock.release.assert_not_called()
+
+    def test_releases_lock_after_sync(self):
+        video = self._create_video(1)
+        _create_api_info(video, self.matching_datetime)
+
+        with patch("ddcs.metadata.tasks.ZuseAPIClient.sync_videos"):
+            sync_tiktok_video_classifications(self.target_date)
+
+        self.lock.release.assert_called_once()
+
+    def test_releases_lock_when_sync_fails(self):
+        video = self._create_video(1)
+        _create_api_info(video, self.matching_datetime)
+
+        with (
+            patch(
+                "ddcs.metadata.tasks.ZuseAPIClient.sync_videos",
+                side_effect=RuntimeError("boom"),
+            ),
+            self.assertRaises(RuntimeError),
+        ):
+            sync_tiktok_video_classifications(self.target_date)
+
+        self.lock.release.assert_called_once()
+
+
+class BackfillTikTokVideoClassificationsTests(TestCase):
+    def setUp(self):
+        chain_patcher = patch("ddcs.metadata.tasks.chain")
+        self.mock_chain = chain_patcher.start()
+        self.addCleanup(chain_patcher.stop)
+
+    def _chained_signatures(self):
+        return list(self.mock_chain.call_args.args)
+
+    def _chained_dates(self) -> list[str]:
+        return [sig.kwargs["target_date"] for sig in self._chained_signatures()]
+
+    def test_chains_inclusive_range_newest_first(self):
+        count = backfill_tiktok_video_classifications(
+            start_date="2026-09-10", end_date="2026-09-08"
+        )
+
+        self.assertEqual(count, 3)
+        self.assertEqual(
+            self._chained_dates(), ["2026-09-10", "2026-09-09", "2026-09-08"]
+        )
+        self.mock_chain.return_value.on_error.return_value.apply_async.assert_called_once_with()
+
+    def test_chained_signatures_are_immutable_sync_tasks(self):
+        backfill_tiktok_video_classifications(
+            start_date="2026-09-10", end_date="2026-09-09"
+        )
+
+        for sig in self._chained_signatures():
+            self.assertEqual(sig.task, sync_tiktok_video_classifications.name)
+            self.assertTrue(sig.immutable)
+
+    def test_defaults_run_from_today_to_july_first(self):
+        today = date(2026, 9, 18)
+        with patch("ddcs.metadata.tasks.timezone.localdate", return_value=today):
+            count = backfill_tiktok_video_classifications()
+
+        dates = self._chained_dates()
+        self.assertEqual(count, (today - date(2026, 7, 1)).days + 1)
+        self.assertEqual(dates[0], "2026-09-18")
+        self.assertEqual(dates[-1], "2026-07-01")
+        self.assertEqual(len(dates), len(set(dates)))
+
+    def test_same_start_and_end_chains_single_task(self):
+        count = backfill_tiktok_video_classifications(
+            start_date="2026-09-09", end_date="2026-09-09"
+        )
+
+        self.assertEqual(count, 1)
+        self.assertEqual(self._chained_dates(), ["2026-09-09"])
+
+    def test_raises_when_start_is_before_end(self):
+        with self.assertRaises(ValueError):
+            backfill_tiktok_video_classifications(
+                start_date="2026-09-01", end_date="2026-09-09"
+            )
+
+        self.mock_chain.assert_not_called()
+
+    def test_forwards_batch_size_and_max_videos(self):
+        backfill_tiktok_video_classifications(
+            start_date="2026-09-09",
+            end_date="2026-09-09",
+            batch_size=25,
+            max_videos=50,
+        )
+
+        (sig,) = self._chained_signatures()
+        self.assertEqual(
+            sig.kwargs,
+            {"target_date": "2026-09-09", "batch_size": 25, "max_videos": 50},
+        )
+
+    def test_chain_reports_failures_to_the_error_callback(self):
+        backfill_tiktok_video_classifications(
+            start_date="2026-09-10", end_date="2026-09-08"
+        )
+
+        (errback,), _ = self.mock_chain.return_value.on_error.call_args
+        self.assertEqual(errback.task, notify_backfill_chain_broken.name)
+        self.assertEqual(errback.kwargs, {"end_date": "2026-09-08"})
+
+
+class NotifyBackfillChainBrokenTests(TestCase):
+    def test_logs_error_naming_failed_and_skipped_dates(self):
+        # request.chain lists the remaining tasks with the next one last.
+        request = SimpleNamespace(
+            kwargs={"target_date": "2026-09-08"},
+            chain=[
+                {"kwargs": {"target_date": "2026-09-06"}},
+                {"kwargs": {"target_date": "2026-09-07"}},
+            ],
+        )
+
+        with self.assertLogs("ddcs.metadata.tasks", level="ERROR") as logs:
+            notify_backfill_chain_broken(
+                request, RuntimeError("zuse down"), "tb", end_date="2026-09-06"
+            )
+
+        (message,) = logs.output
+        self.assertIn("broke at 2026-09-08", message)
+        self.assertIn("zuse down", message)
+        self.assertIn("2 later date(s)", message)
+        self.assertIn("2026-09-07, 2026-09-06", message)
+        self.assertIn("start_date='2026-09-08', end_date='2026-09-06'", message)
+
+    def test_handles_failure_of_last_date(self):
+        request = SimpleNamespace(kwargs={"target_date": "2026-09-06"}, chain=None)
+
+        with self.assertLogs("ddcs.metadata.tasks", level="ERROR") as logs:
+            notify_backfill_chain_broken(
+                request, RuntimeError("boom"), "tb", end_date="2026-09-06"
+            )
+
+        self.assertIn("0 later date(s)", logs.output[0])
+        self.assertIn("none", logs.output[0])

@@ -134,6 +134,7 @@ class DDCSDebriefingView(DebriefingView):
         """Inject url parameters in redirect target."""
         context = super().get_context_data(**kwargs)
         context["participant_id"] = self.participant.external_id
+        context["debriefing_text"] = self.object.debriefing_text
         return context
 
     def extra_before_render(self, request: HttpRequest) -> None:

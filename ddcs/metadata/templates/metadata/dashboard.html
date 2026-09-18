@@ -1,0 +1,107 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Metadata Dashboard</title>
+  <link rel="stylesheet" href="{% static 'core/css/ddcs.css' %}" />
+  <script src="{% static 'reports/js/plotly-3.6.0.min.js' %}"></script>
+  <style>
+    body {
+      font-family: Rubik, Arial, sans-serif;
+      background: #f5f5f5;
+    }
+    .dashboard-card {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+      margin-bottom: 1.5rem;
+    }
+    .dashboard-caveat {
+      font-size: 0.85rem;
+      color: #6c757d;
+    }
+  </style>
+</head>
+<body class="p-4">
+{# djlint:off #}
+  <div class="container-fluid" style="max-width: 1100px;">{# djlint:on #}
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+      <h1 class="h3 mb-0">Metadata Dashboard</h1>
+      <form method="get" class="d-flex align-items-end gap-2 flex-wrap">
+        <div>
+          <label for="start" class="form-label mb-0 small">Start</label>
+          <input type="date" id="start" name="start" class="form-control form-control-sm" value="{{ start|date:'Y-m-d' }}" />
+        </div>
+        <div>
+          <label for="end" class="form-label mb-0 small">End</label>
+          <input type="date" id="end" name="end" class="form-control form-control-sm" value="{{ end|date:'Y-m-d' }}" />
+        </div>
+        <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+      </form>
+    </div>
+
+    <div class="dashboard-card p-3">
+      <h2 class="h5">Videos by origin</h2>
+      <p class="dashboard-caveat">Total video count in the database, grouped by <code>added_by</code> (DataOrigin), split by whether Research API details (<code>APIVideoInfos</code>) have been retrieved.</p>
+      {% if origin_counts_plot.html %}
+        {{ origin_counts_plot.html|safe }}
+      {% else %}
+        <p>No data.</p>
+      {% endif %}
+      <table class="table table-sm mt-3">
+        <thead>
+          <tr>
+            <th>Origin</th>
+            <th class="text-end">Total</th>
+            <th class="text-end">With API info</th>
+            <th class="text-end">Without API info</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in origin_counts %}
+            <tr>
+              <td>{{ row.added_by }}</td>
+              <td class="text-end">{{ row.total }}</td>
+              <td class="text-end">{{ row.with_api_info }}</td>
+              <td class="text-end">{{ row.without_api_info }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="dashboard-card p-3">
+      <h2 class="h5">Research API sync coverage — Keywords</h2>
+      <p class="dashboard-caveat">Currently monitored: {{ monitored_keywords }} active keywords. The reference line reflects today's monitored list, not historical membership.</p>
+      {% if keyword_coverage_plot.html %}
+        {{ keyword_coverage_plot.html|safe }}
+      {% else %}
+        <p>No data.</p>
+      {% endif %}
+    </div>
+
+    <div class="dashboard-card p-3">
+      <h2 class="h5">Research API sync coverage — Users</h2>
+      <p class="dashboard-caveat">Currently monitored: {{ monitored_users }} active users. The reference line reflects today's monitored list, not historical membership.</p>
+      {% if user_coverage_plot.html %}
+        {{ user_coverage_plot.html|safe }}
+      {% else %}
+        <p>No data.</p>
+      {% endif %}
+    </div>
+
+    <div class="dashboard-card p-3">
+      <h2 class="h5">Classification coverage</h2>
+      <p class="dashboard-caveat">Videos with Research API details, grouped by TikTok-reported publish date, split by whether a classification result has been stored.</p>
+      {% if classification_coverage_plot.html %}
+        {{ classification_coverage_plot.html|safe }}
+      {% else %}
+        <p>No data.</p>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
