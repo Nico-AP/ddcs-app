@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import httpx
 from django.conf import settings
@@ -72,6 +73,12 @@ class ZuseAPIClient:
         response = self.client.get(url)
         response.raise_for_status()
         return response.json()
+
+    @staticmethod
+    def _truncate(value: Any, limit: int = 249, marker: str = "<...>") -> Any:  # noqa: ANN401
+        if isinstance(value, str) and len(value) > limit:
+            return value[:limit] + marker
+        return value
 
     def sync_videos(self, video_ids: list[int]) -> None:
         results = []
@@ -152,8 +159,9 @@ class ZuseAPIClient:
                         stage1_rationale=predictions["stage1_rationale"] or "",
                         entities=predictions["entities"],
                         keyword_matches=predictions["keyword_matches"],
-                        language=predictions["language"] or "",
-                        plausible_party=predictions["plausible_party"] or "",
+                        language=self._truncate(predictions["language"]) or "",
+                        plausible_party=self._truncate(predictions["plausible_party"])
+                        or "",
                         classification_ts=predictions["created_at"],
                         # Extracted information
                         is_sentiment_positive="positive" in sentiments,
