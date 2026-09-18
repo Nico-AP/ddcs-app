@@ -16,12 +16,16 @@
         <div class="text-hero-subtitle mb-1">Abschluss</div>
         <h1>Herzlichen Dank!</h1>
 
+        {% if debriefing_text %}
+          {{ debriefing_text | safe }}
+        {% else %}
         <p>
           Du bist nun am Ende der Studie angelangt.
           Wenn du deine TikTok-Daten erfolgreich hochgeladen hast,
           wird dir auf der nächsten Seite dein personalisierter Nutzungsreport
           angezeigt.
         </p>
+        {% endif %}
 
         {% if participant_id %}
           <a class="btn btn-dark btn-primary-dfdw text-white" href="{% url 'reports:report' participant_id %}">zum Report</a>

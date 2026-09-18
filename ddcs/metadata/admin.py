@@ -353,6 +353,7 @@ class TikTokVideoClassificationAdmin(admin.ModelAdmin):
         "video",
         "created_at",
         "is_political",
+        "classification_ts",
     )
     list_filter = ("is_political",)
     readonly_fields = ("created_at", "updated_at")
