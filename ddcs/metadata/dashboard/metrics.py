@@ -7,7 +7,7 @@ so querying live keeps the numbers always current.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TypedDict
 
 from django.db.models import Count, Exists, OuterRef, Q, Subquery
@@ -19,7 +19,6 @@ from ddcs.metadata.models import (
     SyncAttempt,
     TikTokUser,
     TikTokVideo,
-    TikTokVideoClassification,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
 
@@ -47,29 +46,33 @@ class OriginCount(TypedDict):
 def get_video_counts_by_origin() -> list[OriginCount]:
     """Video counts grouped by ``DataOrigin``, split by APIVideoInfos presence.
 
-    Uses an ``Exists`` subquery annotation (same approach as
-    ``TikTokVideoFilter.filter_has_api_infos`` in ``ddcs/metadata/filters.py``)
-    rather than joining on the one-to-many ``api_infos`` relation directly,
-    which would fan out rows for videos with multiple API-info snapshots.
+    Two plain aggregates instead of one ``COUNT(...) FILTER (WHERE EXISTS
+    (...))``: Postgres runs an ``EXISTS`` inside an aggregate as a per-row
+    subplan (one index probe per video), whereas an ``EXISTS`` in ``WHERE``
+    becomes a single semi-join. That matters with millions of videos. The
+    semi-join (rather than joining ``api_infos`` directly) also avoids
+    fanning out videos with multiple API-info snapshots.
     """
-    has_api_info = Exists(APIVideoInfos.objects.filter(video=OuterRef("pk")))
-    rows = (
-        TikTokVideo.objects.annotate(has_api_info=has_api_info)
-        .values("added_by")
-        .annotate(
-            total=Count("id"),
-            with_api_info=Count("id", filter=Q(has_api_info=True)),
+    totals = {
+        row["added_by"]: row["total"]
+        for row in TikTokVideo.objects.values("added_by").annotate(total=Count("pk"))
+    }
+    with_api_info = {
+        row["added_by"]: row["total"]
+        for row in TikTokVideo.objects.filter(
+            Exists(APIVideoInfos.objects.filter(video=OuterRef("pk")))
         )
-        .order_by("added_by")
-    )
+        .values("added_by")
+        .annotate(total=Count("pk"))
+    }
     return [
         {
-            "added_by": row["added_by"],
-            "total": row["total"],
-            "with_api_info": row["with_api_info"],
-            "without_api_info": row["total"] - row["with_api_info"],
+            "added_by": origin,
+            "total": total,
+            "with_api_info": with_api_info.get(origin, 0),
+            "without_api_info": total - with_api_info.get(origin, 0),
         }
-        for row in rows
+        for origin, total in sorted(totals.items())
     ]
 
 
@@ -131,6 +134,13 @@ class ClassificationCoverageDay(TypedDict):
     classified: int
 
 
+def _day_bounds(start: date, end: date) -> tuple[datetime, datetime]:
+    """Aware ``[lo, hi)`` datetimes covering ``start``..``end`` inclusive."""
+    lo = timezone.make_aware(datetime.combine(start, time.min))
+    hi = timezone.make_aware(datetime.combine(end + timedelta(days=1), time.min))
+    return lo, hi
+
+
 def get_classification_coverage(
     start: date, end: date
 ) -> list[ClassificationCoverageDay]:
@@ -141,24 +151,29 @@ def get_classification_coverage(
     ``latest_create_time`` annotation in ``TikTokVideoList.get_queryset``).
     ``TikTokVideoClassification.video`` is a genuine one-to-one field, so
     joining it does not fan out rows the way ``api_infos`` would.
+
+    Performance: the per-video "latest snapshot" subquery is expensive, and
+    filtering on it forces Postgres to run it for *every* video. Any video
+    whose latest snapshot falls in the range must also have *a* snapshot in
+    the range, so ``APIVideoInfos.create_time`` (indexed) first narrows the
+    candidates with a semi-join, and the latest-snapshot subquery only runs
+    for those. The result is identical to evaluating it for all videos.
     """
+    lo, hi = _day_bounds(start, end)
     latest_info = APIVideoInfos.objects.filter(video=OuterRef("pk")).order_by(
         "-created_at"
     )
-    has_classification = Exists(
-        TikTokVideoClassification.objects.filter(video=OuterRef("pk"))
-    )
+    candidates = APIVideoInfos.objects.filter(create_time__gte=lo, create_time__lt=hi)
     rows = (
-        TikTokVideo.objects.annotate(
-            latest_create_time=Subquery(latest_info.values("create_time")[:1]),
-            is_classified=has_classification,
-        )
-        .filter(latest_create_time__date__range=(start, end))
+        TikTokVideo.objects.filter(Exists(candidates.filter(video=OuterRef("pk"))))
+        .annotate(latest_create_time=Subquery(latest_info.values("create_time")[:1]))
+        .filter(latest_create_time__gte=lo, latest_create_time__lt=hi)
         .annotate(pub_date=TruncDate("latest_create_time"))
         .values("pub_date")
         .annotate(
-            total=Count("id"),
-            classified=Count("id", filter=Q(is_classified=True)),
+            total=Count("pk"),
+            # LEFT JOIN on a one-to-one: counts non-null classification ids.
+            classified=Count("classifications"),
         )
         .order_by("pub_date")
     )

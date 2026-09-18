@@ -340,6 +340,42 @@ class ZuseAPIClientProcessResultsTests(TestCase):
             TikTokVideoClassification.objects.get().video_id, other_video.pk
         )
 
+    def test_truncates_over_long_string_values_to_fit_the_column(self):
+        result = make_zuse_result(self.video.id_tiktok)
+        result["predictions"]["language"] = "x" * 300
+        result["predictions"]["plausible_party"] = "y" * 255
+
+        with self.assertLogs("ddcs.metadata.services", level="WARNING") as logs:
+            self.client._process_results([result])
+
+        classification = TikTokVideoClassification.objects.get()
+        self.assertEqual(len(classification.language), 255)
+        self.assertTrue(classification.language.endswith("<...>"))
+        self.assertEqual(classification.plausible_party, "y" * 255)
+        (message,) = logs.output
+        self.assertIn("language", message)
+        self.assertIn(str(self.video.id_tiktok), message)
+
+    def test_truncates_non_string_values_that_overflow_when_stringified(self):
+        result = make_zuse_result(self.video.id_tiktok)
+        result["predictions"]["plausible_party"] = [f"Party {i}" for i in range(100)]
+
+        with self.assertLogs("ddcs.metadata.services", level="WARNING"):
+            self.client._process_results([result])
+
+        classification = TikTokVideoClassification.objects.get()
+        self.assertEqual(len(classification.plausible_party), 255)
+        self.assertTrue(classification.plausible_party.startswith("['Party 0'"))
+
+    def test_short_values_are_left_untouched(self):
+        result = make_zuse_result(self.video.id_tiktok)
+
+        self.client._process_results([result])
+
+        classification = TikTokVideoClassification.objects.get()
+        self.assertEqual(classification.language, "en")
+        self.assertEqual(classification.plausible_party, "PartyX")
+
     def test_empty_results_does_not_touch_db(self):
         with patch(
             "ddcs.metadata.services.TikTokVideoClassification.objects.bulk_create"
