@@ -356,4 +356,9 @@ class TikTokVideoClassificationAdmin(admin.ModelAdmin):
         "classification_ts",
     )
     list_filter = ("is_political",)
-    readonly_fields = ("created_at", "updated_at")
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def get_readonly_fields(self, request: HttpRequest, obj=None) -> list[str]:  # noqa: ANN001
+        return [field.name for field in self.model._meta.fields]  # noqa: SLF001

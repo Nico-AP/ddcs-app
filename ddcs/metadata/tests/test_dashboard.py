@@ -148,3 +148,34 @@ class GetClassificationCoverageTests(TestCase):
 
         self.assertEqual(coverage[today]["total"], 1)
         self.assertEqual(coverage[yesterday]["total"], 0)
+
+    def test_excludes_video_whose_latest_snapshot_is_outside_the_range(self):
+        today = timezone.localdate()
+        yesterday = today - timedelta(days=1)
+        video = TikTokVideo.objects.create(
+            id_tiktok=1, added_by=DataOrigins.RESEARCH_API
+        )
+        older = APIVideoInfos.objects.create(video=video, create_time=_aware(yesterday))
+        older.created_at = _aware(yesterday)
+        older.save(update_fields=["created_at"])
+        APIVideoInfos.objects.create(video=video, create_time=_aware(today))
+
+        coverage = get_classification_coverage(yesterday, yesterday)
+
+        self.assertEqual(coverage[0]["total"], 0)
+
+    def test_includes_last_moment_of_end_date_and_excludes_next_midnight(self):
+        today = timezone.localdate()
+        v1 = TikTokVideo.objects.create(id_tiktok=1, added_by=DataOrigins.RESEARCH_API)
+        v2 = TikTokVideo.objects.create(id_tiktok=2, added_by=DataOrigins.RESEARCH_API)
+        APIVideoInfos.objects.create(
+            video=v1,
+            create_time=_aware(today + timedelta(days=1)) - timedelta(seconds=1),
+        )
+        APIVideoInfos.objects.create(
+            video=v2, create_time=_aware(today + timedelta(days=1))
+        )
+
+        coverage = get_classification_coverage(today, today)
+
+        self.assertEqual(coverage[0]["total"], 1)
