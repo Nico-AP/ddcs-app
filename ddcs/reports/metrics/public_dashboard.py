@@ -21,21 +21,22 @@ from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.user_types import USER_TYPES, assign_user_type
 from ddcs.reports.utils import load_account_party_mapping
 
-_TIERZEICHEN_CACHE_KEY = "reports:public_tierzeichen_dist_v2"
+_TIERZEICHEN_CACHE_KEY = "reports:public_tierzeichen_dist_v3"
 _TIERZEICHEN_HISTORIC_CACHE_KEY = "reports:public_tierzeichen_historic"
 _VIDEO_STATS_CACHE_KEY = "reports:public_video_stats"
 _CACHE_TIMEOUT = 60 * 60 * 6
 
 
 def _complete_donation_report_stats() -> QuerySet[ParticipantReportStatistics]:
-    """Reports for finished participations that include usable watch history.
+    """Reports that include usable watch history in the report window.
 
-    Incomplete flows can still get a ``ParticipantReportStatistics`` row at
-    upload time; the public dashboard only counts completed donations with at
-    least one watched video in the report window.
+    A ``ParticipantReportStatistics`` row is created at upload time. The public
+    dashboard counts donations with at least one watched video
+    (``videos_seen_count_total > 0``), not DDM ``participant.completed`` —
+    that flag is only set on the debriefing step and under-counts real
+    donations with watch history.
     """
     return ParticipantReportStatistics.objects.filter(
-        participant__completed=True,
         videos_seen_count_total__gt=0,
     )
 
@@ -70,7 +71,7 @@ def get_tierzeichen_distribution(
     return result
 
 
-_DONATION_STATS_CACHE_KEY = "reports:public_donation_stats_v2"
+_DONATION_STATS_CACHE_KEY = "reports:public_donation_stats_v3"
 
 
 def _rate_like_from_comparisons(comparisons: list) -> float:
@@ -84,11 +85,10 @@ def _rate_like_from_comparisons(comparisons: list) -> float:
 
 
 def get_donation_stats(*, force_refresh: bool = False) -> dict:
-    """Aggregate Datenspende Kennzahlen across complete donations with watches.
+    """Aggregate Datenspende Kennzahlen across donations with watch history.
 
-    Only finished participations (``participant.completed``) with
-    ``videos_seen_count_total > 0`` are included. Likes are estimated as
-    ``rate_like * videos_seen_count_total`` per donation.
+    Only reports with ``videos_seen_count_total > 0`` are included. Likes are
+    estimated as ``rate_like * videos_seen_count_total`` per donation.
     """
     if not force_refresh:
         cached = cache.get(_DONATION_STATS_CACHE_KEY)
