@@ -358,6 +358,10 @@ def compute_user_report_metrics(data: TikTokUserData) -> ReportStatistics:
 
     return {
         "videos_seen_count_total": len(seen_video_ids),
+        # True only when usable watches exist in the report window (same as
+        # videos_seen_count_total > 0). Refused / empty / unparseable history
+        # all leave the report on the empty-state screen.
+        "has_watch_history": len(seen_video_ids) > 0,
         "seen_pol_video_ids": seen_pol_video_ids,
         "liked_pol_video_ids": liked_pol_video_ids,
         "followed_pol_users": followed_pol_users,

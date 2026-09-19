@@ -1,46 +1,58 @@
 <div id="report-statistics">
+  {% if n_seen_total > 0 %}
+    {% include "reports/partials/intro_stats.html" %}
 
-  {% include "reports/partials/intro_stats.html" %}
+    {% if behaviour_comparisons %}
+      {% include "reports/partials/behaviour_comparison.html" %}
+    {% endif %}
 
-  {% if behaviour_comparisons %}
-    {% include "reports/partials/behaviour_comparison.html" %}
-  {% endif %}
+    {% include "reports/partials/politics_intro.html" %}
 
-  {% include "reports/partials/politics_intro.html" %}
+    {% if party_distribution_user.html %}
+      {% include "reports/partials/party_distribution_user.html" %}
+    {% endif %}
 
-  {% if party_distribution_user.html %}
-    {% include "reports/partials/party_distribution_user.html" %}
-  {% endif %}
+    {% if temporal_party_distribution_user.html %}
+      {% include "reports/partials/temporal_party_distribution_user.html" %}
+    {% endif %}
 
-  {% if temporal_party_distribution_user.html %}
-    {% include "reports/partials/temporal_party_distribution_user.html" %}
-  {% endif %}
+    {% if top_videos %}
+      {% include "reports/partials/top_videos_carousel.html" with top_videos=top_videos %}
+    {% endif %}
 
-  {% if top_videos %}
-    {% include "reports/partials/top_videos_carousel.html" with top_videos=top_videos %}
-  {% endif %}
+    {% if wordcloud_party_user.html %}
+      {% include "reports/partials/wordcloud_party_user.html" %}
+    {% endif %}
 
-  {% if wordcloud_party_user.html %}
-    {% include "reports/partials/wordcloud_party_user.html" %}
-  {% endif %}
-
-  {% if wordcloud_non_party_user.html %}
-    {% include "reports/partials/wordcloud_non_party_user.html" %}
+    {% if wordcloud_non_party_user.html %}
+      {% include "reports/partials/wordcloud_non_party_user.html" %}
+    {% endif %}
+  {% else %}
+    {% include "reports/partials/missing_watch_history.html" %}
   {% endif %}
 
   {% include "reports/partials/share_invite.html" %}
 
   <div class="report-block text-center">
     <p class="mb-0 text-muted small">
-      Wenn du später im Wahlkampf nochmal einen aktuellen Report erhalten möchtest:
-      Einfach den Browser-Cache für dein-feed-deine-wahl.de löschen und nochmal mitmachen!
+      {% if n_seen_total > 0 %}
+        Wenn du später im Wahlkampf nochmal einen aktuellen Report erhalten möchtest:
+        Einfach den Browser-Cache für dein-feed-deine-wahl.de löschen und nochmal mitmachen!
+      {% else %}
+        Falls du den Wiedergabeverlauf versehentlich nicht gespendet hast:
+        Einfach den Browser-Cache für dein-feed-deine-wahl.de löschen und nochmal mitmachen —
+        diesmal mit Watch History.
+      {% endif %}
     </p>
   </div>
 
-  {% if behaviour_user_type %}
   <script nonce="{{ request.csp_nonce }}">
     (function () {
+      {% if behaviour_user_type %}
       var text = "Ich habe bei \u201eDein Feed, Deine Wahl\u201c mitgemacht \u2013 mein TikTok-Tierzeichen ist {{ behaviour_user_type.animal }}! Mach auch mit: https://dein-feed-deine-wahl.de/";
+      {% else %}
+      var text = "Ich habe bei \u201eDein Feed, Deine Wahl\u201c mitgemacht \u2013 mach auch mit: https://dein-feed-deine-wahl.de/";
+      {% endif %}
       var encoded = encodeURIComponent(text);
 
       document.querySelectorAll(".js-share-whatsapp").forEach(function (a) {
@@ -75,5 +87,4 @@
       });
     })();
   </script>
-  {% endif %}
 </div>

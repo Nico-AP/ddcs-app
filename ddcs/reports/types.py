@@ -86,6 +86,7 @@ class ReportStatistics(TypedDict):
     JSON fields one-to-one."""
 
     videos_seen_count_total: int
+    has_watch_history: bool
 
     seen_pol_video_ids: list[int]
     liked_pol_video_ids: list[int]

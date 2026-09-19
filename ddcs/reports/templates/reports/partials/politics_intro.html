@@ -1,15 +1,15 @@
 <div class="report-block">
   <h2 class="h4 mb-3">Politik in deinem Feed</h2>
   <p class="text-muted">
-    {% if n_seen_total == 0 %}
-      Von den Videos, die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
-      hatten <span class="report-highlight">keine</span> ein politisches Schlagwort
-      oder kamen von offiziellen Partei-Accounts.
-      {% include "reports/partials/political_content_info_trigger.html" %}
-    {% elif n_seen_pol_videos == 0 %}
+    {% if n_seen_pol_videos == 0 %}
       Von den
       <span class="report-highlight">{{ n_seen_total }}</span>
-      {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %},
+      {% if n_seen_total == 1 %}
+        Video
+      {% else %}
+        Videos
+      {% endif %}
+      ,
       die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
       hatte <span class="report-highlight">keins</span> ein politisches Schlagwort
       oder kam von offiziellen Partei-Accounts.
@@ -17,7 +17,12 @@
     {% elif n_seen_pol_videos == 1 %}
       Von den
       <span class="report-highlight">{{ n_seen_total }}</span>
-      {% if n_seen_total == 1 %}Video{% else %}Videos{% endif %},
+      {% if n_seen_total == 1 %}
+        Video
+      {% else %}
+        Videos
+      {% endif %}
+      ,
       die du seit dem {{ start_date|date:"j.n.Y" }} gesehen hast,
       hatte nur <span class="report-highlight">1</span> Video mindestens ein politisches
       Schlagwort oder kam von einem offiziellen Partei-Account.
@@ -38,7 +43,5 @@
     </p>
   {% endif %}
 </div>
-
 {% include "reports/partials/political_content_info_modal.html" %}
-
 <hr />
