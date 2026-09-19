@@ -168,6 +168,7 @@ class GetReportView(TemplateView):
         context["n_seen_pol_videos"] = n_seen_pol
         context["n_seen_total"] = n_seen_total
         context["share_political"] = share_pol
+        context["has_watch_history"] = bool(self.statistics.has_watch_history)
         context["start_date"] = REPORT_FIRST_DATE_TO_INCLUDE
 
         # Plots

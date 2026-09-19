@@ -7,6 +7,7 @@ class ParticipantReportStatistics(models.Model):
     generated_at = models.DateTimeField(auto_now_add=True)
 
     videos_seen_count_total = models.IntegerField(default=0)
+    has_watch_history = models.BooleanField(default=False)
 
     seen_pol_video_ids = models.JSONField()
     liked_pol_video_ids = models.JSONField()
