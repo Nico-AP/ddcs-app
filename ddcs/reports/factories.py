@@ -369,6 +369,7 @@ def get_synthetic_report_statistics(
         videos_seen_count_total=randint(
             len(seen_pol_video_ids) * 2, len(seen_pol_video_ids) * 5
         ),
+        has_watch_history=True,
         seen_pol_video_ids=seen_pol_video_ids,
         liked_pol_video_ids=liked_pol_video_ids,
         followed_pol_users=followed_pol_users,

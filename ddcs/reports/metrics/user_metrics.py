@@ -358,6 +358,7 @@ def compute_user_report_metrics(data: TikTokUserData) -> ReportStatistics:
 
     return {
         "videos_seen_count_total": len(seen_video_ids),
+        "has_watch_history": data.watch_history is not None,
         "seen_pol_video_ids": seen_pol_video_ids,
         "liked_pol_video_ids": liked_pol_video_ids,
         "followed_pol_users": followed_pol_users,

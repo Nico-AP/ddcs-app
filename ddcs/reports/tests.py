@@ -10,6 +10,7 @@ from unittest import skip
 from unittest.mock import MagicMock, patch
 
 from ddm.participation.models import Participant
+from ddm.projects.models import DonationProject, ResearchProfile
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.contrib.sessions.middleware import SessionMiddleware
@@ -62,6 +63,11 @@ from ddcs.reports.config import (
 )
 from ddcs.reports.factories import get_synthetic_report_statistics
 from ddcs.reports.metrics import account_metrics, date_ranges, user_metrics
+from ddcs.reports.metrics.public_dashboard import (
+    get_donation_stats,
+    get_tierzeichen_distribution,
+)
+from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.plots import public_plots, user_plots
 from ddcs.reports.plots.public_plot_images import (
     compose_labeled_png,
@@ -1505,6 +1511,7 @@ class ComputeReportStatisticsTests(TestCase):
         )
         # Total watched includes the neutral video too.
         self.assertEqual(result["videos_seen_count_total"], 4)
+        self.assertTrue(result["has_watch_history"])
 
     def test_party_account_with_monitored_hashtag_is_not_double_counted(self):
         cutoff = REPORT_FIRST_DATE_TO_INCLUDE + timedelta(days=1)
@@ -1577,6 +1584,7 @@ class ComputeReportStatisticsTests(TestCase):
         with self._patch_csv():
             result = user_metrics.compute_user_report_metrics(TikTokUserData())
         self.assertEqual(result["videos_seen_count_total"], 0)
+        self.assertFalse(result["has_watch_history"])
         self.assertEqual(result["seen_pol_video_ids"], [])
         self.assertEqual(result["liked_pol_video_ids"], [])
         self.assertEqual(result["followed_pol_users"], [])
@@ -1589,6 +1597,7 @@ class GenerateReportStatisticsTests(TestCase):
     def test_upserts_statistics_to_db(self, mock_compute):
         mock_compute.return_value = {
             "videos_seen_count_total": 5,
+            "has_watch_history": True,
             "seen_pol_video_ids": [1, 2],
             "liked_pol_video_ids": [],
             "followed_pol_users": [],
@@ -2498,6 +2507,7 @@ class GetReportViewTests(TestCase):
     def _statistics(self, **overrides) -> MagicMock:
         defaults = {
             "videos_seen_count_total": 100,
+            "has_watch_history": True,
             "seen_pol_video_ids": [1, 2, 3],
             "party_counts": [{"party": "SPD", "count": 3}],
             "daily_party_counts": [{"date": "2026-05-08", "party": "SPD", "count": 3}],
@@ -2564,7 +2574,9 @@ class GetReportViewTests(TestCase):
     def test_share_political_is_none_when_no_videos_seen(self):
         view = views.GetReportView()
         view.statistics = self._statistics(
-            videos_seen_count_total=0, seen_pol_video_ids=[]
+            videos_seen_count_total=0,
+            has_watch_history=False,
+            seen_pol_video_ids=[],
         )
         view.kwargs = {"participant_id": "abc123"}
         with (
@@ -2580,6 +2592,30 @@ class GetReportViewTests(TestCase):
         ):
             context = view.get_context_data()
         self.assertIsNone(context["share_political"])
+        self.assertFalse(context["has_watch_history"])
+
+    def test_context_marks_missing_watch_history(self):
+        view = views.GetReportView()
+        view.statistics = self._statistics(
+            videos_seen_count_total=0,
+            has_watch_history=False,
+            seen_pol_video_ids=[],
+        )
+        view.kwargs = {"participant_id": "abc123"}
+        with (
+            patch.object(
+                views, "get_party_distribution_plot_user", return_value={"html": None}
+            ),
+            patch.object(
+                views,
+                "get_temporal_party_distribution_plot_user",
+                return_value={"html": None},
+            ),
+            patch.object(views, "get_wordcloud", return_value={"html": None}),
+        ):
+            context = view.get_context_data()
+        self.assertFalse(context["has_watch_history"])
+        self.assertEqual(context["n_seen_total"], 0)
 
     def test_top_videos_include_tiktok_urls(self):
         view = views.GetReportView()
@@ -2921,3 +2957,79 @@ class PublicPlotImageComposeTests(TestCase):
         result = Image.open(BytesIO(labeled))
         self.assertGreater(result.height, source.height)
         self.assertGreater(result.width, source.width)
+
+
+class PublicDonationStatsFilterTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        user = get_user_model().objects.create_user(
+            username="dash-researcher", password="test-pass"
+        )
+        owner = ResearchProfile.objects.create(user=user)
+        self.project = DonationProject.objects.create(
+            name="TikTok",
+            slug="tiktok-dash-stats",
+            contact_information="test@example.com",
+            data_protection_statement="test",
+            owner=owner,
+        )
+
+    def _make_stats(
+        self,
+        *,
+        external_id: str,
+        completed: bool,
+        videos_seen: int,
+        rate_like: float = 0.1,
+    ) -> ParticipantReportStatistics:
+        participant = Participant.objects.create(
+            project=self.project,
+            external_id=external_id,
+            start_time=timezone.now(),
+            completed=completed,
+        )
+        return ParticipantReportStatistics.objects.create(
+            participant=participant,
+            videos_seen_count_total=videos_seen,
+            has_watch_history=videos_seen > 0,
+            seen_pol_video_ids=[],
+            liked_pol_video_ids=[],
+            followed_pol_users=[],
+            party_counts={},
+            daily_party_counts={},
+            hashtags_by_pol_video={},
+            top_videos=[],
+            party_hashtags={},
+            non_party_hashtags={},
+            behaviour_comparisons=[
+                {"metric": "rate_like", "value": rate_like},
+            ],
+        )
+
+    def test_donation_stats_only_count_completed_with_watch_history(self):
+        self._make_stats(
+            external_id="a" * 24, completed=True, videos_seen=100, rate_like=0.2
+        )
+        self._make_stats(
+            external_id="b" * 24, completed=False, videos_seen=500, rate_like=0.5
+        )
+        self._make_stats(
+            external_id="c" * 24, completed=True, videos_seen=0, rate_like=0.5
+        )
+
+        stats = get_donation_stats(force_refresh=True)
+        self.assertEqual(stats["n_donations"], 1)
+        self.assertEqual(stats["total_videos_watched"], 100)
+        self.assertEqual(stats["total_likes"], 20)
+
+    def test_tierzeichen_uses_same_complete_donation_filter(self):
+        self._make_stats(external_id="d" * 24, completed=True, videos_seen=10)
+        self._make_stats(external_id="e" * 24, completed=False, videos_seen=10)
+
+        with patch(
+            "ddcs.reports.metrics.public_dashboard.assign_user_type",
+            return_value={"id": "papagei", "animal": "Papagei"},
+        ):
+            dist = get_tierzeichen_distribution(force_refresh=True)
+
+        self.assertEqual(sum(item["count"] for item in dist), 1)
