@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 
 from django.core.cache import cache
-from django.db.models import Count, Sum
+from django.db.models import Count, QuerySet, Sum
 
 from ddcs.metadata.research_api.models import (
     APIVideoInfos,
@@ -21,10 +21,23 @@ from ddcs.reports.models import ParticipantReportStatistics
 from ddcs.reports.user_types import USER_TYPES, assign_user_type
 from ddcs.reports.utils import load_account_party_mapping
 
-_TIERZEICHEN_CACHE_KEY = "reports:public_tierzeichen_dist"
+_TIERZEICHEN_CACHE_KEY = "reports:public_tierzeichen_dist_v2"
 _TIERZEICHEN_HISTORIC_CACHE_KEY = "reports:public_tierzeichen_historic"
 _VIDEO_STATS_CACHE_KEY = "reports:public_video_stats"
 _CACHE_TIMEOUT = 60 * 60 * 6
+
+
+def _complete_donation_report_stats() -> QuerySet[ParticipantReportStatistics]:
+    """Reports for finished participations that include usable watch history.
+
+    Incomplete flows can still get a ``ParticipantReportStatistics`` row at
+    upload time; the public dashboard only counts completed donations with at
+    least one watched video in the report window.
+    """
+    return ParticipantReportStatistics.objects.filter(
+        participant__completed=True,
+        videos_seen_count_total__gt=0,
+    )
 
 
 def get_tierzeichen_distribution(
@@ -38,9 +51,9 @@ def get_tierzeichen_distribution(
             return cached
 
     counts: Counter[str] = Counter()
-    for stats in ParticipantReportStatistics.objects.only(
-        "behaviour_comparisons"
-    ).iterator():
+    for stats in (
+        _complete_donation_report_stats().only("behaviour_comparisons").iterator()
+    ):
         user_type = assign_user_type(stats.behaviour_comparisons or [])
         if user_type:
             counts[user_type["id"]] += 1
@@ -57,7 +70,7 @@ def get_tierzeichen_distribution(
     return result
 
 
-_DONATION_STATS_CACHE_KEY = "reports:public_donation_stats"
+_DONATION_STATS_CACHE_KEY = "reports:public_donation_stats_v2"
 
 
 def _rate_like_from_comparisons(comparisons: list) -> float:
@@ -71,9 +84,11 @@ def _rate_like_from_comparisons(comparisons: list) -> float:
 
 
 def get_donation_stats(*, force_refresh: bool = False) -> dict:
-    """Aggregate Datenspende Kennzahlen across ParticipantReportStatistics.
+    """Aggregate Datenspende Kennzahlen across complete donations with watches.
 
-    Likes are estimated as rate_like * videos_seen_count_total per donation.
+    Only finished participations (``participant.completed``) with
+    ``videos_seen_count_total > 0`` are included. Likes are estimated as
+    ``rate_like * videos_seen_count_total`` per donation.
     """
     if not force_refresh:
         cached = cache.get(_DONATION_STATS_CACHE_KEY)
@@ -83,10 +98,14 @@ def get_donation_stats(*, force_refresh: bool = False) -> dict:
     n_donations = 0
     total_videos = 0
     total_likes = 0.0
-    for stats in ParticipantReportStatistics.objects.only(
-        "videos_seen_count_total",
-        "behaviour_comparisons",
-    ).iterator():
+    for stats in (
+        _complete_donation_report_stats()
+        .only(
+            "videos_seen_count_total",
+            "behaviour_comparisons",
+        )
+        .iterator()
+    ):
         n_donations += 1
         videos = int(stats.videos_seen_count_total or 0)
         total_videos += videos
