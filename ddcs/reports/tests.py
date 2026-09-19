@@ -3017,25 +3017,26 @@ class PublicDonationStatsFilterTests(TestCase):
             ],
         )
 
-    def test_donation_stats_only_count_completed_with_watch_history(self):
+    def test_donation_stats_only_count_reports_with_watch_history(self):
         self._make_stats(
             external_id="a" * 24, completed=True, videos_seen=100, rate_like=0.2
         )
         self._make_stats(
-            external_id="b" * 24, completed=False, videos_seen=500, rate_like=0.5
+            external_id="b" * 24, completed=False, videos_seen=50, rate_like=0.1
         )
         self._make_stats(
             external_id="c" * 24, completed=True, videos_seen=0, rate_like=0.5
         )
 
         stats = get_donation_stats(force_refresh=True)
-        self.assertEqual(stats["n_donations"], 1)
-        self.assertEqual(stats["total_videos_watched"], 100)
-        self.assertEqual(stats["total_likes"], 20)
+        self.assertEqual(stats["n_donations"], 2)
+        self.assertEqual(stats["total_videos_watched"], 150)
+        self.assertEqual(stats["total_likes"], 25)
 
-    def test_tierzeichen_uses_same_complete_donation_filter(self):
+    def test_tierzeichen_includes_incomplete_participants_with_watches(self):
         self._make_stats(external_id="d" * 24, completed=True, videos_seen=10)
         self._make_stats(external_id="e" * 24, completed=False, videos_seen=10)
+        self._make_stats(external_id="f" * 24, completed=True, videos_seen=0)
 
         with patch(
             "ddcs.reports.metrics.public_dashboard.assign_user_type",
@@ -3043,4 +3044,4 @@ class PublicDonationStatsFilterTests(TestCase):
         ):
             dist = get_tierzeichen_distribution(force_refresh=True)
 
-        self.assertEqual(sum(item["count"] for item in dist), 1)
+        self.assertEqual(sum(item["count"] for item in dist), 2)
