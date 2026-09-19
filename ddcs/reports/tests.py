@@ -193,6 +193,17 @@ class FracInstantSkipTests(TestCase):
     def test_empty_history_returns_no_metrics(self):
         self.assertEqual(compute_watch_history_metrics(TikTokUserData()), {})
 
+    def test_watches_without_video_id_are_ignored(self):
+        base = REPORT_FIRST_DATE_TO_INCLUDE
+        data = TikTokUserData(
+            watch_history=[
+                {"date": base, "video_id": None},
+                {"date": base + timedelta(seconds=5)},
+            ]
+        )
+        self.assertEqual(compute_watch_history_metrics(data), {})
+        self.assertEqual(compute_behaviour_comparisons(data, frozenset()), [])
+
     def test_single_watch_has_zero_instant_skip_fraction(self):
         metrics = compute_watch_history_metrics(self._watch_history([0]))
         self.assertEqual(metrics["frac_instant_skip"], 0.0)

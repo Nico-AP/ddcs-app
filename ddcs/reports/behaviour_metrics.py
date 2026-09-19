@@ -158,11 +158,13 @@ def _non_negative(value: float | None) -> float | None:
 def _filtered_watch_history(
     data: TikTokUserData,
 ) -> list[WatchHistoryRecord]:
+    """Watch events in the report window with a parseable video id."""
     return [
         record
         for record in data.watch_history or []
         if isinstance(record.get("date"), datetime)
         and record["date"] >= REPORT_FIRST_DATE_TO_INCLUDE
+        and record.get("video_id") is not None
     ]
 
 

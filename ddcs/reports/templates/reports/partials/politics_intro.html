@@ -1,16 +1,7 @@
 <div class="report-block">
   <h2 class="h4 mb-3">Politik in deinem Feed</h2>
   <p class="text-muted">
-    {% if not has_watch_history %}
-      Deine Datenspende enthielt keinen Wiedergabeverlauf (Watch History).
-      Ohne diese Daten können wir dir leider keine Auswertung zu den Videos
-      in deinem Feed zeigen.
-    {% elif n_seen_total == 0 %}
-      In deinem Wiedergabeverlauf fanden sich seit dem
-      {{ start_date|date:"j.n.Y" }} keine Videos.
-      Deshalb können wir dir für diesen Zeitraum keine Auswertung zu
-      politischen Inhalten zeigen.
-    {% elif n_seen_pol_videos == 0 %}
+    {% if n_seen_pol_videos == 0 %}
       Von den
       <span class="report-highlight">{{ n_seen_total }}</span>
       {% if n_seen_total == 1 %}
@@ -45,14 +36,12 @@
       {% include "reports/partials/political_content_info_trigger.html" %}
     {% endif %}
   </p>
-  {% if has_watch_history and n_seen_pol_videos > 0 %}
+  {% if n_seen_pol_videos > 0 %}
     <p class="text-muted">
       Das entspricht <span class="report-highlight">{{ share_political }}%</span> der Videos,
       die du gesehen hast.
     </p>
   {% endif %}
 </div>
-{% if has_watch_history and n_seen_total > 0 %}
-  {% include "reports/partials/political_content_info_modal.html" %}
-{% endif %}
+{% include "reports/partials/political_content_info_modal.html" %}
 <hr />
