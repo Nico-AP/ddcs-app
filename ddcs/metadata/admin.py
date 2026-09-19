@@ -15,6 +15,7 @@ from ddcs.metadata.models import (
     TikTokMusic,
     TikTokUser,
     TikTokVideo,
+    TikTokVideoClassification,
 )
 from ddcs.metadata.research_api.models import (
     APIHashtagInfos,
@@ -340,6 +341,23 @@ class SyncAttemptAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
+        return False
+
+    def get_readonly_fields(self, request: HttpRequest, obj=None) -> list[str]:  # noqa: ANN001
+        return [field.name for field in self.model._meta.fields]  # noqa: SLF001
+
+
+@admin.register(TikTokVideoClassification)
+class TikTokVideoClassificationAdmin(admin.ModelAdmin):
+    list_display = (
+        "video",
+        "created_at",
+        "is_political",
+        "classification_ts",
+    )
+    list_filter = ("is_political",)
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
         return False
 
     def get_readonly_fields(self, request: HttpRequest, obj=None) -> list[str]:  # noqa: ANN001

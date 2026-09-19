@@ -142,6 +142,8 @@ class Keyword(BaseMetadataModel, APIMonitoredMixin):
 
 
 class TikTokVideoClassification(models.Model):
+    """Classification as delivered by Zuse based on Research API data."""
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)  # will likely not be updated.
 
@@ -151,22 +153,27 @@ class TikTokVideoClassification(models.Model):
         related_name="classifications",
     )
 
-    # Predictions:
+    # Predictions based on Research API information:
     is_political = models.BooleanField(default=False)
+    political_other = models.BooleanField(default=False)
+    political_content = models.BooleanField(default=False)
     stage1_rationale = models.TextField(blank=True)
     entities = models.JSONField(blank=True, null=True, default=list)
     keyword_matches = models.JSONField(blank=True, null=True, default=list)
+    language = models.CharField(blank=True, max_length=255)
+    plausible_party = models.CharField(blank=True, max_length=255)
     classification_ts = models.DateTimeField(null=True, blank=True)
     # created_at received from classifier
 
-    scraped_data = models.JSONField(blank=True, null=True)
-    video_path = models.CharField(max_length=255, blank=True)
-    image_paths = models.JSONField(blank=True, null=True)
-    post_scrape_prediction = models.JSONField(blank=True, null=True)
-
+    # Sentiment information extracted from
     is_sentiment_positive = models.BooleanField(default=False)
     is_sentiment_negative = models.BooleanField(default=False)
     is_sentiment_neutral = models.BooleanField(default=False)
+
+    # Scraping information from ZuSe
+    prediction_scraped = models.JSONField(blank=True, null=True)
+    media = models.JSONField(blank=True, null=True)
+    scraped_data = models.JSONField(blank=True, null=True)
 
     def __str__(self) -> str:
         return f"Classification {self.pk} for video {self.video.id_tiktok}"

@@ -66,7 +66,9 @@ class DDCSBriefingView(BriefingView):
 
     def current_step_url(self) -> str:
         if self.current_step == 1:
-            return reverse("datadonation:tiktok_connection")
+            return reverse(
+                "datadonation:tiktok_connection", kwargs={"slug": self.object.slug}
+            )
         return get_current_step_url(self.steps, self.current_step, self.object.slug)
 
     def next_step_url(self) -> str:
@@ -132,6 +134,7 @@ class DDCSDebriefingView(DebriefingView):
         """Inject url parameters in redirect target."""
         context = super().get_context_data(**kwargs)
         context["participant_id"] = self.participant.external_id
+        context["debriefing_text"] = self.object.debriefing_text
         return context
 
     def extra_before_render(self, request: HttpRequest) -> None:

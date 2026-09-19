@@ -325,8 +325,19 @@ CELERY_TASK_DEFAULT_QUEUE = env.str("CELERY_DEFAULT_QUEUE")
 CELERY_DONATION_QUEUE = env.str(
     "CELERY_DONATION_QUEUE", default=CELERY_TASK_DEFAULT_QUEUE
 )
+# Same rationale, opposite direction: keeps the (potentially long-running,
+# many-video) TikTok classification sync off the default queue so it can't
+# starve other tasks. Defaults to the default queue (no-op) until
+# CELERY_TIKTOK_CLASSIFICATION_QUEUE is set to a distinct value AND a
+# low-priority worker is provisioned to consume it — configured in ddcs-infra.
+CELERY_TIKTOK_CLASSIFICATION_QUEUE = env.str(
+    "CELERY_TIKTOK_CLASSIFICATION_QUEUE", default=CELERY_TASK_DEFAULT_QUEUE
+)
 CELERY_TASK_ROUTES = {
     "ddcs.datadonation.tasks.process_donation": {"queue": CELERY_DONATION_QUEUE},
+    "ddcs.metadata.tasks.sync_tiktok_video_classifications": {
+        "queue": CELERY_TIKTOK_CLASSIFICATION_QUEUE
+    },
 }
 
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
@@ -384,6 +395,12 @@ API_MONITORING_START_DATE: date = env.date(
 TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES: int = env.int(
     "TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES", default=0
 )
+
+
+# Zuse Classification API
+# ------------------------------------------------------------------------------
+ZUSE_API_TOKEN = env.str("ZUSE_API_TOKEN", "")
+ZUSE_API_URL = env.str("ZUSE_API_URL", "")
 
 
 # Logging

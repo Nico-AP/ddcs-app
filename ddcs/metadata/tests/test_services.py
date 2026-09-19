@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import httpx
@@ -7,20 +8,24 @@ from ddcs.metadata.models import DataOrigins, TikTokVideo, TikTokVideoClassifica
 from ddcs.metadata.services import ZuseAPIClient
 
 
-def make_zuse_result(video_id: int, **overrides) -> dict:
+def make_zuse_result(id_tiktok: int, **overrides) -> dict:
     """Sample Zuse API result payload, with optional field overrides."""
     result = {
-        "video_id": video_id,
+        "id_tiktok": id_tiktok,
         "predictions": {
             "is_political": True,
+            "political_other": False,
+            "political_content": True,
             "stage1_rationale": "mentions an election",
             "entities": ["Senator Smith"],
             "keyword_matches": ["election"],
+            "language": "en",
+            "plausible_party": "PartyX",
+            "created_at": datetime(2026, 9, 9, tzinfo=UTC).isoformat(),
         },
         "entities": [{"sentiment": "positive"}, {"sentiment": None}],
         "extended": {"raw": "data"},
-        "video_path": "/videos/1.mp4",
-        "image_paths": ["/images/1.jpg"],
+        "media": {"thumbnail": "https://zuse.example.com/thumb/1.jpg"},
         "predictions_div": {"is_political": False},
     }
     result.update(overrides)
@@ -82,6 +87,18 @@ class ZuseAPIClientGetVideoTests(TestCase):
         ):
             self.client._get_video(1)
 
+    def test_get_video_raises_on_invalid_json_body(self):
+        response = httpx.Response(
+            200,
+            content=b"not json",
+            request=httpx.Request("GET", "https://zuse.example.com/videos/1"),
+        )
+        with (
+            patch.object(self.client.client, "get", return_value=response),
+            self.assertRaises(ValueError),
+        ):
+            self.client._get_video(1)
+
 
 @override_settings(ZUSE_API_TOKEN="test-token", ZUSE_API_URL="https://zuse.example.com")
 class ZuseAPIClientSyncVideosTests(TestCase):
@@ -96,9 +113,9 @@ class ZuseAPIClientSyncVideosTests(TestCase):
         with patch.object(
             self.client,
             "_get_video",
-            side_effect=[make_zuse_result(v.pk) for v in self.videos],
+            side_effect=[make_zuse_result(v.id_tiktok) for v in self.videos],
         ):
-            self.client.sync_videos([v.pk for v in self.videos])
+            self.client.sync_videos([v.id_tiktok for v in self.videos])
 
         self.assertEqual(TikTokVideoClassification.objects.count(), 3)
 
@@ -108,13 +125,13 @@ class ZuseAPIClientSyncVideosTests(TestCase):
             patch.object(
                 self.client,
                 "_get_video",
-                side_effect=[make_zuse_result(v.pk) for v in self.videos],
+                side_effect=[make_zuse_result(v.id_tiktok) for v in self.videos],
             ),
             patch.object(
                 self.client, "_process_results", wraps=self.client._process_results
             ) as mock_process,
         ):
-            self.client.sync_videos([v.pk for v in self.videos])
+            self.client.sync_videos([v.id_tiktok for v in self.videos])
 
         # 3 videos with batch size 2 -> one batch of 2, one batch of 1
         self.assertEqual(mock_process.call_count, 2)
@@ -130,9 +147,11 @@ class ZuseAPIClientSyncVideosTests(TestCase):
         with patch.object(
             self.client,
             "_get_video",
-            side_effect=[error, make_zuse_result(self.videos[1].pk)],
+            side_effect=[error, make_zuse_result(self.videos[1].id_tiktok)],
         ):
-            self.client.sync_videos([self.videos[0].pk, self.videos[1].pk])
+            self.client.sync_videos(
+                [self.videos[0].id_tiktok, self.videos[1].id_tiktok]
+            )
 
         self.assertEqual(TikTokVideoClassification.objects.count(), 1)
         self.assertEqual(
@@ -146,9 +165,41 @@ class ZuseAPIClientSyncVideosTests(TestCase):
         with patch.object(
             self.client,
             "_get_video",
-            side_effect=[error, make_zuse_result(self.videos[1].pk)],
+            side_effect=[error, make_zuse_result(self.videos[1].id_tiktok)],
         ):
-            self.client.sync_videos([self.videos[0].pk, self.videos[1].pk])
+            self.client.sync_videos(
+                [self.videos[0].id_tiktok, self.videos[1].id_tiktok]
+            )
+
+        self.assertEqual(TikTokVideoClassification.objects.count(), 1)
+
+    def test_sync_videos_skips_video_on_invalid_json_response(self):
+        with patch.object(
+            self.client,
+            "_get_video",
+            side_effect=[
+                ValueError("Expecting value: line 1 column 1 (char 0)"),
+                make_zuse_result(self.videos[1].id_tiktok),
+            ],
+        ):
+            self.client.sync_videos(
+                [self.videos[0].id_tiktok, self.videos[1].id_tiktok]
+            )
+
+        self.assertEqual(TikTokVideoClassification.objects.count(), 1)
+
+    def test_sync_videos_skips_video_on_unexpected_payload_type(self):
+        with patch.object(
+            self.client,
+            "_get_video",
+            side_effect=[
+                ["unexpected", "list"],
+                make_zuse_result(self.videos[1].id_tiktok),
+            ],
+        ):
+            self.client.sync_videos(
+                [self.videos[0].id_tiktok, self.videos[1].id_tiktok]
+            )
 
         self.assertEqual(TikTokVideoClassification.objects.count(), 1)
 
@@ -169,24 +220,32 @@ class ZuseAPIClientProcessResultsTests(TestCase):
         )
 
     def test_creates_classification_with_expected_fields(self):
-        result = make_zuse_result(self.video.pk)
+        result = make_zuse_result(self.video.id_tiktok)
 
         self.client._process_results([result])
 
         classification = TikTokVideoClassification.objects.get()
         self.assertEqual(classification.video_id, self.video.pk)
         self.assertTrue(classification.is_political)
+        self.assertFalse(classification.political_other)
+        self.assertTrue(classification.political_content)
         self.assertEqual(classification.stage1_rationale, "mentions an election")
         self.assertEqual(classification.entities, ["Senator Smith"])
         self.assertEqual(classification.keyword_matches, ["election"])
+        self.assertEqual(classification.language, "en")
+        self.assertEqual(classification.plausible_party, "PartyX")
+        self.assertEqual(
+            classification.classification_ts, datetime(2026, 9, 9, tzinfo=UTC)
+        )
         self.assertEqual(classification.scraped_data, {"raw": "data"})
-        self.assertEqual(classification.video_path, "/videos/1.mp4")
-        self.assertEqual(classification.image_paths, ["/images/1.jpg"])
-        self.assertEqual(classification.post_scrape_prediction, {"is_political": False})
+        self.assertEqual(
+            classification.media, {"thumbnail": "https://zuse.example.com/thumb/1.jpg"}
+        )
+        self.assertEqual(classification.prediction_scraped, {"is_political": False})
 
     def test_computes_sentiment_flags_from_entities(self):
         result = make_zuse_result(
-            self.video.pk,
+            self.video.id_tiktok,
             entities=[
                 {"sentiment": "positive"},
                 {"sentiment": "negative"},
@@ -202,26 +261,34 @@ class ZuseAPIClientProcessResultsTests(TestCase):
         self.assertFalse(classification.is_sentiment_neutral)
 
     def test_missing_predictions_div_defaults_to_none(self):
-        result = make_zuse_result(self.video.pk)
+        result = make_zuse_result(self.video.id_tiktok)
         del result["predictions_div"]
 
         self.client._process_results([result])
 
         classification = TikTokVideoClassification.objects.get()
-        self.assertIsNone(classification.post_scrape_prediction)
+        self.assertIsNone(classification.prediction_scraped)
 
     def test_upserts_existing_classification_for_same_video(self):
         TikTokVideoClassification.objects.create(
-            video=self.video, is_political=False, stage1_rationale="old"
+            video=self.video,
+            is_political=False,
+            political_content=False,
+            stage1_rationale="old",
         )
 
         result = make_zuse_result(
-            self.video.pk,
+            self.video.id_tiktok,
             predictions={
                 "is_political": True,
+                "political_other": False,
+                "political_content": True,
                 "stage1_rationale": "new",
                 "entities": [],
                 "keyword_matches": [],
+                "language": "en",
+                "plausible_party": "PartyX",
+                "created_at": datetime(2026, 9, 9, tzinfo=UTC).isoformat(),
             },
         )
         self.client._process_results([result])
@@ -229,11 +296,12 @@ class ZuseAPIClientProcessResultsTests(TestCase):
         self.assertEqual(TikTokVideoClassification.objects.count(), 1)
         classification = TikTokVideoClassification.objects.get()
         self.assertTrue(classification.is_political)
+        self.assertTrue(classification.political_content)
         self.assertEqual(classification.stage1_rationale, "new")
 
     def test_skips_result_missing_required_field(self):
-        result = make_zuse_result(self.video.pk)
-        del result["extended"]
+        result = make_zuse_result(self.video.id_tiktok)
+        del result["predictions"]["stage1_rationale"]
 
         with self.assertLogs("ddcs.metadata.services", level="WARNING"):
             self.client._process_results([result])
@@ -248,13 +316,21 @@ class ZuseAPIClientProcessResultsTests(TestCase):
 
         self.assertEqual(TikTokVideoClassification.objects.count(), 0)
 
+    def test_skips_result_for_unknown_id_tiktok(self):
+        result = make_zuse_result(999999)
+
+        with self.assertLogs("ddcs.metadata.services", level="WARNING"):
+            self.client._process_results([result])
+
+        self.assertEqual(TikTokVideoClassification.objects.count(), 0)
+
     def test_one_malformed_result_does_not_block_valid_ones(self):
         other_video = TikTokVideo.objects.create(
             id_tiktok=2, added_by=DataOrigins.DONATION
         )
-        bad_result = make_zuse_result(self.video.pk)
+        bad_result = make_zuse_result(self.video.id_tiktok)
         del bad_result["predictions"]
-        good_result = make_zuse_result(other_video.pk)
+        good_result = make_zuse_result(other_video.id_tiktok)
 
         with self.assertLogs("ddcs.metadata.services", level="WARNING"):
             self.client._process_results([bad_result, good_result])
@@ -263,6 +339,42 @@ class ZuseAPIClientProcessResultsTests(TestCase):
         self.assertEqual(
             TikTokVideoClassification.objects.get().video_id, other_video.pk
         )
+
+    def test_truncates_over_long_string_values_to_fit_the_column(self):
+        result = make_zuse_result(self.video.id_tiktok)
+        result["predictions"]["language"] = "x" * 300
+        result["predictions"]["plausible_party"] = "y" * 255
+
+        with self.assertLogs("ddcs.metadata.services", level="WARNING") as logs:
+            self.client._process_results([result])
+
+        classification = TikTokVideoClassification.objects.get()
+        self.assertEqual(len(classification.language), 255)
+        self.assertTrue(classification.language.endswith("<...>"))
+        self.assertEqual(classification.plausible_party, "y" * 255)
+        (message,) = logs.output
+        self.assertIn("language", message)
+        self.assertIn(str(self.video.id_tiktok), message)
+
+    def test_truncates_non_string_values_that_overflow_when_stringified(self):
+        result = make_zuse_result(self.video.id_tiktok)
+        result["predictions"]["plausible_party"] = [f"Party {i}" for i in range(100)]
+
+        with self.assertLogs("ddcs.metadata.services", level="WARNING"):
+            self.client._process_results([result])
+
+        classification = TikTokVideoClassification.objects.get()
+        self.assertEqual(len(classification.plausible_party), 255)
+        self.assertTrue(classification.plausible_party.startswith("['Party 0'"))
+
+    def test_short_values_are_left_untouched(self):
+        result = make_zuse_result(self.video.id_tiktok)
+
+        self.client._process_results([result])
+
+        classification = TikTokVideoClassification.objects.get()
+        self.assertEqual(classification.language, "en")
+        self.assertEqual(classification.plausible_party, "PartyX")
 
     def test_empty_results_does_not_touch_db(self):
         with patch(
