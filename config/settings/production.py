@@ -75,6 +75,7 @@ CONTENT_SECURITY_POLICY = {
             "*.alex-berlin.de",
             "*.hiig.de",
             "assets.nexx.cloud",
+            "images.ctfassets.net",
         ],
         "media-src": [SELF, "https://www.tiktok.com"],
         "font-src": [SELF],

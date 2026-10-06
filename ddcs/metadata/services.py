@@ -12,6 +12,10 @@ from ddcs.metadata.models import (
     TikTokVideo,
     TikTokVideoClassification,
 )
+from ddcs.metadata.scraper.service import (
+    enqueue_watched_videos,
+    watched_videos_in_window,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +27,13 @@ _CLASSIFICATION_CHAR_FIELDS = [
 ]
 
 
-# TODO: When scraper is introduced, add a specific scrape priority to the
-#  entries created here.
 # TODO: Make this task async/convert to celery task.
 def register_donation_metadata(data: TikTokUserData) -> None:
     """Creates DB entries based on donation data.
 
-    Handles watch history, followed accounts, and liked videos.
+    Handles watch history, followed accounts, and liked videos. If the
+    scraper is enabled, the donated videos are queued for scraping (those
+    the Research API already covers are skipped).
     """
     # Watch history
     if data.watch_history:
@@ -57,6 +61,13 @@ def register_donation_metadata(data: TikTokUserData) -> None:
             for user_name in user_names
         ]
         TikTokUser.objects.bulk_create(users_to_add, ignore_conflicts=True)
+
+    if settings.TIKTOK_SCRAPER_ENABLED:
+        # One more donation for every video it shows as watched in the window.
+        watched = watched_videos_in_window(data.watch_history)
+        enqueue_watched_videos(
+            {video_id: (1, last_view) for video_id, last_view in watched.items()}
+        )
 
 
 # Service to sync with Zuse

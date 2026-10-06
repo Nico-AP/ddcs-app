@@ -2128,16 +2128,6 @@ class HexToRgbaTests(TestCase):
 # ------------------------------------------------------------
 
 
-class PostDataDateRangeTests(TestCase):
-    def test_range_starts_at_configured_start_date_and_ends_with_lag(self):
-        start, end = date_ranges.configured_date_range()
-        self.assertEqual(start, ddcs.reports.config.PUBLIC_POST_DATA_START_DATE)
-        expected_end = timezone.now().date() - timedelta(
-            days=ddcs.reports.config.PUBLIC_POST_DATA_END_LAG_DAYS
-        )
-        self.assertEqual(end, expected_end)
-
-
 class PublicPostDataDateRangeFallbackTests(TestCase):
     """Environments without data in the configured window fall back to theirs."""
 

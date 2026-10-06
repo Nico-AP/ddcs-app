@@ -13,6 +13,7 @@ NO_PARTY_KEY = "Keine Partei"
 # The end lag accounts for the Research API sync/backfill delay, so the most
 # recent days (which may still be incompletely synced) are excluded.
 PUBLIC_POST_DATA_START_DATE = date(2026, 7, 1)
+PUBLIC_POST_DATA_END_DATE = date(2026, 9, 20)
 PUBLIC_POST_DATA_END_LAG_DAYS = 4
 
 PARTIES_ORDER = [

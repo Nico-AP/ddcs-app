@@ -71,11 +71,31 @@ above policies stay consistent.
 
 Companion models for fields obtained by scraping the public TikTok website:
 
-- `VideoInfosScraped` → `TikTokVideo`
-- `UserInfosScraped` → `TikTokUser`
+- `VideoInfosScraped` → `TikTokVideo` (one row per successful scrape)
+- `VideoStatisticsScraped` → `TikTokVideo`
+- `ScrapeTarget` → `TikTokVideo` (one-to-one): the scraping queue
 
-**Status:** the scraper app has not yet been implemented; everything that exists
-is placeholder code.
+The scraper enriches **videos that have no Research API infos** and that donors
+watched during the study period (2026-07-01 to 2026-09-20), starting with the
+videos most donors saw. It also collects each video's original-language
+caption. It is off unless `TIKTOK_SCRAPER_ENABLED` is set.
+
+Fields that both sources provide have the same name, type and value format as
+on the Research API models, so the two can be read interchangeably:
+
+| Model                    | Shared with the Research API model                                                             |
+|--------------------------|------------------------------------------------------------------------------------------------|
+| `VideoInfosScraped`      | `description`, `create_time`, `duration`, `video_mention_list`, `effect_list`, `voice_to_text` |
+| `VideoStatisticsScraped` | `view_count`, `like_count`, `comment_count`, `share_count`, `favorites_count`                  |
+
+All writes go through `ddcs.metadata.scraper.service`. On success the service
+also fills in `user`, `music`, `inferred_create_time` and adds hashtags on the
+`TikTokVideo`, but only where they are empty; it never replaces values set by
+another source.
+
+The full description (queueing, outcomes, every stored field, captions,
+configuration, operation and known limits) is in
+[8_scraper.md](8_scraper.md).
 
 
 ### Data origins
@@ -89,7 +109,7 @@ it is **not** updated when a later subsystem encounters the same object.
 | `RESEARCH_API` | `ResearchAPIService`                                    | active        |
 | `IMPORT`       | `sync_monitored_items`                                  | active        |
 | `DONATION`     | data donation pipeline                                  | not yet wired |
-| `SCRAPER`      | scraper service                                         | not yet wired |
+| `SCRAPER`      | `ScraperService` (users, music, hashtags found on scraped video pages) | active |
 
 
 ### Inferred fields

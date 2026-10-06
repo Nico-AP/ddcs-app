@@ -25,6 +25,7 @@ from ddcs.datadonation.services import (
     _normalise_value,
     _parse_date,
     get_user_data,
+    get_watch_history,
     post_process_donation,
 )
 from ddcs.datadonation.tasks import process_donation
@@ -378,6 +379,59 @@ class GetDecryptorTests(TestCase):
 
         self.assertIsNot(d1, d2)
         self.assertEqual(mock_decryption.call_count, 2)
+
+
+class GetWatchHistoryTests(TestCase):
+    @patch("ddcs.datadonation.services._decrypted_donations")
+    def test_reads_only_the_watch_history_and_cleans_it(self, mock_decrypted):
+        mock_decrypted.return_value = {
+            WATCH_HISTORY_BP_NAME: [
+                {
+                    "Date": "2026-07-08 13:15:38",
+                    "Link": "https://www.tiktok.com/@x/video/7",
+                },
+            ],
+        }
+        participant = MagicMock()
+
+        result = get_watch_history(participant)
+
+        requested_blueprints = mock_decrypted.call_args.args[1]
+        self.assertEqual(
+            requested_blueprints,
+            [
+                WATCH_HISTORY_BP_NAME,
+                f"{WATCH_HISTORY_BP_NAME}_txt",
+                f"{WATCH_HISTORY_BP_NAME}_old",
+                f"{WATCH_HISTORY_BP_NAME}_old_api",
+            ],
+        )
+        self.assertEqual(
+            result,
+            [
+                {
+                    "date": datetime(2026, 7, 8, 13, 15, 38, tzinfo=UTC),
+                    "link": "https://www.tiktok.com/@x/video/7",
+                    "video_id": 7,
+                }
+            ],
+        )
+
+    @patch("ddcs.datadonation.services._decrypted_donations")
+    def test_falls_back_to_a_backup_variant(self, mock_decrypted):
+        mock_decrypted.return_value = {
+            f"{WATCH_HISTORY_BP_NAME}_old": [
+                {"date": "2026-07-08 13:15:38", "link": "https://x/video/9"}
+            ],
+        }
+
+        result = get_watch_history(MagicMock())
+
+        self.assertEqual([record["video_id"] for record in result], [9])
+
+    @patch("ddcs.datadonation.services._decrypted_donations", return_value={})
+    def test_no_watch_history_donation(self, mock_decrypted):
+        self.assertIsNone(get_watch_history(MagicMock()))
 
 
 class GetUserDataTests(TestCase):

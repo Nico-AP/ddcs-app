@@ -6,9 +6,11 @@ from typing import Any
 from celery import chain, shared_task
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 from redis import Redis
 
+from ddcs.metadata.dashboard.metrics import refresh_dashboard_snapshot
 from ddcs.metadata.models import TikTokVideo
 from ddcs.metadata.services import ZuseAPIClient
 from ddcs.metadata.utils import recover_db_connection
@@ -24,6 +26,12 @@ _BACKFILL_DEFAULT_END_DATE = date(2026, 7, 1)
 # that finds the lock held waits and retries rather than dropping its date.
 _SYNC_LOCK_KEY = "ddcs:metadata:classification_sync_lock"
 _SYNC_LOCK_BUSY_COUNTDOWN = 60
+
+# Set while a dashboard refresh is queued or running, so repeated page loads
+# (or clicks on "Refresh now") don't pile up identical multi-minute tasks.
+# Expires on its own in case the task dies without clearing it.
+_DASHBOARD_REFRESH_PENDING_KEY = "metadata:dashboard:refresh_pending"
+_DASHBOARD_REFRESH_TIME_LIMIT = 15 * 60
 
 
 def _continuation_kwargs(
@@ -265,3 +273,38 @@ def backfill_tiktok_video_classifications(
     ).apply_async()
 
     return total
+
+
+@shared_task(
+    acks_late=True,
+    soft_time_limit=_DASHBOARD_REFRESH_TIME_LIMIT - 60,
+    time_limit=_DASHBOARD_REFRESH_TIME_LIMIT,
+)
+def refresh_metadata_dashboard() -> None:
+    """Recomputes and caches the expensive metadata dashboard aggregates."""
+    started = time.monotonic()
+    try:
+        snapshot = refresh_dashboard_snapshot()
+    finally:
+        cache.delete(_DASHBOARD_REFRESH_PENDING_KEY)
+    logger.info(
+        "Refreshed metadata dashboard snapshot in %.1fs: %d origin(s), %d day(s).",
+        time.monotonic() - started,
+        len(snapshot["origin_counts"]),
+        len(snapshot["classification_by_date"]),
+    )
+
+
+def request_dashboard_refresh() -> bool:
+    """Queue a dashboard refresh unless one is already queued or running.
+
+    Returns whether a task was queued.
+    """
+    if not cache.add(
+        _DASHBOARD_REFRESH_PENDING_KEY,
+        True,  # noqa: FBT003
+        timeout=_DASHBOARD_REFRESH_TIME_LIMIT,
+    ):
+        return False
+    refresh_metadata_dashboard.delay()
+    return True
