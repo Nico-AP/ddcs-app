@@ -1,4 +1,4 @@
-{% load static %}
+{% load static l10n %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -43,11 +43,27 @@
       </form>
     </div>
 
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+      <span class="dashboard-caveat">
+        {% if snapshot_computed_at %}
+          Video counts and classification coverage as of {{ snapshot_computed_at|date:"Y-m-d H:i" }} (refreshed hourly). Sync coverage is live.
+        {% else %}
+          Video counts and classification coverage are being computed. Reload in a few minutes.
+        {% endif %}
+      </span>
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Refresh now</button>
+      </form>
+    </div>
+
     <div class="dashboard-card p-3">
       <h2 class="h5">Videos by origin</h2>
       <p class="dashboard-caveat">Total video count in the database, grouped by <code>added_by</code> (DataOrigin), split by whether Research API details (<code>APIVideoInfos</code>) have been retrieved.</p>
       {% if origin_counts_plot.html %}
         {{ origin_counts_plot.html|safe }}
+      {% elif not snapshot_computed_at %}
+        <p>Being computed.</p>
       {% else %}
         <p>No data.</p>
       {% endif %}
@@ -98,9 +114,76 @@
       <p class="dashboard-caveat">Videos with Research API details, grouped by TikTok-reported publish date, split by whether a classification result has been stored.</p>
       {% if classification_coverage_plot.html %}
         {{ classification_coverage_plot.html|safe }}
+      {% elif not snapshot_computed_at %}
+        <p>Being computed.</p>
       {% else %}
         <p>No data.</p>
       {% endif %}
+    </div>
+
+    <div class="dashboard-card p-3">
+      <h2 class="h5">Scraper queue</h2>
+      <p class="dashboard-caveat">
+        Videos queued for scraping from tiktok.com (videos without Research API details). Live.
+        The scraper is {% if scraper_enabled %}enabled{% else %}<strong>disabled</strong> (<code>TIKTOK_SCRAPER_ENABLED</code>){% endif %}.
+        {% if scraper_queue.last_success_at %}Last successful scrape: {{ scraper_queue.last_success_at|date:"Y-m-d H:i" }}.{% endif %}
+      </p>
+      {% with run=scraper_queue.last_run %}
+        {% if run %}
+          <p class="dashboard-caveat">
+            Last run (finished {{ run.finished_at|slice:":16" }} UTC): <strong>{{ run.videos_per_minute|unlocalize }} videos/min</strong> over {{ run.seconds|unlocalize }} s.
+            Scraped {{ run.scraped }}, unavailable {{ run.unavailable }}, failed {{ run.failed }}, blocked {{ run.blocked }},
+            captions fetched {{ run.captions_fetched }}, captions failed {{ run.captions_failed }}{% if run.aborted %}, <strong>aborted: {% if run.abort_reason == "blocked" %}TikTok refused several requests in a row{% else %}several videos in a row returned no usable data{% endif %}</strong>{% endif %}.
+          </p>
+        {% endif %}
+      {% endwith %}
+      {% with cooldown=scraper_queue.cooldown %}
+        {% if cooldown %}
+          <div class="alert alert-warning">
+            <p class="mb-2">
+              <strong>Scraping is paused until {{ cooldown.until|date:"Y-m-d H:i" }}</strong>
+              after {{ cooldown.consecutive_aborts }} aborted run{{ cooldown.consecutive_aborts|pluralize }} in a row.
+              TikTok appears to be blocking requests. Scraping resumes on its own with the first scheduled run after that time;
+              each further abort doubles the pause, up to 24 hours.
+            </p>
+            {% if scraper_enabled %}
+              <form method="post" class="mb-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="{{ resume_scraper_action }}" />
+                <button type="submit" class="btn btn-sm btn-warning">Resume scraping now</button>
+              </form>
+            {% endif %}
+            <p class="mb-1 small">
+              To resume right away, use the button{% if not scraper_enabled %} (not shown while the scraper is disabled){% endif %} or run this in <code>python manage.py shell</code>:
+            </p>
+<pre class="small mb-2"><code>from ddcs.metadata.scraper.service import clear_cooldown
+from ddcs.metadata.scraper.tasks import scrape_pending_videos
+clear_cooldown()
+scrape_pending_videos.delay()</code></pre>
+            <p class="mb-0 small">Resuming while TikTok is still blocking leads to another abort and a longer pause.</p>
+          </div>
+        {% endif %}
+      {% endwith %}
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th class="text-end">Videos</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in scraper_queue.by_status %}
+            <tr>
+              <td>{{ row.label }}</td>
+              <td class="text-end">{{ row.count }}</td>
+            </tr>
+          {% endfor %}
+          <tr>
+            <th>Total</th>
+            <th class="text-end">{{ scraper_queue.total }}</th>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </body>

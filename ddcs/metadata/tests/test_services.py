@@ -4,8 +4,11 @@ from unittest.mock import patch
 import httpx
 from django.test import TestCase, override_settings
 
+from ddcs.core.types import TikTokUserData
 from ddcs.metadata.models import DataOrigins, TikTokVideo, TikTokVideoClassification
-from ddcs.metadata.services import ZuseAPIClient
+from ddcs.metadata.research_api.models import APIVideoInfos
+from ddcs.metadata.scraper.models import ScrapeTarget
+from ddcs.metadata.services import ZuseAPIClient, register_donation_metadata
 
 
 def make_zuse_result(id_tiktok: int, **overrides) -> dict:
@@ -383,3 +386,63 @@ class ZuseAPIClientProcessResultsTests(TestCase):
             self.client._process_results([])
 
         mock_bulk_create.assert_not_called()
+
+
+class RegisterDonationMetadataScrapeQueueTests(TestCase):
+    def setUp(self):
+        self.early = datetime(2026, 7, 5, 10, tzinfo=UTC)
+        self.late = datetime(2026, 8, 5, 10, tzinfo=UTC)
+        outside = datetime(2026, 10, 5, 10, tzinfo=UTC)
+        self.data = TikTokUserData(
+            watch_history=[
+                {"video_id": 1, "date": self.early},
+                {"video_id": 1, "date": self.late},
+                {"video_id": 2, "date": self.early},
+                {"video_id": 3, "date": outside},
+            ],
+            liked_videos=[{"video_id": 4, "date": self.early}],
+        )
+
+    def _ranking(self) -> dict[int, tuple]:
+        return {
+            id_tiktok: (count, last)
+            for id_tiktok, count, last in ScrapeTarget.objects.values_list(
+                "video__id_tiktok", "occurrence_count", "last_watched_at"
+            )
+        }
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=False)
+    def test_queues_nothing_while_scraper_is_disabled(self):
+        register_donation_metadata(self.data)
+
+        self.assertEqual(TikTokVideo.objects.count(), 4)
+        self.assertFalse(ScrapeTarget.objects.exists())
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_queues_videos_watched_in_the_window_only(self):
+        register_donation_metadata(self.data)
+
+        # Not video 3 (watched outside the window), not video 4 (only liked).
+        # Video 1 was watched twice by this donor: still one donation.
+        self.assertEqual(self._ranking(), {1: (1, self.late), 2: (1, self.early)})
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_skips_videos_the_research_api_covers(self):
+        covered = TikTokVideo.objects.create(
+            id_tiktok=2, added_by=DataOrigins.RESEARCH_API
+        )
+        APIVideoInfos.objects.create(video=covered)
+
+        register_donation_metadata(self.data)
+
+        self.assertEqual(set(self._ranking()), {1})
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_another_donation_raises_the_count(self):
+        register_donation_metadata(self.data)
+
+        register_donation_metadata(
+            TikTokUserData(watch_history=[{"video_id": 1, "date": self.early}])
+        )
+
+        self.assertEqual(self._ranking(), {1: (2, self.late), 2: (1, self.early)})
