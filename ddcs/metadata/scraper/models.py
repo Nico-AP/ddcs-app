@@ -76,6 +76,16 @@ class VideoInfosScraped(ScrapedDataModel):
     as on ``APIVideoInfos``; everything else is scraper-only.
     """
 
+    class CaptionStatus(models.TextChoices):
+        # Caption collection was switched off when the video was scraped.
+        NOT_REQUESTED = "not_requested"
+        # The video has no original-language caption.
+        NONE_AVAILABLE = "none_available"
+        FETCHED = "fetched"
+        # The video has one, but downloading it failed. Not retried: the
+        # link expires, so a retry would mean scraping the video again.
+        FAILED = "failed"
+
     video = models.ForeignKey(
         "ddcs_metadata.TikTokVideo",
         on_delete=models.CASCADE,
@@ -88,6 +98,25 @@ class VideoInfosScraped(ScrapedDataModel):
     duration = models.IntegerField(null=True, blank=True)
     video_mention_list = models.JSONField(null=True, blank=True)
     effect_list = models.JSONField(null=True, blank=True)
+    # Plain text of the original-language caption (see "Caption" below).
+    voice_to_text = models.TextField(blank=True)
+
+    # Caption: TikTok's transcript of the spoken audio, original language
+    # only. See docs/8_scraper.md.
+    caption_status = models.CharField(
+        max_length=16,
+        choices=CaptionStatus.choices,
+        default=CaptionStatus.NOT_REQUESTED,
+    )
+    caption_vtt = models.TextField(
+        blank=True, help_text="The WebVTT caption file as downloaded (with timestamps)."
+    )
+    caption_language = models.CharField(
+        blank=True,
+        max_length=32,
+        help_text='TikTok\'s language tag of the caption, e.g. "deu-DE".',
+    )
+    caption_is_auto_generated = models.BooleanField(null=True, blank=True)
 
     # General information
     location_created = models.CharField(blank=True, max_length=255)

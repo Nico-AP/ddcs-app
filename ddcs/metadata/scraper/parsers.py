@@ -14,6 +14,11 @@ _REHYDRATION_SCRIPT_RE = re.compile(
     re.DOTALL,
 )
 
+# Blocks of a WebVTT file that are not cues.
+_WEBVTT_NON_CUE_BLOCKS = ("WEBVTT", "NOTE", "STYLE", "REGION")
+# Inline markup inside cue text, e.g. <c.yellow>, <v Speaker>, <00:00:01.000>.
+_WEBVTT_TAG_RE = re.compile(r"<[^>]*>")
+
 _VIDEO_DATA_PATH = (
     "__DEFAULT_SCOPE__",
     "webapp.video-detail",
@@ -116,3 +121,59 @@ class TikTokParser:
             raise TikTokDataExtractionError(msg)
 
         return json_data
+
+    @staticmethod
+    def select_original_caption(video_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Pick the original-language caption from scraped video data.
+
+        TikTok lists a video's captions under ``video.claInfo.captionInfos``.
+        Besides the transcript in the language spoken in the video there
+        may be machine translations; only the entry flagged
+        ``isOriginalCaption`` is of interest. Captions in a format other
+        than WebVTT are ignored.
+
+        Args:
+            video_data: Video data as returned by ``extract_video_data``.
+
+        Returns:
+            The caption entry (with ``url``, ``language``, ``isAutoGen``, ...)
+            or None if the video has no original-language WebVTT caption.
+        """
+        file_data = video_data.get("video") or {}
+        caption_infos = (file_data.get("claInfo") or {}).get("captionInfos") or []
+        for caption in caption_infos:
+            if (
+                isinstance(caption, dict)
+                and caption.get("isOriginalCaption")
+                and caption.get("captionFormat") == "webvtt"
+                and caption.get("url")
+            ):
+                return caption
+        return None
+
+    @staticmethod
+    def webvtt_to_text(vtt: str) -> str:
+        """Reduce a WebVTT caption file to its spoken text.
+
+        Drops the header, cue identifiers, timestamps and inline markup and
+        joins what is left with single spaces, which is the shape of the
+        Research API's ``voice_to_text``.
+
+        Args:
+            vtt: Content of a WebVTT file.
+
+        Returns:
+            The cue texts as one line of plain text.
+        """
+        texts = []
+        blocks = re.split(r"\n\s*\n", vtt.replace("\r\n", "\n").replace("\r", "\n"))
+        for block in blocks:
+            lines = [line.strip() for line in block.strip().split("\n")]
+            if lines[0].startswith(_WEBVTT_NON_CUE_BLOCKS):
+                continue
+            # A cue is an optional identifier line, the timing line, then text.
+            timing = next((i for i, line in enumerate(lines) if "-->" in line), None)
+            if timing is None:
+                continue
+            texts.extend(_WEBVTT_TAG_RE.sub("", line) for line in lines[timing + 1 :])
+        return " ".join(" ".join(texts).split())

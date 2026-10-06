@@ -36,6 +36,12 @@ class UserScrapingError(TypedDict):
     username: str
 
 
+class ScrapedCaption(TypedDict):
+    language: str  # TikTok's language tag, e.g. "deu-DE"
+    is_auto_generated: bool | None
+    vtt: str  # The WebVTT file as downloaded
+
+
 VideoScrapingResult = VideoScrapingSuccess | VideoScrapingError
 UserScrapingResult = UserScrapingSuccess | UserScrapingError
 
@@ -117,6 +123,40 @@ class TikTokScraper:
         response = self.client.get(url)
         rehydration_data = self.parser.load_rehydration_data(response.text)
         return self.parser.extract_video_data(rehydration_data)
+
+    def fetch_original_caption(
+        self, video_data: dict[str, Any]
+    ) -> ScrapedCaption | None:
+        """Download the original-language caption of a scraped video.
+
+        The caption is a separate file that the video data only links to.
+        The link is signed and expires within days, so this has to happen
+        right after the video was scraped. Costs one extra request, which
+        is preceded by the usual rate-limit delay.
+
+        Args:
+            video_data: Video data as returned by ``scrape_video``.
+
+        Returns:
+            The caption, or None if the video has no original-language caption
+            (no request is made in that case).
+
+        Raises:
+            TikTokClientGetError: Raised when the caption could not be
+                downloaded.
+        """
+        caption = self.parser.select_original_caption(video_data)
+        if caption is None:
+            return None
+
+        if self.rate_delay:
+            time.sleep(self.rate_delay)
+        response = self.client.get(caption["url"])
+        return ScrapedCaption(
+            language=caption.get("language") or "",
+            is_auto_generated=caption.get("isAutoGen"),
+            vtt=response.text,
+        )
 
     def scrape_user_list(
         self,

@@ -30,12 +30,14 @@ from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.exceptions import (
     TikTokBlockedError,
     TikTokItemUnavailableError,
+    TikTokScraperError,
 )
 from ddcs.metadata.scraper.models import (
     ScrapeTarget,
     VideoInfosScraped,
     VideoStatisticsScraped,
 )
+from ddcs.metadata.scraper.parsers import TikTokParser
 from ddcs.metadata.scraper.scraper import TikTokScraper
 from ddcs.metadata.scraper.utils import int_or_none
 from ddcs.metadata.utils import infer_publication_date_from_id
@@ -114,6 +116,10 @@ class ScrapeBatchStats(TypedDict):
     failed: int
     blocked: int
     covered_by_api: int
+    captions_fetched: int
+    # Videos that have a caption which could not be downloaded. The videos
+    # themselves still count as scraped.
+    captions_failed: int
     # True if the batch stopped early because TikTok kept blocking us.
     aborted: bool
 
@@ -131,11 +137,17 @@ class ScraperService:
         self,
         scraper: TikTokScraper | None = None,
         max_attempts: int | None = None,
+        fetch_captions: bool | None = None,
     ) -> None:
         self.scraper = scraper or TikTokScraper(
             rate_delay=settings.TIKTOK_SCRAPER_RATE_DELAY
         )
         self.max_attempts = max_attempts or settings.TIKTOK_SCRAPER_MAX_ATTEMPTS
+        self.fetch_captions = (
+            settings.TIKTOK_SCRAPER_FETCH_CAPTIONS
+            if fetch_captions is None
+            else fetch_captions
+        )
 
     def scrape_batch(
         self,
@@ -155,6 +167,8 @@ class ScraperService:
             "failed": 0,
             "blocked": 0,
             "covered_by_api": 0,
+            "captions_fetched": 0,
+            "captions_failed": 0,
             "aborted": False,
         }
         targets = self._select_targets(limit, stats)
@@ -170,7 +184,8 @@ class ScraperService:
 
             if result["success"]:
                 consecutive_blocks = 0
-                self._handle_success(target, result["data"], stats)
+                caption = self._fetch_caption(target, result["data"], stats)
+                self._handle_success(target, result["data"], caption, stats)
                 continue
 
             error = result["exception"]
@@ -230,11 +245,49 @@ class ScraperService:
             uncovered.extend(t for t in chunk if t.video_id in still_missing)
         return uncovered
 
-    def _handle_success(
+    def _fetch_caption(
         self, target: ScrapeTarget, data: dict[str, Any], stats: ScrapeBatchStats
+    ) -> dict[str, Any]:
+        """Get the video's original-language caption as ``VideoInfosScraped`` fields.
+
+        Never raises for a caption problem: the video data is worth storing
+        without it, so a failed download is only recorded in
+        ``caption_status``.
+        """
+        status = VideoInfosScraped.CaptionStatus
+        if not self.fetch_captions:
+            return {"caption_status": status.NOT_REQUESTED}
+
+        try:
+            caption = self.scraper.fetch_original_caption(data)
+        except TikTokScraperError as e:
+            logger.warning(
+                "Could not fetch caption for video %s: %s", target.video.id_tiktok, e
+            )
+            stats["captions_failed"] += 1
+            return {"caption_status": status.FAILED}
+
+        if caption is None:
+            return {"caption_status": status.NONE_AVAILABLE}
+
+        stats["captions_fetched"] += 1
+        return {
+            "caption_status": status.FETCHED,
+            "voice_to_text": TikTokParser.webvtt_to_text(caption["vtt"]),
+            "caption_vtt": caption["vtt"],
+            "caption_language": caption["language"],
+            "caption_is_auto_generated": caption["is_auto_generated"],
+        }
+
+    def _handle_success(
+        self,
+        target: ScrapeTarget,
+        data: dict[str, Any],
+        caption: dict[str, Any],
+        stats: ScrapeBatchStats,
     ) -> None:
         try:
-            self._store(target, data)
+            self._store(target, data, caption)
         except SoftTimeLimitExceeded:
             raise
         except Exception as e:
@@ -249,9 +302,13 @@ class ScraperService:
             stats["scraped"] += 1
 
     @transaction.atomic
-    def _store(self, target: ScrapeTarget, data: dict[str, Any]) -> None:
+    def _store(
+        self, target: ScrapeTarget, data: dict[str, Any], caption: dict[str, Any]
+    ) -> None:
         video = target.video
-        VideoInfosScraped.objects.create(video=video, **self._clean_video(data))
+        VideoInfosScraped.objects.create(
+            video=video, **self._clean_video(data), **caption
+        )
         VideoStatisticsScraped.objects.create(
             video=video, **self._clean_video_statistics(data)
         )

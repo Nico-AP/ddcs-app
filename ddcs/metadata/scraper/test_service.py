@@ -21,6 +21,7 @@ from ddcs.metadata.utils import infer_publication_date_from_id
 
 from .exceptions import (
     TikTokBlockedError,
+    TikTokClientGetError,
     TikTokDataExtractionError,
     TikTokItemUnavailableError,
 )
@@ -30,6 +31,7 @@ from .service import ScraperService, enqueue_video_pks, enqueue_videos
 from .tasks import scrape_pending_videos
 
 Status = ScrapeTarget.Status
+CaptionStatus = VideoInfosScraped.CaptionStatus
 
 # Shaped like the "itemStruct" of a real video page, cut down to what matters.
 _PAYLOAD = {
@@ -101,10 +103,25 @@ def _target(video: TikTokVideo, **kwargs) -> ScrapeTarget:
     return ScrapeTarget.objects.create(video=video, **kwargs)
 
 
-def _service(*results: dict) -> tuple[ScraperService, Mock]:
+_VTT = "WEBVTT\n\n00:00:00.400 --> 00:00:01.600\nHallo zusammen\n"
+_CAPTION = {"language": "deu-DE", "is_auto_generated": False, "vtt": _VTT}
+
+
+def _service(
+    *results: dict,
+    caption: dict | Exception | None = None,
+    fetch_captions: bool = True,
+) -> tuple[ScraperService, Mock]:
     scraper = Mock()
     scraper.scrape_video_list.side_effect = lambda ids: iter(results[: len(ids)])
-    return ScraperService(scraper=scraper, max_attempts=3), scraper
+    if isinstance(caption, Exception):
+        scraper.fetch_original_caption.side_effect = caption
+    else:
+        scraper.fetch_original_caption.return_value = caption
+    service = ScraperService(
+        scraper=scraper, max_attempts=3, fetch_captions=fetch_captions
+    )
+    return service, scraper
 
 
 class EnqueueVideosTests(TestCase):
@@ -309,6 +326,7 @@ class ScraperServiceStoreTests(TestCase):
             "duration",
             "video_mention_list",
             "effect_list",
+            "voice_to_text",
         ):
             with self.subTest(field=name):
                 self.assertIs(
@@ -361,6 +379,76 @@ class ScraperServiceStoreTests(TestCase):
             self.assertRaises(SoftTimeLimitExceeded),
         ):
             service.scrape_batch(limit=10)
+
+
+class ScraperServiceCaptionTests(TestCase):
+    def setUp(self):
+        self.video = _video(1)
+        enqueue_videos([1])
+
+    def test_caption_is_stored_as_text_and_as_downloaded(self):
+        service, scraper = _service(_success(), caption=_CAPTION)
+
+        stats = service.scrape_batch(limit=10)
+
+        scraper.fetch_original_caption.assert_called_once_with(_PAYLOAD)
+        infos = VideoInfosScraped.objects.get()
+        self.assertEqual(infos.caption_status, CaptionStatus.FETCHED)
+        self.assertEqual(infos.voice_to_text, "Hallo zusammen")
+        self.assertEqual(infos.caption_vtt, _VTT)
+        self.assertEqual(infos.caption_language, "deu-DE")
+        self.assertIs(infos.caption_is_auto_generated, False)
+        self.assertEqual((stats["captions_fetched"], stats["captions_failed"]), (1, 0))
+
+    def test_video_without_caption(self):
+        service, _ = _service(_success(), caption=None)
+
+        stats = service.scrape_batch(limit=10)
+
+        infos = VideoInfosScraped.objects.get()
+        self.assertEqual(infos.caption_status, CaptionStatus.NONE_AVAILABLE)
+        self.assertEqual((infos.voice_to_text, infos.caption_vtt), ("", ""))
+        self.assertEqual((stats["captions_fetched"], stats["captions_failed"]), (0, 0))
+
+    def test_failed_caption_download_does_not_fail_the_video(self):
+        for error in (TikTokBlockedError("blocked"), TikTokClientGetError("gone")):
+            with self.subTest(error=error):
+                VideoInfosScraped.objects.all().delete()
+                ScrapeTarget.objects.update(status=Status.PENDING)
+                service, _ = _service(_success(), caption=error)
+
+                stats = service.scrape_batch(limit=10)
+
+                self.assertEqual((stats["scraped"], stats["captions_failed"]), (1, 1))
+                self.assertFalse(stats["aborted"])
+                self.assertEqual(stats["blocked"], 0)
+                infos = VideoInfosScraped.objects.get()
+                self.assertEqual(infos.caption_status, CaptionStatus.FAILED)
+                self.assertEqual(infos.voice_to_text, "")
+                self.assertEqual(ScrapeTarget.objects.get().status, Status.SUCCESS)
+
+    def test_captions_switched_off(self):
+        service, scraper = _service(_success(), caption=_CAPTION, fetch_captions=False)
+
+        service.scrape_batch(limit=10)
+
+        scraper.fetch_original_caption.assert_not_called()
+        infos = VideoInfosScraped.objects.get()
+        self.assertEqual(infos.caption_status, CaptionStatus.NOT_REQUESTED)
+        self.assertEqual(infos.voice_to_text, "")
+
+    @override_settings(TIKTOK_SCRAPER_FETCH_CAPTIONS=False)
+    def test_setting_is_the_default_for_fetching_captions(self):
+        self.assertFalse(ScraperService(scraper=Mock()).fetch_captions)
+
+    def test_no_caption_request_for_videos_that_were_not_scraped(self):
+        service, scraper = _service(
+            _error(TikTokItemUnavailableError(10204, "gone")), caption=_CAPTION
+        )
+
+        service.scrape_batch(limit=10)
+
+        scraper.fetch_original_caption.assert_not_called()
 
 
 class ScraperServiceQueueTests(TestCase):
@@ -622,3 +710,20 @@ class ScraperServiceLiveTests(TestCase):
         target = ScrapeTarget.objects.get(video=missing)
         self.assertEqual(target.status, Status.UNAVAILABLE)
         self.assertIsNotNone(target.tiktok_status_code)
+
+    def test_stores_original_language_caption(self):
+        # A German video that had a caption when this test was written.
+        video = _video(7652127324279721249)
+        enqueue_videos([video.id_tiktok])
+
+        stats = ScraperService(
+            scraper=TikTokScraper(rate_delay=1.0), fetch_captions=True
+        ).scrape_batch(limit=10)
+
+        self.assertEqual((stats["scraped"], stats["captions_fetched"]), (1, 1), stats)
+        infos = VideoInfosScraped.objects.get(video=video)
+        self.assertEqual(infos.caption_status, CaptionStatus.FETCHED)
+        self.assertTrue(infos.caption_vtt.startswith("WEBVTT"))
+        self.assertTrue(infos.voice_to_text)
+        self.assertNotIn("-->", infos.voice_to_text)
+        self.assertEqual(infos.caption_language, "deu-DE")

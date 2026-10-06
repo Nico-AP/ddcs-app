@@ -159,6 +159,8 @@ class VideoInfosScrapedInline(ReadOnlyInline):
         "duration",
         "is_ad",
         "is_aigc",
+        "caption_status",
+        "caption_language",
     )
 
 

@@ -194,6 +194,82 @@ class TikTokParserTests(SimpleTestCase):
             TikTokParser.extract_user_data(example_data)
 
 
+_VTT = """WEBVTT
+
+
+00:00:00.400 --> 00:00:01.600
+Hallo zusammen
+
+1
+00:00:02.200 --> 00:00:03.520 align:start
+heute geht es um
+<c.yellow>die Wahl</c>
+
+NOTE this is a comment
+
+00:00:04.720 --> 00:00:06.400
+und um  mehr
+"""
+
+_ORIGINAL_CAPTION = {
+    "language": "deu-DE",
+    "url": "https://cdn.example/original.vtt",
+    "captionFormat": "webvtt",
+    "isAutoGen": False,
+    "isOriginalCaption": True,
+}
+_TRANSLATED_CAPTION = {
+    "language": "eng-US",
+    "url": "https://cdn.example/translation.vtt",
+    "captionFormat": "webvtt",
+    "isAutoGen": True,
+    "isOriginalCaption": False,
+}
+
+
+def _video_with_captions(*captions: dict) -> dict:
+    return {"id": "123", "video": {"claInfo": {"captionInfos": list(captions)}}}
+
+
+class TikTokCaptionParserTests(SimpleTestCase):
+    def test_selects_the_original_caption_not_the_translation(self):
+        data = _video_with_captions(_TRANSLATED_CAPTION, _ORIGINAL_CAPTION)
+
+        self.assertEqual(TikTokParser.select_original_caption(data), _ORIGINAL_CAPTION)
+
+    def test_no_original_caption(self):
+        for data in (
+            {"id": "123"},
+            {"id": "123", "video": {}},
+            {"id": "123", "video": {"claInfo": {"captionInfos": []}}},
+            _video_with_captions(_TRANSLATED_CAPTION),
+        ):
+            with self.subTest(data=data):
+                self.assertIsNone(TikTokParser.select_original_caption(data))
+
+    def test_ignores_original_caption_in_another_format_or_without_url(self):
+        other_format = {**_ORIGINAL_CAPTION, "captionFormat": "creator_caption"}
+        without_url = {**_ORIGINAL_CAPTION, "url": ""}
+
+        data = _video_with_captions(other_format, without_url)
+
+        self.assertIsNone(TikTokParser.select_original_caption(data))
+
+    def test_webvtt_to_text_keeps_only_the_spoken_text(self):
+        self.assertEqual(
+            TikTokParser.webvtt_to_text(_VTT),
+            "Hallo zusammen heute geht es um die Wahl und um mehr",
+        )
+
+    def test_webvtt_to_text_handles_windows_line_endings_and_empty_files(self):
+        self.assertEqual(
+            TikTokParser.webvtt_to_text(_VTT.replace("\n", "\r\n")),
+            "Hallo zusammen heute geht es um die Wahl und um mehr",
+        )
+        self.assertEqual(TikTokParser.webvtt_to_text("WEBVTT\n"), "")
+        self.assertEqual(TikTokParser.webvtt_to_text(""), "")
+
+
 class TikTokScraperTests(SimpleTestCase):
     def setUp(self):
         self.client = Mock()
@@ -273,6 +349,33 @@ class TikTokScraperTests(SimpleTestCase):
 
         self.assertEqual(self.client.get.call_count, 2)
         self.assertEqual(results[0]["error_type"], "TikTokBlockedError")
+
+    def test_fetch_original_caption_downloads_it_after_the_rate_delay(self):
+        self.client.get.return_value = _response(text=_VTT)
+        data = _video_with_captions(_TRANSLATED_CAPTION, _ORIGINAL_CAPTION)
+
+        with patch(_SLEEP) as sleep:
+            caption = self.scraper.fetch_original_caption(data)
+
+        sleep.assert_called_once_with(1.0)
+        self.client.get.assert_called_once_with("https://cdn.example/original.vtt")
+        self.assertEqual(
+            caption, {"language": "deu-DE", "is_auto_generated": False, "vtt": _VTT}
+        )
+
+    def test_fetch_original_caption_without_caption_sends_no_request(self):
+        with patch(_SLEEP) as sleep:
+            caption = self.scraper.fetch_original_caption({"id": "123"})
+
+        self.assertIsNone(caption)
+        sleep.assert_not_called()
+        self.client.get.assert_not_called()
+
+    def test_fetch_original_caption_passes_download_errors_on(self):
+        self.client.get.side_effect = TikTokClientGetError("gone")
+
+        with patch(_SLEEP), self.assertRaises(TikTokClientGetError):
+            self.scraper.fetch_original_caption(_video_with_captions(_ORIGINAL_CAPTION))
 
     def test_programming_errors_are_not_swallowed(self):
         self.client.get.side_effect = KeyError("bug")

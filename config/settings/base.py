@@ -425,6 +425,11 @@ TIKTOK_SCRAPER_ENABLED: bool = env.bool("TIKTOK_SCRAPER_ENABLED", default=False)
 TIKTOK_SCRAPER_RATE_DELAY: float = env.float("TIKTOK_SCRAPER_RATE_DELAY", default=1.0)
 # Maximum number of videos one scraping run works on.
 TIKTOK_SCRAPER_BATCH_SIZE: int = env.int("TIKTOK_SCRAPER_BATCH_SIZE", default=3000)
+# Also download each scraped video's original-language caption (transcript).
+# Costs one extra request per captioned video, so fewer videos per run.
+TIKTOK_SCRAPER_FETCH_CAPTIONS: bool = env.bool(
+    "TIKTOK_SCRAPER_FETCH_CAPTIONS", default=True
+)
 # How often a video is tried before its target stays "failed".
 TIKTOK_SCRAPER_MAX_ATTEMPTS: int = env.int("TIKTOK_SCRAPER_MAX_ATTEMPTS", default=3)
 
