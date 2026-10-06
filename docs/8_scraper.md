@@ -20,14 +20,14 @@ It does not try to cover every donated video. It scrapes what donors actually
 **watched during the study period (2026-07-01 to 2026-09-20)**, starting with
 the videos most donors saw.
 
-| Scraped                                              | Not scraped                                                  |
-|------------------------------------------------------|--------------------------------------------------------------|
-| Videos in a donor's watch history within the study period, **without** Research API infos | Videos the Research API already delivered |
-|                                                      | Videos only watched outside the study period                 |
-|                                                      | Videos that were only liked, shared, bookmarked or commented on |
-| The video's metadata, statistics and original caption | Video files, cover images, comments                          |
-|                                                      | User pages (the code can fetch them, but nothing uses it)    |
-|                                                      | Translated captions and creator-written caption files        |
+| Scraped                                                                                   | Not scraped                                                     |
+|-------------------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| Videos in a donor's watch history within the study period, **without** Research API infos | Videos the Research API already delivered                       |
+|                                                                                           | Videos only watched outside the study period                    |
+|                                                                                           | Videos that were only liked, shared, bookmarked or commented on |
+| The video's metadata, statistics and original caption                                     | Video files, cover images, comments                             |
+|                                                                                           | User pages (the code can fetch them, but nothing uses it)       |
+|                                                                                           | Translated captions and creator-written caption files           |
 
 The scraper is **off by default**. Nothing is queued or scraped until
 `TIKTOK_SCRAPER_ENABLED` is set.
@@ -61,10 +61,10 @@ do not. Videos that already have Research API infos are never queued.
 
 **What is recorded per target.**
 
-| Field              | Meaning |
-|--------------------|---------|
+| Field              | Meaning                                                                                                                            |
+|--------------------|------------------------------------------------------------------------------------------------------------------------------------|
 | `occurrence_count` | Number of **donations** whose watch history contains the video within the window. A donor who watched it twenty times counts once. |
-| `last_watched_at`  | The most recent view of the video within the window, across all donations |
+| `last_watched_at`  | The most recent view of the video within the window, across all donations                                                          |
 
 **How targets get there.** Two paths, both through
 `ddcs.metadata.scraper.service.enqueue_watched_videos`:
@@ -91,11 +91,11 @@ do not. Videos that already have Research API infos are never queued.
   narrowed) stays at 0 and at the end of the queue. The status of a target is
   never changed, so nothing that was already scraped is queued again.
 
-  | Option          | Effect |
-  |-----------------|--------|
-  | `--start`, `--end` | Use a different watch window for this run |
-  | `--keep-counts` | Skip the reset and add to the stored counts. Every donation read is then counted again on top. |
-  | `--dry-run`     | Only read the watch histories and print the summary; nothing is reset or written |
+  | Option             | Effect                                                                                         |
+  |--------------------|------------------------------------------------------------------------------------------------|
+  | `--start`, `--end` | Use a different watch window for this run                                                      |
+  | `--keep-counts`    | Skip the reset and add to the stored counts. Every donation read is then counted again on top. |
+  | `--dry-run`        | Only read the watch histories and print the summary; nothing is reset or written               |
 
   It ends with a summary:
 
@@ -131,17 +131,24 @@ Running the command again brings the counts back in line.
 
 Videos that have no `TikTokVideo` row yet get one (`added_by = DONATION`).
 
-### 2. Order: most donors, then most recent
+### 2. Order: widely seen recent videos, then most recent
 
-The queue is worked off by:
+The queue is worked off in two steps:
 
-1. **`occurrence_count`, highest first.** Videos that many donors saw matter
-   most for the study.
-2. **`last_watched_at`, most recent first.** Among videos with the same
-   count, the ones watched most recently are the most likely to still be
-   online.
+1. **Priority group, most donors first.** Targets with an
+   `occurrence_count` of at least 15 and a `last_watched_at` on or after
+   2026-08-01 (UTC), ordered by count, then most recent view. Videos that
+   many donors saw matter most for the study.
+2. **Everything else, most recent view first**, whatever the count. The
+   videos watched most recently are the most likely to still be online.
+   Targets last watched before 2026-08-01 therefore follow after the newer
+   ones, and targets without a watch date come last.
 
-Targets with a count of 0 or without a watch date come last.
+The thresholds are defined in
+[`scraper/config.py`](../ddcs/metadata/scraper/config.py)
+(`PRIORITY_MIN_OCCURRENCES`, `PRIORITY_WATCHED_SINCE`). Below the count
+threshold the count plays no role, so a handful of duplicate donations
+cannot push a video to the front.
 
 ### 3. The task
 
@@ -190,12 +197,12 @@ the pacing change on a small sample; it is not a production throughput figure.
 
 ### 5. Outcome per target
 
-| `ScrapeTarget.status` | Meaning                                                                          | Retried? |
-|-----------------------|----------------------------------------------------------------------------------|----------|
-| `pending`             | Waiting. Also what a target stays when TikTok blocked the request.               | yes      |
-| `success`             | Infos and statistics stored, `TikTokVideo.scraped_at` set.                       | no       |
-| `unavailable`         | TikTok reports the video as gone or private (`tiktok_status_code`).              | no       |
-| `covered_by_api`      | The Research API delivered the video before it was scraped.                      | no       |
+| `ScrapeTarget.status` | Meaning                                                                             | Retried?                                                   |
+|-----------------------|-------------------------------------------------------------------------------------|------------------------------------------------------------|
+| `pending`             | Waiting. Also what a target stays when TikTok blocked the request.                  | yes                                                        |
+| `success`             | Infos and statistics stored, `TikTokVideo.scraped_at` set.                          | no                                                         |
+| `unavailable`         | TikTok reports the video as gone or private (`tiktok_status_code`).                 | no                                                         |
+| `covered_by_api`      | The Research API delivered the video before it was scraped.                         | no                                                         |
 | `failed`              | Anything else: network error, unexpected page structure, data that can't be stored. | after 6 hours, at most `TIKTOK_SCRAPER_MAX_ATTEMPTS` times |
 
 ### 6. When TikTok blocks
@@ -203,9 +210,9 @@ the pacing change on a small sample; it is not a production throughput figure.
 A run is **aborted** when it looks as if TikTok has stopped serving us. There
 are two signs, counted separately:
 
-| Sign | Rule | `abort_reason` |
-|------|------|----------------|
-| TikTok refuses outright: HTTP 403 or 429. The scraper first fetches fresh cookies and retries that video once. | 3 videos in a row | `blocked` |
+| Sign                                                                                                                            | Rule              | `abort_reason`         |
+|---------------------------------------------------------------------------------------------------------------------------------|-------------------|------------------------|
+| TikTok refuses outright: HTTP 403 or 429. The scraper first fetches fresh cookies and retries that video once.                  | 3 videos in a row | `blocked`              |
 | Videos fail without a refusal: the page has no data, the data has an unexpected structure, or the request fails on the network. | 5 videos in a row | `consecutive_failures` |
 
 A success or an `unavailable` answer resets both counts, because either one
@@ -232,14 +239,14 @@ scraping will resume.
 
 After an aborted run, scraping pauses:
 
-| Aborted runs in a row | Pause |
-|-----------------------|-------|
-| 1 | 1 hour |
-| 2 | 2 hours |
-| 3 | 4 hours |
-| 4 | 8 hours |
-| 5 | 16 hours |
-| 6 or more | 24 hours |
+| Aborted runs in a row  | Pause    |
+|------------------------|----------|
+| 1                      | 1 hour   |
+| 2                      | 2 hours  |
+| 3                      | 4 hours  |
+| 4                      | 8 hours  |
+| 5                      | 16 hours |
+| 6 or more              | 24 hours |
 
 - During the pause, scheduled runs are skipped. The first scheduled run after
   the pause tries again.
@@ -275,22 +282,22 @@ models, so both sources can be read the same way.
 
 ### `VideoInfosScraped` (one row per successful scrape)
 
-| Field                                             | Shared with `APIVideoInfos` | Notes |
-|---------------------------------------------------|:---------------------------:|-------|
-| `description`                                     | ✓ | |
-| `create_time`                                     | ✓ | Publish time as reported on the page |
-| `duration`                                        | ✓ | Seconds |
-| `video_mention_list`                              | ✓ | Mentions as written in the description, without "@". Checked against Research API rows of the same videos: identical. |
-| `effect_list`                                     | ✓ | Stored as scraped. **Not** compared with the Research API's format (no sample video with effects was available). |
-| `voice_to_text`                                   | ✓ | Text of the original-language caption, see [Captions](#captions) |
-| `caption_status`, `caption_vtt`, `caption_language`, `caption_is_auto_generated` | | See [Captions](#captions) |
-| `location_created`                                | | Where the video was made. Not the same thing as the API's `region_code`. |
-| `text_language`, `category_type`                  | | |
-| `is_ad`, `is_aigc`, `aigc_description`            | | |
-| `original_item`, `official_item`, `private_item`  | | |
-| `diversification_id`, `diversification_labels`    | | |
-| `height`, `width`                                 | | |
-| `raw`                                             | | See below |
+| Field                                                                             | Shared with `APIVideoInfos` | Notes                                                                                                                 |
+|-----------------------------------------------------------------------------------|:---------------------------:|-----------------------------------------------------------------------------------------------------------------------|
+| `description`                                                                     |             ✓              |                                                                                                                       |
+| `create_time`                                                                     |             ✓              | Publish time as reported on the page                                                                                  |
+| `duration`                                                                        |             ✓              | Seconds                                                                                                               |
+| `video_mention_list`                                                              |             ✓              | Mentions as written in the description, without "@". Checked against Research API rows of the same videos: identical. |
+| `effect_list`                                                                     |             ✓              | Stored as scraped. **Not** compared with the Research API's format (no sample video with effects was available).      |
+| `voice_to_text`                                                                   |             ✓              | Text of the original-language caption, see [Captions](#captions)                                                      |
+| `caption_status`, `caption_vtt`, `caption_language`, `caption_is_auto_generated`  |  See [Captions](#captions)  |
+| `location_created`                                                                |                             | Where the video was made. Not the same thing as the API's `region_code`.                                              |
+| `text_language`, `category_type`                                                  |                             |                                                                                                                       |
+| `is_ad`, `is_aigc`, `aigc_description`                                            |                             |                                                                                                                       |
+| `original_item`, `official_item`, `private_item`                                  |                             |                                                                                                                       |
+| `diversification_id`, `diversification_labels`                                    |                             |                                                                                                                       |
+| `height`, `width`                                                                 |                             |                                                                                                                       |
+| `raw`                                                                             |                             | See below                                                                                                             |
 
 The Research API fields `region_code`, `is_stem_verified` and `video_label`
 have no scraped counterpart.
@@ -305,10 +312,10 @@ stored.
 
 ### `VideoStatisticsScraped` (one row per successful scrape)
 
-| Field                                                                         | Shared with `APIVideoStatistics` |
-|-------------------------------------------------------------------------------|:--------------------------------:|
-| `view_count`, `like_count`, `comment_count`, `share_count`, `favorites_count` | ✓ |
-| `repost_count`                                                                | |
+| Field                                                                         | Shared with `APIVideoStatistics`  |
+|-------------------------------------------------------------------------------|:---------------------------------:|
+| `view_count`, `like_count`, `comment_count`, `share_count`, `favorites_count` |                ✓                 |
+| `repost_count`                                                                |                                   |
 
 ### Changes to `TikTokVideo`
 
@@ -343,10 +350,10 @@ creator. Many videos have none.
 
 Only the **original-language** caption, one file per video.
 
-| Collected                                  | Not collected                                     | Why not |
-|--------------------------------------------|---------------------------------------------------|---------|
+| Collected                                  | Not collected                                     | Why not                                                    |
+|--------------------------------------------|---------------------------------------------------|------------------------------------------------------------|
 | The caption flagged as original, in WebVTT | Machine translations (e.g. English)               | Derived from the original; each would cost another request |
-|                                            | Creator-written files (`creator_caption` format)  | Different format, not examined |
+|                                            | Creator-written files (`creator_caption` format)  | Different format, not examined                             |
 
 ### Where it comes from
 
@@ -367,19 +374,19 @@ The file is then downloaded with one additional request
 
 ### What is stored
 
-| Field                       | Content |
-|-----------------------------|---------|
-| `caption_status`            | What happened, see below |
+| Field                       | Content                                                                                                                                                        |
+|-----------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `caption_status`            | What happened, see below                                                                                                                                       |
 | `voice_to_text`             | The spoken text as one line: cue texts joined with single spaces, without header, timestamps, cue identifiers or inline markup (`TikTokParser.webvtt_to_text`) |
-| `caption_vtt`               | The file exactly as downloaded, including timestamps |
-| `caption_language`          | TikTok's language tag of the caption, e.g. `deu-DE` |
-| `caption_is_auto_generated` | TikTok's `isAutoGen` flag, see the caveat below |
+| `caption_vtt`               | The file exactly as downloaded, including timestamps                                                                                                           |
+| `caption_language`          | TikTok's language tag of the caption, e.g. `deu-DE`                                                                                                            |
+| `caption_is_auto_generated` | TikTok's `isAutoGen` flag, see the caveat below                                                                                                                |
 
-| `caption_status` | Meaning |
-|------------------|---------|
-| `fetched`        | Caption downloaded and stored |
-| `none_available` | The video has no original-language WebVTT caption |
-| `failed`         | The video has one, but the download failed |
+| `caption_status` | Meaning                                                        |
+|------------------|----------------------------------------------------------------|
+| `fetched`        | Caption downloaded and stored                                  |
+| `none_available` | The video has no original-language WebVTT caption              |
+| `failed`         | The video has one, but the download failed                     |
 | `not_requested`  | Caption collection was switched off when the video was scraped |
 
 The caption links themselves are not stored (they are removed from `raw` like
@@ -443,15 +450,15 @@ more freely than that field.
 
 All settings are read from the environment (see `.env.example`).
 
-| Setting                         | Default | Effect |
-|---------------------------------|---------|--------|
-| `TIKTOK_SCRAPER_ENABLED`        | `False` | Master switch. While off, donations queue nothing and the task returns immediately. |
-| `TIKTOK_SCRAPER_RATE_DELAY`     | `1.0`   | Minimum seconds between the starts of two video-page requests |
-| `TIKTOK_SCRAPER_RATE_JITTER`    | `0.3`   | Random variation of that interval as a fraction (0.3 = ±30%); `0` switches it off |
-| `TIKTOK_SCRAPER_CAPTION_DELAY`  | `0.0`   | Seconds to wait before each caption download |
-| `TIKTOK_SCRAPER_BATCH_SIZE`     | `3000`  | Maximum number of videos per run |
-| `TIKTOK_SCRAPER_MAX_ATTEMPTS`   | `3`     | Attempts before a failing video is given up on |
-| `TIKTOK_SCRAPER_FETCH_CAPTIONS` | `True`  | Also download the original-language caption |
+| Setting                         | Default       | Effect                                                                                                                                                            |
+|---------------------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `TIKTOK_SCRAPER_ENABLED`        | `False`       | Master switch. While off, donations queue nothing and the task returns immediately.                                                                               |
+| `TIKTOK_SCRAPER_RATE_DELAY`     | `1.0`         | Minimum seconds between the starts of two video-page requests                                                                                                     |
+| `TIKTOK_SCRAPER_RATE_JITTER`    | `0.3`         | Random variation of that interval as a fraction (0.3 = ±30%); `0` switches it off                                                                                 |
+| `TIKTOK_SCRAPER_CAPTION_DELAY`  | `0.0`         | Seconds to wait before each caption download                                                                                                                      |
+| `TIKTOK_SCRAPER_BATCH_SIZE`     | `3000`        | Maximum number of videos per run                                                                                                                                  |
+| `TIKTOK_SCRAPER_MAX_ATTEMPTS`   | `3`           | Attempts before a failing video is given up on                                                                                                                    |
+| `TIKTOK_SCRAPER_FETCH_CAPTIONS` | `True`        | Also download the original-language caption                                                                                                                       |
 | `CELERY_TIKTOK_SCRAPER_QUEUE`   | default queue | Celery queue for the scraping task. While targets are pending the scraper occupies one worker continuously, so a separate queue with its own worker is advisable. |
 
 The schedule entry is `scraper-scrape-pending-videos` in
@@ -491,19 +498,19 @@ line (see [Queueing](#1-queueing)).
 The task logs and returns one dictionary per run. The most recent run is also
 shown on the metadata dashboard ("Scraper queue" card) for about a day:
 
-| Key                | Meaning |
-|--------------------|---------|
-| `scraped`          | Videos stored |
-| `unavailable`      | Videos TikTok reports as gone or private |
-| `failed`           | Videos that failed for another reason |
-| `blocked`          | Requests TikTok refused |
-| `covered_by_api`   | Targets skipped because the Research API has the video now |
-| `captions_fetched` | Captions stored |
-| `captions_failed`  | Captions that exist but could not be downloaded |
-| `aborted`          | `True` if the run stopped because TikTok appears to be blocking |
-| `abort_reason`     | `blocked`, `consecutive_failures`, or empty; see [When TikTok blocks](#6-when-tiktok-blocks) |
-| `seconds`          | Wall time of the run |
-| `videos_per_minute` | Videos a page was requested for, per minute, whatever the outcome |
+| Key                 | Meaning                                                                                      |
+|---------------------|----------------------------------------------------------------------------------------------|
+| `scraped`           | Videos stored                                                                                |
+| `unavailable`       | Videos TikTok reports as gone or private                                                     |
+| `failed`            | Videos that failed for another reason                                                        |
+| `blocked`           | Requests TikTok refused                                                                      |
+| `covered_by_api`    | Targets skipped because the Research API has the video now                                   |
+| `captions_fetched`  | Captions stored                                                                              |
+| `captions_failed`   | Captions that exist but could not be downloaded                                              |
+| `aborted`           | `True` if the run stopped because TikTok appears to be blocking                              |
+| `abort_reason`      | `blocked`, `consecutive_failures`, or empty; see [When TikTok blocks](#6-when-tiktok-blocks) |
+| `seconds`           | Wall time of the run                                                                         |
+| `videos_per_minute` | Videos a page was requested for, per minute, whatever the outcome                            |
 
 `videos_per_minute` is the number to watch when tuning: it should sit just
 below `60 / TIKTOK_SCRAPER_RATE_DELAY`. If it is clearly lower, page loads are

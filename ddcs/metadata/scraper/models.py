@@ -29,8 +29,7 @@ class ScrapeTarget(models.Model):
         related_name="scrape_target",
     )
 
-    # What the queue is ordered by: videos more donors watched come first,
-    # among those the ones watched most recently.
+    # What the queue is ordered by; see ``ScraperService._select_targets``.
     occurrence_count = models.PositiveIntegerField(
         default=0,
         help_text=(

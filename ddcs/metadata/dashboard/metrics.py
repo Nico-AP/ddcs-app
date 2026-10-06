@@ -1,7 +1,7 @@
 """Query functions backing the internal metadata dashboard.
 
-The sync-coverage and monitored-count queries are cheap and run live on
-every request. The video-level aggregates (origin counts, classification
+The sync-coverage, sync-video-count and monitored-count queries are cheap
+and run live on every request. The video-level aggregates (origin counts, classification
 coverage) scan millions of rows, so they are never computed in a request:
 ``refresh_dashboard_snapshot`` computes them (from a Celery task, see
 ``ddcs.metadata.tasks.refresh_metadata_dashboard``) and stores the result in
@@ -20,6 +20,7 @@ from django.utils import timezone
 
 from ddcs.metadata.models import (
     Keyword,
+    ResearchAPIQueryTracker,
     SyncAttempt,
     TikTokUser,
     TikTokVideo,
@@ -135,6 +136,89 @@ def get_sync_coverage(
             "succeeded": by_date.get(day, {}).get("succeeded", 0),
         }
         for day in _all_dates(start, end)
+    ]
+
+
+class SyncVideoCountDay(TypedDict):
+    date: date
+    # ``None``: no run reported a result for this day (as opposed to 0: the
+    # sync ran and the API returned nothing).
+    videos: int | None
+    pages: int | None
+
+
+# ``ResearchAPIQueryTracker.query_function`` of the sync runs per target
+# field; see the ``_SyncTargetConfig`` instances in
+# ``ddcs.metadata.research_api.tasks``.
+_SYNC_TASK_NAMES = {"user": "daily_sync_users", "keyword": "daily_sync_keywords"}
+
+
+def get_sync_video_counts(
+    target_field: str, start: date, end: date
+) -> list[SyncVideoCountDay]:
+    """Videos the Research API returned per synced day, for ``target_field``.
+
+    Read from the run-level stats each sync stores on its
+    ``ResearchAPIQueryTracker`` (a handful of rows per day), so no video
+    table is touched and this is cheap enough to run live. Runs for the same
+    target date (retries, backfills, forced resyncs) are summed, so this is
+    "videos returned by the API", which can exceed the number of distinct
+    videos when items were queried more than once.
+    """
+    lo, _ = _day_bounds(start, end)
+    # A run never targets a future date, so runs for ``start`` or later
+    # cannot have started before ``start``.
+    trackers = ResearchAPIQueryTracker.objects.filter(
+        query_function=_SYNC_TASK_NAMES[target_field],
+        start_time__gte=lo,
+        query_result__isnull=False,
+    ).values_list("query_parameters", "query_result")
+
+    by_date: dict[date, dict[str, int]] = {}
+    for parameters, result in trackers:
+        try:
+            day = date.fromisoformat(parameters["target_date"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not isinstance(result, dict) or not start <= day <= end:
+            continue
+        counts = by_date.setdefault(day, {"videos": 0, "pages": 0})
+        counts["videos"] += result.get("videos_retrieved") or 0
+        counts["pages"] += result.get("pages_retrieved") or 0
+
+    return [
+        {
+            "date": day,
+            "videos": by_date[day]["videos"] if day in by_date else None,
+            "pages": by_date[day]["pages"] if day in by_date else None,
+        }
+        for day in _all_dates(start, end)
+    ]
+
+
+class SuspiciousSyncDay(TypedDict):
+    date: date
+    succeeded: int
+    pages: int
+
+
+def get_suspicious_sync_days(
+    coverage: list[SyncCoverageDay], video_counts: list[SyncVideoCountDay]
+) -> list[SuspiciousSyncDay]:
+    """Days on which items synced successfully but no videos came back.
+
+    Newest first. Days without a reported result (``videos`` is ``None``)
+    are unknown rather than empty, so they are not listed.
+    """
+    succeeded = {day["date"]: day["succeeded"] for day in coverage}
+    return [
+        {
+            "date": day["date"],
+            "succeeded": succeeded[day["date"]],
+            "pages": day["pages"] or 0,
+        }
+        for day in reversed(video_counts)
+        if day["videos"] == 0 and succeeded.get(day["date"], 0) > 0
     ]
 
 

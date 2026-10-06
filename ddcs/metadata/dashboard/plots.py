@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         ClassificationCoverageDay,
         OriginCount,
         SyncCoverageDay,
+        SyncVideoCountDay,
     )
 
 _ORIGIN_BAR_HEIGHT = 320
@@ -34,6 +35,8 @@ _ATTEMPTED_COLOR = "#c9a227"
 _MONITORED_LINE_COLOR = "#454545"
 _TOTAL_COLOR = "#9f9f9f"
 _CLASSIFIED_COLOR = "#6366f1"
+_VIDEOS_COLOR = "#1f5fa8"
+_NO_VIDEOS_COLOR = "#d62728"
 
 _SHARED_LAYOUT: dict[str, Any] = {
     "dragmode": False,
@@ -80,13 +83,26 @@ def get_origin_counts_plot(origin_counts: list[OriginCount]) -> dict[str, Any]:
 
 
 def get_sync_coverage_plot(
-    coverage: list[SyncCoverageDay], *, monitored_count: int
+    coverage: list[SyncCoverageDay],
+    video_counts: list[SyncVideoCountDay],
+    *,
+    monitored_count: int,
 ) -> dict[str, Any]:
-    """Daily succeeded/attempted sync counts, with a monitored-count reference line."""
+    """Daily succeeded/attempted sync counts, with a monitored-count reference line.
+
+    The videos the API returned per day are drawn as a line on a secondary
+    axis; days with successful syncs but no videos get a red marker.
+    """
     if not coverage:
         return {"html": None}
 
     dates = [day["date"].isoformat() for day in coverage]
+    succeeded = {day["date"]: day["succeeded"] for day in coverage}
+    empty_dates = [
+        day["date"].isoformat()
+        for day in video_counts
+        if day["videos"] == 0 and succeeded.get(day["date"], 0) > 0
+    ]
     fig = go.Figure(
         data=[
             go.Bar(
@@ -101,6 +117,24 @@ def get_sync_coverage_plot(
                 y=[day["succeeded"] for day in coverage],
                 marker={"color": _SUCCEEDED_COLOR, "cornerradius": PLOT_CORNER_RADIUS},
             ),
+            go.Scatter(
+                name="Videos returned",
+                x=[day["date"].isoformat() for day in video_counts],
+                y=[day["videos"] for day in video_counts],
+                yaxis="y2",
+                mode="lines+markers",
+                line={"color": _VIDEOS_COLOR, "width": 2},
+                marker={"size": 4},
+                connectgaps=False,
+            ),
+            go.Scatter(
+                name="Succeeded, no videos",
+                x=empty_dates,
+                y=[0] * len(empty_dates),
+                yaxis="y2",
+                mode="markers",
+                marker={"color": _NO_VIDEOS_COLOR, "size": 10, "symbol": "x"},
+            ),
         ]
     )
     fig.update_layout(
@@ -108,6 +142,14 @@ def get_sync_coverage_plot(
         barmode="overlay",
         height=_COVERAGE_BAR_HEIGHT,
         yaxis={"title": "Items synced", "automargin": True},
+        yaxis2={
+            "title": "Videos returned",
+            "overlaying": "y",
+            "side": "right",
+            "rangemode": "tozero",
+            "showgrid": False,
+            "automargin": True,
+        },
         xaxis={"tickangle": 45},
     )
     if monitored_count:

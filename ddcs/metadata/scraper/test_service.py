@@ -19,6 +19,7 @@ from ddcs.metadata.models import (
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos, APIVideoStatistics
+from ddcs.metadata.scraper.config import PRIORITY_MIN_OCCURRENCES
 from ddcs.metadata.scraper.exceptions import (
     TikTokBlockedError,
     TikTokClientGetError,
@@ -116,6 +117,8 @@ def _video(id_tiktok: int, **kwargs) -> TikTokVideo:
 def _target(video: TikTokVideo, **kwargs) -> ScrapeTarget:
     return ScrapeTarget.objects.create(video=video, **kwargs)
 
+
+_MIN = PRIORITY_MIN_OCCURRENCES
 
 # A moment inside the watch window (2026-07-01 .. 2026-09-20).
 _WATCHED_AT = datetime(2026, 8, 1, 12, tzinfo=UTC)
@@ -779,24 +782,42 @@ class ScraperServiceQueueTests(TestCase):
         )
         self.assertEqual(ScrapeTarget.objects.get(video=missing).status, Status.SUCCESS)
 
-    def test_queue_order_is_count_then_most_recent_view(self):
-        early = datetime(2026, 7, 5, tzinfo=UTC)
+    def test_queue_order_is_priority_group_by_count_then_most_recent_view(self):
+        before_cutoff = datetime(2026, 7, 31, 23, 59, tzinfo=UTC)
+        cutoff = datetime(2026, 8, 1, tzinfo=UTC)
         late = datetime(2026, 9, 5, tzinfo=UTC)
         _target(_video(1), occurrence_count=0, last_watched_at=None)
-        _target(_video(2), occurrence_count=1, last_watched_at=None)
-        _target(_video(3), occurrence_count=1, last_watched_at=early)
+        # Many donors, but last watched before the cutoff: not prioritised.
+        _target(_video(2), occurrence_count=_MIN + 40, last_watched_at=before_cutoff)
+        # Below the count threshold: ordered by view only, whatever the count.
+        _target(_video(3), occurrence_count=_MIN - 1, last_watched_at=cutoff)
         _target(_video(4), occurrence_count=1, last_watched_at=late)
-        _target(_video(5), occurrence_count=3, last_watched_at=early)
-        service, scraper = _service(*[_success()] * 5)
+        # Priority group: most donors first, then most recent view.
+        _target(_video(5), occurrence_count=_MIN, last_watched_at=cutoff)
+        _target(_video(6), occurrence_count=_MIN, last_watched_at=late)
+        _target(_video(7), occurrence_count=_MIN + 20, last_watched_at=cutoff)
+        service, scraper = _service(*[_success()] * 7)
 
         service.scrape_batch(limit=10)
 
-        # Most donors first; then most recently watched; no date last.
-        scraper.scrape_video_list.assert_called_once_with(["5", "4", "3", "2", "1"])
+        scraper.scrape_video_list.assert_called_once_with(
+            ["7", "6", "5", "4", "3", "2", "1"]
+        )
+
+    def test_priority_group_fills_the_batch_before_recent_views(self):
+        late = datetime(2026, 9, 5, tzinfo=UTC)
+        _target(_video(1), occurrence_count=1, last_watched_at=late)
+        _target(_video(2), occurrence_count=_MIN, last_watched_at=_WATCHED_AT)
+        _target(_video(3), occurrence_count=_MIN + 10, last_watched_at=_WATCHED_AT)
+        service, scraper = _service(_success(), _success())
+
+        service.scrape_batch(limit=2)
+
+        scraper.scrape_video_list.assert_called_once_with(["3", "2"])
 
     def test_limit_takes_the_top_of_the_queue(self):
-        _target(_video(1), occurrence_count=1, last_watched_at=_WATCHED_AT)
-        _target(_video(2), occurrence_count=2, last_watched_at=_WATCHED_AT)
+        _target(_video(1), occurrence_count=_MIN, last_watched_at=_WATCHED_AT)
+        _target(_video(2), occurrence_count=_MIN + 10, last_watched_at=_WATCHED_AT)
         service, scraper = _service(_success())
 
         service.scrape_batch(limit=1)

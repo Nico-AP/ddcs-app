@@ -12,7 +12,9 @@ from ddcs.metadata.dashboard.metrics import (
     get_monitored_keyword_count,
     get_monitored_user_count,
     get_scraper_queue,
+    get_suspicious_sync_days,
     get_sync_coverage,
+    get_sync_video_counts,
 )
 from ddcs.metadata.dashboard.plots import (
     get_classification_coverage_plot,
@@ -100,15 +102,18 @@ class MetadataDashboardView(DebugOrSuperuserMixin, TemplateView):
         context["monitored_keywords"] = monitored_keywords
         context["monitored_users"] = monitored_users
 
-        keyword_coverage = get_sync_coverage("keyword", start, end)
-        context["keyword_coverage_plot"] = get_sync_coverage_plot(
-            keyword_coverage, monitored_count=monitored_keywords
-        )
-
-        user_coverage = get_sync_coverage("user", start, end)
-        context["user_coverage_plot"] = get_sync_coverage_plot(
-            user_coverage, monitored_count=monitored_users
-        )
+        for target_field, monitored_count in (
+            ("keyword", monitored_keywords),
+            ("user", monitored_users),
+        ):
+            coverage = get_sync_coverage(target_field, start, end)
+            video_counts = get_sync_video_counts(target_field, start, end)
+            context[f"{target_field}_coverage_plot"] = get_sync_coverage_plot(
+                coverage, video_counts, monitored_count=monitored_count
+            )
+            context[f"{target_field}_suspicious_days"] = get_suspicious_sync_days(
+                coverage, video_counts
+            )
 
         classification_coverage = (
             fill_classification_coverage(snapshot["classification_by_date"], start, end)
