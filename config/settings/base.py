@@ -361,6 +361,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "ddcs.metadata.research_api.tasks.reap_stale_query_trackers",
         "schedule": crontab(minute=30),  # hourly, offset from the sync tasks
     },
+    "metadata-refresh-dashboard": {
+        "task": "ddcs.metadata.tasks.refresh_metadata_dashboard",
+        "schedule": crontab(minute=45),  # hourly
+    },
     "reports-update-account-metrics": {
         "task": "ddcs.reports.tasks.recompute_account_metrics",
         "schedule": crontab(hour=5, minute=30),

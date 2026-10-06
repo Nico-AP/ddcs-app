@@ -43,11 +43,27 @@
       </form>
     </div>
 
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+      <span class="dashboard-caveat">
+        {% if snapshot_computed_at %}
+          Video counts and classification coverage as of {{ snapshot_computed_at|date:"Y-m-d H:i" }} (refreshed hourly). Sync coverage is live.
+        {% else %}
+          Video counts and classification coverage are being computed. Reload in a few minutes.
+        {% endif %}
+      </span>
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-sm btn-outline-secondary">Refresh now</button>
+      </form>
+    </div>
+
     <div class="dashboard-card p-3">
       <h2 class="h5">Videos by origin</h2>
       <p class="dashboard-caveat">Total video count in the database, grouped by <code>added_by</code> (DataOrigin), split by whether Research API details (<code>APIVideoInfos</code>) have been retrieved.</p>
       {% if origin_counts_plot.html %}
         {{ origin_counts_plot.html|safe }}
+      {% elif not snapshot_computed_at %}
+        <p>Being computed.</p>
       {% else %}
         <p>No data.</p>
       {% endif %}
@@ -98,6 +114,8 @@
       <p class="dashboard-caveat">Videos with Research API details, grouped by TikTok-reported publish date, split by whether a classification result has been stored.</p>
       {% if classification_coverage_plot.html %}
         {{ classification_coverage_plot.html|safe }}
+      {% elif not snapshot_computed_at %}
+        <p>Being computed.</p>
       {% else %}
         <p>No data.</p>
       {% endif %}

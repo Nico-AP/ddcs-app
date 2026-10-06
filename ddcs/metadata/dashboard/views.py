@@ -2,22 +2,23 @@ from datetime import date
 from typing import Any
 
 from django.conf import settings
-from django.http import Http404, HttpRequest
+from django.http import Http404, HttpRequest, HttpResponseRedirect
 from django.views.generic import TemplateView
 
 from ddcs.metadata.dashboard.metrics import (
     default_date_range,
-    get_classification_coverage,
+    fill_classification_coverage,
+    get_dashboard_snapshot,
     get_monitored_keyword_count,
     get_monitored_user_count,
     get_sync_coverage,
-    get_video_counts_by_origin,
 )
 from ddcs.metadata.dashboard.plots import (
     get_classification_coverage_plot,
     get_origin_counts_plot,
     get_sync_coverage_plot,
 )
+from ddcs.metadata.tasks import request_dashboard_refresh
 
 
 class DebugOrSuperuserMixin:
@@ -54,13 +55,28 @@ class MetadataDashboardView(DebugOrSuperuserMixin, TemplateView):
             start, end = end, start
         return start, end
 
+    def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponseRedirect:
+        """ "Refresh now": queue a recompute, then return to the same range."""
+        request_dashboard_refresh()
+        return HttpResponseRedirect(request.get_full_path())
+
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
         context = super().get_context_data(**kwargs)
         start, end = self._date_range()
         context["start"] = start
         context["end"] = end
 
-        origin_counts = get_video_counts_by_origin()
+        # The video-level aggregates are far too slow to compute in a
+        # request; they come from a snapshot a Celery task keeps warm.
+        snapshot = get_dashboard_snapshot()
+        if snapshot is None:
+            request_dashboard_refresh()
+            # With CELERY_TASK_ALWAYS_EAGER (local dev) the task has already
+            # run inline, so the snapshot is there now.
+            snapshot = get_dashboard_snapshot()
+        context["snapshot_computed_at"] = snapshot and snapshot["computed_at"]
+
+        origin_counts = snapshot["origin_counts"] if snapshot else []
         context["origin_counts"] = origin_counts
         context["origin_counts_plot"] = get_origin_counts_plot(origin_counts)
 
@@ -79,7 +95,11 @@ class MetadataDashboardView(DebugOrSuperuserMixin, TemplateView):
             user_coverage, monitored_count=monitored_users
         )
 
-        classification_coverage = get_classification_coverage(start, end)
+        classification_coverage = (
+            fill_classification_coverage(snapshot["classification_by_date"], start, end)
+            if snapshot
+            else []
+        )
         context["classification_coverage_plot"] = get_classification_coverage_plot(
             classification_coverage
         )
