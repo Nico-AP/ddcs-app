@@ -14,7 +14,7 @@ from datetime import date, datetime, time, timedelta
 from typing import TypedDict
 
 from django.core.cache import cache
-from django.db.models import Count, Exists, OuterRef, Q, QuerySet
+from django.db.models import Count, Exists, Max, OuterRef, Q, QuerySet
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
@@ -26,6 +26,7 @@ from ddcs.metadata.models import (
     TikTokVideoClassification,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
+from ddcs.metadata.scraper.models import ScrapeTarget
 
 DEFAULT_WINDOW_DAYS = 90
 
@@ -137,6 +138,40 @@ def get_monitored_keyword_count() -> int:
 
 def get_monitored_user_count() -> int:
     return TikTokUser.objects.filter(monitor_api=True).count()
+
+
+class ScraperQueueStatus(TypedDict):
+    status: str
+    label: str
+    count: int
+
+
+class ScraperQueue(TypedDict):
+    total: int
+    by_status: list[ScraperQueueStatus]
+    last_success_at: datetime | None
+
+
+def get_scraper_queue() -> ScraperQueue:
+    """Scraping queue size per status. The queue table is small: runs live."""
+    counts = dict(
+        ScrapeTarget.objects.values_list("status").annotate(n=Count("pk")).order_by()
+    )
+    last_success_at = ScrapeTarget.objects.filter(
+        status=ScrapeTarget.Status.SUCCESS
+    ).aggregate(last=Max("last_attempted_at"))["last"]
+    return {
+        "total": sum(counts.values()),
+        "by_status": [
+            {
+                "status": status.value,
+                "label": status.label,
+                "count": counts.get(status, 0),
+            }
+            for status in ScrapeTarget.Status
+        ],
+        "last_success_at": last_success_at,
+    }
 
 
 class ClassificationCoverageDay(TypedDict):

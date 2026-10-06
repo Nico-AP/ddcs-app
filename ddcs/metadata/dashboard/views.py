@@ -11,6 +11,7 @@ from ddcs.metadata.dashboard.metrics import (
     get_dashboard_snapshot,
     get_monitored_keyword_count,
     get_monitored_user_count,
+    get_scraper_queue,
     get_sync_coverage,
 )
 from ddcs.metadata.dashboard.plots import (
@@ -103,5 +104,8 @@ class MetadataDashboardView(DebugOrSuperuserMixin, TemplateView):
         context["classification_coverage_plot"] = get_classification_coverage_plot(
             classification_coverage
         )
+
+        context["scraper_enabled"] = settings.TIKTOK_SCRAPER_ENABLED
+        context["scraper_queue"] = get_scraper_queue()
 
         return context

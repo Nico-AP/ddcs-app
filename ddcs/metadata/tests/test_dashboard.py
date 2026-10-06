@@ -12,6 +12,7 @@ from ddcs.metadata.dashboard.metrics import (
     get_dashboard_snapshot,
     get_monitored_keyword_count,
     get_monitored_user_count,
+    get_scraper_queue,
     get_sync_coverage,
     get_video_counts_by_origin,
     refresh_dashboard_snapshot,
@@ -25,6 +26,7 @@ from ddcs.metadata.models import (
     TikTokVideoClassification,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
+from ddcs.metadata.scraper.models import ScrapeTarget
 from ddcs.metadata.tasks import (
     _DASHBOARD_REFRESH_PENDING_KEY,
     refresh_metadata_dashboard,
@@ -302,3 +304,43 @@ class MetadataDashboardSnapshotViewTests(TestCase):
 
         request_refresh.assert_called_once_with()
         self.assertRedirects(response, url, fetch_redirect_response=False)
+
+
+class GetScraperQueueTests(TestCase):
+    def test_empty_queue_lists_every_status_with_zero(self):
+        queue = get_scraper_queue()
+
+        self.assertEqual(queue["total"], 0)
+        self.assertIsNone(queue["last_success_at"])
+        self.assertEqual(
+            [row["status"] for row in queue["by_status"]], ScrapeTarget.Status.values
+        )
+        self.assertEqual({row["count"] for row in queue["by_status"]}, {0})
+
+    def test_counts_targets_per_status_and_reports_last_success(self):
+        scraped_at = timezone.now()
+        for id_tiktok, status, attempted_at in (
+            (1, ScrapeTarget.Status.PENDING, None),
+            (2, ScrapeTarget.Status.PENDING, None),
+            (3, ScrapeTarget.Status.SUCCESS, scraped_at),
+            (4, ScrapeTarget.Status.FAILED, scraped_at + timedelta(hours=1)),
+        ):
+            video = TikTokVideo.objects.create(
+                id_tiktok=id_tiktok, added_by=DataOrigins.DONATION
+            )
+            ScrapeTarget.objects.create(
+                video=video,
+                status=status,
+                last_attempted_at=attempted_at,
+                inferred_create_time=scraped_at,
+            )
+
+        queue = get_scraper_queue()
+
+        counts = {row["status"]: row["count"] for row in queue["by_status"]}
+        self.assertEqual(queue["total"], 4)
+        self.assertEqual(counts["pending"], 2)
+        self.assertEqual(counts["success"], 1)
+        self.assertEqual(counts["failed"], 1)
+        self.assertEqual(counts["unavailable"], 0)
+        self.assertEqual(queue["last_success_at"], scraped_at)

@@ -1,89 +1,151 @@
 from django.db import models
 
 
-class ScrapedModel(models.Model):
+class ScrapeTarget(models.Model):
+    """Queue entry: one TikTok video that should be scraped.
+
+    Only videos worth scraping get a row here, so picking the next batch
+    never has to look at the (very large) ``TikTokVideo`` table. Rows are
+    created through :func:`ddcs.metadata.scraper.service.enqueue_videos`
+    and worked off by :class:`ddcs.metadata.scraper.service.ScraperService`.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "pending"
+        SUCCESS = "success"
+        # TikTok reports the video as gone/private; retrying won't help.
+        UNAVAILABLE = "unavailable"
+        # The Research API delivered the video in the meantime.
+        COVERED_BY_API = "covered_by_api"
+        # Retried until ``TIKTOK_SCRAPER_MAX_ATTEMPTS`` is reached.
+        FAILED = "failed"
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    # Scraping information
-    last_scraped_at = models.DateTimeField(blank=True, null=True)
-    scraping_success = models.BooleanField(default=False)
-    scraping_priority = models.IntegerField(default=0)
-    scraping_error_msg = models.TextField(blank=True)
+    video = models.OneToOneField(
+        "ddcs_metadata.TikTokVideo",
+        on_delete=models.CASCADE,
+        related_name="scrape_target",
+    )
+
+    inferred_create_time = models.DateTimeField(
+        help_text=(
+            "Publish time inferred from the video's TikTok ID. "
+            "Newest targets are scraped first."
+        )
+    )
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
+    attempts = models.PositiveIntegerField(default=0)
+    last_attempted_at = models.DateTimeField(null=True, blank=True)
+
+    last_error_type = models.CharField(max_length=255, blank=True)
+    last_error_msg = models.TextField(blank=True)
+    tiktok_status_code = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="statusCode TikTok returned in place of the video data.",
+    )
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["status", "-inferred_create_time"],
+                name="scrapetarget_queue_idx",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Scrape target for video {self.video_id} [{self.status}]"
+
+
+class ScrapedDataModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         abstract = True
 
 
-class VideoInfosScraped(ScrapedModel):
-    video = models.ForeignKey("ddcs.metadata.TikTokVideo", on_delete=models.CASCADE)
+class VideoInfosScraped(ScrapedDataModel):
+    """Scraped counterpart of ``research_api.APIVideoInfos``.
+
+    Fields both sources provide carry the same name, type and value format
+    as on ``APIVideoInfos``; everything else is scraper-only.
+    """
+
+    video = models.ForeignKey(
+        "ddcs_metadata.TikTokVideo",
+        on_delete=models.CASCADE,
+        related_name="scraped_infos",
+    )
+
+    # Shared with APIVideoInfos
+    description = models.TextField(blank=True)
+    create_time = models.DateTimeField(null=True, blank=True)
+    duration = models.IntegerField(null=True, blank=True)
+    video_mention_list = models.JSONField(null=True, blank=True)
+    effect_list = models.JSONField(null=True, blank=True)
 
     # General information
-    description = models.TextField(blank=True)
-    create_time = models.DateTimeField(blank=True, null=True)
-    # optional: inferred create time
     location_created = models.CharField(blank=True, max_length=255)
+    text_language = models.CharField(blank=True, max_length=255)
+    category_type = models.IntegerField(blank=True, null=True)
 
     original_item = models.BooleanField(blank=True, null=True)
     official_item = models.BooleanField(blank=True, null=True)
+    private_item = models.BooleanField(blank=True, null=True)
+    is_ad = models.BooleanField(blank=True, null=True)
 
     # Diversification information
-    diversification_labels = None  # TODO
+    diversification_labels = models.JSONField(blank=True, null=True)
     diversification_id = models.BigIntegerField(blank=True, null=True)
-
-    channel_tags = None  # TODO: Why is this here?
 
     # Information on AI use
     is_aigc = models.BooleanField(blank=True, null=True)
-    aigc_lable_type = None  # TODO
-    aigc_description = models.TextField(blank=True)  # TODO: Maybe CharField?
+    aigc_description = models.TextField(blank=True)
 
     # File metadata
-    duration = models.FloatField(
-        blank=True, null=True
-    )  # TODO: Check if Integer or Float
     height = models.IntegerField(blank=True, null=True)
     width = models.IntegerField(blank=True, null=True)
 
-    # Audio and transcription
-    has_original_audio = models.BooleanField(blank=True, null=True)
-    enable_audio_caption = models.BooleanField(blank=True, null=True)
-    no_caption_reason = models.IntegerField(
-        blank=True, null=True
-    )  # TODO: Is this really int?
+    # The scraped structure minus URLs and encoding details. TikTok changes
+    # its page data without notice; keeping it allows recovering fields we
+    # don't map (yet) without scraping again.
+    raw = models.JSONField(blank=True, null=True)
 
-    # Music
-    # TODO: Is this reliably pointing to a foreign key or should we store on video?
-
-    def __str__(self) -> str:
-        return f"Scraped metadata for TikTok video {self.video.id}"
-
-
-class UserInfosScraped(ScrapedModel):
-    user = models.ForeignKey("ddcs.metadata.TikTokUser", on_delete=models.CASCADE)
-
-    create_time = models.DateTimeField(blank=True, null=True)
-
-    username = models.CharField(blank=True, max_length=255)
-    nickname = models.CharField(blank=True, max_length=255)
-    signature = models.TextField(blank=True)
-    private_account = models.BooleanField(blank=True, null=True)
-
-    verified = models.BooleanField(blank=True, null=True)
-    ftc = models.BooleanField(blank=True, null=True)
-
-    relation = models.IntegerField(blank=True, null=True)  # TODO: What is this?
-    open_favorite = models.BooleanField(blank=True, null=True)
-    comment_setting = models.BooleanField(blank=True, null=True)
-    duet_setting = models.IntegerField(blank=True, null=True)
-    stitch_setting = models.IntegerField(blank=True, null=True)
-
-    secret = models.BooleanField(blank=True, null=True)
-    is_ad_virtual = models.BooleanField(blank=True, null=True)
-    download_setting = models.IntegerField(blank=True, null=True)
-
-    recommend_reason = models.CharField(blank=True, max_length=255)
-    suggest_account_bind = models.BooleanField(blank=True, null=True)
+    class Meta:
+        verbose_name = "Scraped Video Infos"
+        verbose_name_plural = "Scraped Video Infos"
 
     def __str__(self) -> str:
-        return f"Scraped metadata for TikTok user {self.user.id}"
+        return f"Scraped metadata for video {self.video}"
+
+
+class VideoStatisticsScraped(ScrapedDataModel):
+    """Scraped counterpart of ``research_api.APIVideoStatistics``."""
+
+    video = models.ForeignKey(
+        "ddcs_metadata.TikTokVideo",
+        on_delete=models.CASCADE,
+        related_name="scraped_statistics",
+    )
+
+    # Shared with APIVideoStatistics
+    view_count = models.PositiveIntegerField(null=True, blank=True)
+    like_count = models.PositiveIntegerField(null=True, blank=True)
+    comment_count = models.PositiveIntegerField(null=True, blank=True)
+    share_count = models.PositiveIntegerField(null=True, blank=True)
+    favorites_count = models.PositiveIntegerField(null=True, blank=True)
+
+    # Scraper only
+    repost_count = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Scraped Video Statistics"
+        verbose_name_plural = "Scraped Video Statistics"
+
+    def __str__(self) -> str:
+        return f"Scraped statistics for video {self.video}"

@@ -18,6 +18,7 @@ class VideoScrapingError(TypedDict):
     success: bool  # Always False
     error: str
     error_type: str  # Name of the TikTokScraperError subclass
+    exception: TikTokScraperError
     video_id: str
 
 
@@ -31,6 +32,7 @@ class UserScrapingError(TypedDict):
     success: bool  # Always False
     error: str
     error_type: str  # Name of the TikTokScraperError subclass
+    exception: TikTokScraperError
     username: str
 
 
@@ -179,6 +181,7 @@ class TikTokScraper:
                     "success": False,
                     "error": str(e),
                     "error_type": type(e).__name__,
+                    "exception": e,
                     identifier_key: identifier,
                 }
             else:

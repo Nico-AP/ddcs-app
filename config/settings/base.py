@@ -110,6 +110,7 @@ LOCAL_APPS = [
     "ddcs.datadonation.portability",
     "ddcs.metadata",
     "ddcs.metadata.research_api",
+    "ddcs.metadata.scraper",
     "ddcs.reports",
 ]
 
@@ -333,8 +334,17 @@ CELERY_DONATION_QUEUE = env.str(
 CELERY_TIKTOK_CLASSIFICATION_QUEUE = env.str(
     "CELERY_TIKTOK_CLASSIFICATION_QUEUE", default=CELERY_TASK_DEFAULT_QUEUE
 )
+# Same again for the TikTok scraper, whose runs take up to an hour. Defaults
+# to the default queue (no-op) until CELERY_TIKTOK_SCRAPER_QUEUE is set to a
+# distinct value AND a worker is provisioned to consume it.
+CELERY_TIKTOK_SCRAPER_QUEUE = env.str(
+    "CELERY_TIKTOK_SCRAPER_QUEUE", default=CELERY_TASK_DEFAULT_QUEUE
+)
 CELERY_TASK_ROUTES = {
     "ddcs.datadonation.tasks.process_donation": {"queue": CELERY_DONATION_QUEUE},
+    "ddcs.metadata.scraper.tasks.scrape_pending_videos": {
+        "queue": CELERY_TIKTOK_SCRAPER_QUEUE
+    },
     "ddcs.metadata.tasks.sync_tiktok_video_classifications": {
         "queue": CELERY_TIKTOK_CLASSIFICATION_QUEUE
     },
@@ -364,6 +374,11 @@ CELERY_BEAT_SCHEDULE = {
     "metadata-refresh-dashboard": {
         "task": "ddcs.metadata.tasks.refresh_metadata_dashboard",
         "schedule": crontab(minute=45),  # hourly
+    },
+    "scraper-scrape-pending-videos": {
+        # No-op unless TIKTOK_SCRAPER_ENABLED is set.
+        "task": "ddcs.metadata.scraper.tasks.scrape_pending_videos",
+        "schedule": crontab(minute=15),  # hourly
     },
     "reports-update-account-metrics": {
         "task": "ddcs.reports.tasks.recompute_account_metrics",
@@ -399,6 +414,19 @@ API_MONITORING_START_DATE: date = env.date(
 TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES: int = env.int(
     "TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES", default=0
 )
+
+
+# TikTok Scraper
+# ------------------------------------------------------------------------------
+# Master switch: while off, nothing is queued for scraping and the scheduled
+# scraping task returns immediately.
+TIKTOK_SCRAPER_ENABLED: bool = env.bool("TIKTOK_SCRAPER_ENABLED", default=False)
+# Seconds to wait between two requests to tiktok.com.
+TIKTOK_SCRAPER_RATE_DELAY: float = env.float("TIKTOK_SCRAPER_RATE_DELAY", default=1.0)
+# Maximum number of videos one scraping run works on.
+TIKTOK_SCRAPER_BATCH_SIZE: int = env.int("TIKTOK_SCRAPER_BATCH_SIZE", default=3000)
+# How often a video is tried before its target stays "failed".
+TIKTOK_SCRAPER_MAX_ATTEMPTS: int = env.int("TIKTOK_SCRAPER_MAX_ATTEMPTS", default=3)
 
 
 # Zuse Classification API

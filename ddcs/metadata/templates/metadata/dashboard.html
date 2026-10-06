@@ -120,6 +120,35 @@
         <p>No data.</p>
       {% endif %}
     </div>
+
+    <div class="dashboard-card p-3">
+      <h2 class="h5">Scraper queue</h2>
+      <p class="dashboard-caveat">
+        Videos queued for scraping from tiktok.com (videos without Research API details). Live.
+        The scraper is {% if scraper_enabled %}enabled{% else %}<strong>disabled</strong> (<code>TIKTOK_SCRAPER_ENABLED</code>){% endif %}.
+        {% if scraper_queue.last_success_at %}Last successful scrape: {{ scraper_queue.last_success_at|date:"Y-m-d H:i" }}.{% endif %}
+      </p>
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th class="text-end">Videos</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in scraper_queue.by_status %}
+            <tr>
+              <td>{{ row.label }}</td>
+              <td class="text-end">{{ row.count }}</td>
+            </tr>
+          {% endfor %}
+          <tr>
+            <th>Total</th>
+            <th class="text-end">{{ scraper_queue.total }}</th>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </body>
 </html>

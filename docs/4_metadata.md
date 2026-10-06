@@ -71,13 +71,61 @@ above policies stay consistent.
 
 Companion models for fields obtained by scraping the public TikTok website:
 
-- `VideoInfosScraped` → `TikTokVideo`
-- `UserInfosScraped` → `TikTokUser`
+- `VideoInfosScraped` → `TikTokVideo` (one row per successful scrape; `raw`
+  holds the scraped structure minus URLs and encoding details)
+- `VideoStatisticsScraped` → `TikTokVideo`
+- `ScrapeTarget` → `TikTokVideo` (one-to-one): the scraping queue
 
-**Status:** the fetch/parse core (`client`, `parsers`, `scraper`) exists and is
-tested, but nothing is wired up yet: the app is not in `INSTALLED_APPS`, the
-models are placeholders without migrations, and there is no service, task or
-schedule that persists scraped data.
+Fields that both sources provide have the same name, type and value format as
+on the Research API models, so the two can be read interchangeably:
+
+| Model                    | Shared with the Research API model                                         | Scraper only |
+|--------------------------|----------------------------------------------------------------------------|--------------|
+| `VideoInfosScraped`      | `description`, `create_time`, `duration`, `video_mention_list`, `effect_list` | `location_created`, `text_language`, `category_type`, `is_ad`, `is_aigc`, `aigc_description`, `original_item`, `official_item`, `private_item`, `diversification_*`, `height`, `width`, `raw` |
+| `VideoStatisticsScraped` | `view_count`, `like_count`, `comment_count`, `share_count`, `favorites_count` | `repost_count` |
+
+Caveats: `video_mention_list` was checked against Research API rows of the same
+videos and matches; `effect_list` is stored as scraped and has **not** been
+compared with the Research API's format. `region_code`, `voice_to_text`,
+`is_stem_verified` and `video_label` have no scraped counterpart
+(`location_created` is where the video was made, which is not necessarily the
+API's `region_code`).
+
+The scraper enriches **videos that have no Research API infos** (mainly donated
+videos). It is off unless `TIKTOK_SCRAPER_ENABLED` is set.
+
+How a video gets scraped:
+
+1. **Queueing.** `register_donation_metadata` queues the videos of every new
+   donation. Videos already in the database are queued once with
+   `python manage.py enqueue_scrape_targets` (`--origin`, `--limit`,
+   `--dry-run`). Videos with Research API infos are never queued. Each target
+   records the publish time encoded in the video's TikTok ID.
+2. **Scraping.** The hourly task
+   `ddcs.metadata.scraper.tasks.scrape_pending_videos` takes up to
+   `TIKTOK_SCRAPER_BATCH_SIZE` targets, newest publish time first (videos disappear over time, so recent
+   ones are the ones still worth catching), and fetches
+   their public pages with `TIKTOK_SCRAPER_RATE_DELAY` seconds between requests.
+3. **Outcome per target.**
+
+   | Status           | Meaning                                                              |
+   |------------------|----------------------------------------------------------------------|
+   | `pending`        | waiting; also what a target stays when TikTok blocked the request    |
+   | `success`        | infos and statistics stored, `TikTokVideo.scraped_at` set            |
+   | `unavailable`    | TikTok reports the video as gone/private (`tiktok_status_code`); final |
+   | `covered_by_api` | the Research API delivered the video before it was scraped; final    |
+   | `failed`         | anything else; retried after 6 hours, at most `TIKTOK_SCRAPER_MAX_ATTEMPTS` times |
+
+   Three blocked requests in a row abort the run and log an error.
+
+All writes go through `ddcs.metadata.scraper.service`. On success the service
+also fills in `user`, `music`, `inferred_create_time` and adds hashtags on the
+`TikTokVideo` — but only where they are empty; it never replaces values set by
+another source. Queue state is visible in the admin (`ScrapeTarget`) and on the
+metadata dashboard.
+
+Scraping user pages is implemented in the fetch/parse core
+(`TikTokScraper.scrape_user`) but not wired up.
 
 
 ### Data origins
@@ -91,7 +139,7 @@ it is **not** updated when a later subsystem encounters the same object.
 | `RESEARCH_API` | `ResearchAPIService`                                    | active        |
 | `IMPORT`       | `sync_monitored_items`                                  | active        |
 | `DONATION`     | data donation pipeline                                  | not yet wired |
-| `SCRAPER`      | scraper service                                         | not yet wired |
+| `SCRAPER`      | `ScraperService` (users, music, hashtags found on scraped video pages) | active |
 
 
 ### Inferred fields

@@ -4,8 +4,11 @@ from unittest.mock import patch
 import httpx
 from django.test import TestCase, override_settings
 
+from ddcs.core.types import TikTokUserData
 from ddcs.metadata.models import DataOrigins, TikTokVideo, TikTokVideoClassification
-from ddcs.metadata.services import ZuseAPIClient
+from ddcs.metadata.research_api.models import APIVideoInfos
+from ddcs.metadata.scraper.models import ScrapeTarget
+from ddcs.metadata.services import ZuseAPIClient, register_donation_metadata
 
 
 def make_zuse_result(id_tiktok: int, **overrides) -> dict:
@@ -383,3 +386,42 @@ class ZuseAPIClientProcessResultsTests(TestCase):
             self.client._process_results([])
 
         mock_bulk_create.assert_not_called()
+
+
+class RegisterDonationMetadataScrapeQueueTests(TestCase):
+    def setUp(self):
+        self.data = TikTokUserData(
+            watch_history=[{"video_id": 1}, {"video_id": 2}, {"video_id": 1}],
+            liked_videos=[{"video_id": 2}, {"video_id": 3}],
+        )
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=False)
+    def test_queues_nothing_while_scraper_is_disabled(self):
+        register_donation_metadata(self.data)
+
+        self.assertEqual(TikTokVideo.objects.count(), 3)
+        self.assertFalse(ScrapeTarget.objects.exists())
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_queues_donated_videos_without_api_infos(self):
+        covered = TikTokVideo.objects.create(
+            id_tiktok=3, added_by=DataOrigins.RESEARCH_API
+        )
+        APIVideoInfos.objects.create(video=covered)
+
+        register_donation_metadata(self.data)
+
+        self.assertEqual(
+            set(ScrapeTarget.objects.values_list("video__id_tiktok", flat=True)),
+            {1, 2},
+        )
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_further_donation_does_not_duplicate_or_change_targets(self):
+        register_donation_metadata(self.data)
+        before = list(ScrapeTarget.objects.order_by("pk").values())
+
+        register_donation_metadata(TikTokUserData(watch_history=[{"video_id": 1}]))
+
+        self.assertEqual(list(ScrapeTarget.objects.order_by("pk").values()), before)
+        self.assertEqual(len(before), 3)

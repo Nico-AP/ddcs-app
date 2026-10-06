@@ -25,6 +25,11 @@ from ddcs.metadata.research_api.models import (
     APIVideoInfos,
     APIVideoStatistics,
 )
+from ddcs.metadata.scraper.models import (
+    ScrapeTarget,
+    VideoInfosScraped,
+    VideoStatisticsScraped,
+)
 
 
 class TikTokVideoResource(ModelResource):
@@ -143,6 +148,24 @@ class APIHashtagInfosInline(ReadOnlyInline):
     fields = ("created_at", "description")
 
 
+class VideoInfosScrapedInline(ReadOnlyInline):
+    model = VideoInfosScraped
+    fields = (
+        "created_at",
+        "create_time",
+        "description",
+        "location_created",
+        "text_language",
+        "duration",
+        "is_ad",
+        "is_aigc",
+    )
+
+
+class VideoStatisticsScrapedInline(ReadOnlyInline):
+    model = VideoStatisticsScraped
+
+
 @admin.register(TikTokVideo)
 class TikTokVideoAdmin(ExportMixin, admin.ModelAdmin):
     list_display = (
@@ -156,7 +179,12 @@ class TikTokVideoAdmin(ExportMixin, admin.ModelAdmin):
     search_fields = ("id_tiktok", "user__name")
     autocomplete_fields = ("user", "music", "hashtags")
     readonly_fields = ("created_at", "updated_at", "inferred_create_time")
-    inlines = (APIVideoInfosInline, APIVideoStatisticsInline)
+    inlines = (
+        APIVideoInfosInline,
+        APIVideoStatisticsInline,
+        VideoInfosScrapedInline,
+        VideoStatisticsScrapedInline,
+    )
     resource_classes = [TikTokVideoResource]
     export_form_class = TikTokVideoExportForm
 
@@ -362,3 +390,31 @@ class TikTokVideoClassificationAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request: HttpRequest, obj=None) -> list[str]:  # noqa: ANN001
         return [field.name for field in self.model._meta.fields]  # noqa: SLF001
+
+
+@admin.register(ScrapeTarget)
+class ScrapeTargetAdmin(admin.ModelAdmin):
+    """Read-only view of the scraping queue.
+
+    Targets are created and updated by ``ddcs.metadata.scraper.service``.
+    """
+
+    list_display = (
+        "video",
+        "status",
+        "inferred_create_time",
+        "attempts",
+        "last_attempted_at",
+        "last_error_type",
+        "tiktok_status_code",
+    )
+    list_filter = ("status", "last_error_type")
+    search_fields = ("video__id_tiktok",)
+    list_select_related = ("video",)
+    ordering = ("-inferred_create_time",)
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
+        return False
