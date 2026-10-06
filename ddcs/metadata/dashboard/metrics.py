@@ -1,8 +1,11 @@
 """Query functions backing the internal metadata dashboard.
 
-No caching here (unlike ``ddcs.reports.metrics``, which caches for a
-high-traffic public dashboard) — this is a low-traffic, superuser-only page,
-so querying live keeps the numbers always current.
+The sync-coverage and monitored-count queries are cheap and run live on
+every request. The video-level aggregates (origin counts, classification
+coverage) scan millions of rows, so they are never computed in a request:
+``refresh_dashboard_snapshot`` computes them (from a Celery task, see
+``ddcs.metadata.tasks.refresh_metadata_dashboard``) and stores the result in
+the cache; the view only reads ``get_dashboard_snapshot``.
 """
 
 from __future__ import annotations
@@ -10,7 +13,8 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import TypedDict
 
-from django.db.models import Count, Exists, OuterRef, Q, Subquery
+from django.core.cache import cache
+from django.db.models import Count, Exists, Max, OuterRef, Q, QuerySet
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
@@ -19,10 +23,24 @@ from ddcs.metadata.models import (
     SyncAttempt,
     TikTokUser,
     TikTokVideo,
+    TikTokVideoClassification,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
+from ddcs.metadata.scraper.models import ScrapeTarget
+from ddcs.metadata.scraper.service import (
+    LastScrapeRun,
+    cooldown_until,
+    get_cooldown,
+    get_last_run,
+)
 
 DEFAULT_WINDOW_DAYS = 90
+
+_SNAPSHOT_CACHE_KEY = "metadata:dashboard:snapshot"
+# Slightly over a day: an hourly Celery task is expected to overwrite this key
+# long before it expires; the timeout is just a safety net if that task
+# doesn't run.
+_SNAPSHOT_CACHE_TIMEOUT = 60 * 60 * 25
 
 
 def default_date_range() -> tuple[date, date]:
@@ -128,6 +146,61 @@ def get_monitored_user_count() -> int:
     return TikTokUser.objects.filter(monitor_api=True).count()
 
 
+class ScraperQueueStatus(TypedDict):
+    status: str
+    label: str
+    count: int
+
+
+class ScraperCooldown(TypedDict):
+    until: datetime
+    consecutive_aborts: int
+
+
+class ScraperQueue(TypedDict):
+    total: int
+    by_status: list[ScraperQueueStatus]
+    last_success_at: datetime | None
+    # Statistics of the most recent scraping run, if one finished recently.
+    last_run: LastScrapeRun | None
+    # Set while scraping is paused after aborted runs.
+    cooldown: ScraperCooldown | None
+
+
+def get_scraper_queue() -> ScraperQueue:
+    """Scraping queue size per status. The queue table is small: runs live."""
+    counts = dict(
+        ScrapeTarget.objects.values_list("status").annotate(n=Count("pk")).order_by()
+    )
+    last_success_at = ScrapeTarget.objects.filter(
+        status=ScrapeTarget.Status.SUCCESS
+    ).aggregate(last=Max("last_attempted_at"))["last"]
+    return {
+        "total": sum(counts.values()),
+        "by_status": [
+            {
+                "status": status.value,
+                "label": status.label,
+                "count": counts.get(status, 0),
+            }
+            for status in ScrapeTarget.Status
+        ],
+        "last_success_at": last_success_at,
+        "last_run": get_last_run(),
+        "cooldown": _active_scraper_cooldown(),
+    }
+
+
+def _active_scraper_cooldown() -> ScraperCooldown | None:
+    until = cooldown_until()
+    if until is None:
+        return None
+    return {
+        "until": until,
+        "consecutive_aborts": get_cooldown()["consecutive_aborts"],
+    }
+
+
 class ClassificationCoverageDay(TypedDict):
     date: date
     total: int
@@ -141,48 +214,106 @@ def _day_bounds(start: date, end: date) -> tuple[datetime, datetime]:
     return lo, hi
 
 
+class ClassificationCounts(TypedDict):
+    total: int
+    classified: int
+
+
+def _videos_per_publish_date(infos: QuerySet[APIVideoInfos]) -> dict[str, int]:
+    return {
+        row["pub_date"].isoformat(): row["n"]
+        for row in infos.annotate(pub_date=TruncDate("create_time"))
+        .values("pub_date")
+        .annotate(n=Count("video_id", distinct=True))
+    }
+
+
+def _classification_counts_by_date(
+    start: date | None = None, end: date | None = None
+) -> dict[str, ClassificationCounts]:
+    """Per-publish-date video counts (total / classified), optionally bounded.
+
+    Keyed by ISO date string rather than ``date``, so the result can be
+    cached (and inspected by tooling) as plain JSON-compatible data.
+
+    Aggregates straight from ``APIVideoInfos`` on ``video_id`` and never
+    touches the ``TikTokVideo`` table: with the covering
+    ``(create_time) INCLUDE (video_id)`` index both queries can be answered
+    from the index alone.
+
+    Two plain aggregates instead of one with a filtered count, for the same
+    reason as in ``get_video_counts_by_origin``: an ``EXISTS`` in ``WHERE``
+    is a single semi-join, whereas inside an aggregate it is a per-row
+    subplan. ``distinct=True`` keeps a video with several snapshots on the
+    same publish date from being counted twice.
+    """
+    infos = APIVideoInfos.objects.filter(create_time__isnull=False)
+    if start is not None and end is not None:
+        lo, hi = _day_bounds(start, end)
+        infos = infos.filter(create_time__gte=lo, create_time__lt=hi)
+
+    totals = _videos_per_publish_date(infos)
+    classified = _videos_per_publish_date(
+        infos.filter(
+            Exists(
+                TikTokVideoClassification.objects.filter(video_id=OuterRef("video_id"))
+            )
+        )
+    )
+    return {
+        day: {"total": total, "classified": classified.get(day, 0)}
+        for day, total in totals.items()
+    }
+
+
+def fill_classification_coverage(
+    by_date: dict[str, ClassificationCounts], start: date, end: date
+) -> list[ClassificationCoverageDay]:
+    """One entry per day in ``start``..``end``; days without videos are 0."""
+    empty: ClassificationCounts = {"total": 0, "classified": 0}
+    return [
+        {"date": day, **by_date.get(day.isoformat(), empty)}
+        for day in _all_dates(start, end)
+    ]
+
+
 def get_classification_coverage(
     start: date, end: date
 ) -> list[ClassificationCoverageDay]:
     """Daily classification coverage for videos that have APIVideoInfos.
 
-    "Date" is the video's TikTok-reported publish date, taken from the most
-    recently fetched ``APIVideoInfos`` snapshot (mirrors the
-    ``latest_create_time`` annotation in ``TikTokVideoList.get_queryset``).
-    ``TikTokVideoClassification.video`` is a genuine one-to-one field, so
-    joining it does not fan out rows the way ``api_infos`` would.
-
-    Performance: the per-video "latest snapshot" subquery is expensive, and
-    filtering on it forces Postgres to run it for *every* video. Any video
-    whose latest snapshot falls in the range must also have *a* snapshot in
-    the range, so ``APIVideoInfos.create_time`` (indexed) first narrows the
-    candidates with a semi-join, and the latest-snapshot subquery only runs
-    for those. The result is identical to evaluating it for all videos.
+    "Date" is the video's TikTok-reported publish date
+    (``APIVideoInfos.create_time``). The Research API service stores at most
+    one snapshot per video, so there is no "latest snapshot" to pick; should
+    a video ever have snapshots with different publish dates, it is counted
+    on each of them.
     """
-    lo, hi = _day_bounds(start, end)
-    latest_info = APIVideoInfos.objects.filter(video=OuterRef("pk")).order_by(
-        "-created_at"
+    return fill_classification_coverage(
+        _classification_counts_by_date(start, end), start, end
     )
-    candidates = APIVideoInfos.objects.filter(create_time__gte=lo, create_time__lt=hi)
-    rows = (
-        TikTokVideo.objects.filter(Exists(candidates.filter(video=OuterRef("pk"))))
-        .annotate(latest_create_time=Subquery(latest_info.values("create_time")[:1]))
-        .filter(latest_create_time__gte=lo, latest_create_time__lt=hi)
-        .annotate(pub_date=TruncDate("latest_create_time"))
-        .values("pub_date")
-        .annotate(
-            total=Count("pk"),
-            # LEFT JOIN on a one-to-one: counts non-null classification ids.
-            classified=Count("classifications"),
-        )
-        .order_by("pub_date")
-    )
-    by_date = {row["pub_date"]: row for row in rows}
-    return [
-        {
-            "date": day,
-            "total": by_date.get(day, {}).get("total", 0),
-            "classified": by_date.get(day, {}).get("classified", 0),
-        }
-        for day in _all_dates(start, end)
-    ]
+
+
+class DashboardSnapshot(TypedDict):
+    computed_at: datetime
+    origin_counts: list[OriginCount]
+    # Whole history at day grain, so any requested range is a dict lookup.
+    classification_by_date: dict[str, ClassificationCounts]
+
+
+def get_dashboard_snapshot() -> DashboardSnapshot | None:
+    """The cached expensive aggregates, or ``None`` if not computed yet.
+
+    Never computes anything, so it is safe to call from a request.
+    """
+    return cache.get(_SNAPSHOT_CACHE_KEY)
+
+
+def refresh_dashboard_snapshot() -> DashboardSnapshot:
+    """Recompute and cache the expensive aggregates. Slow; not for requests."""
+    snapshot: DashboardSnapshot = {
+        "computed_at": timezone.now(),
+        "origin_counts": get_video_counts_by_origin(),
+        "classification_by_date": _classification_counts_by_date(),
+    }
+    cache.set(_SNAPSHOT_CACHE_KEY, snapshot, _SNAPSHOT_CACHE_TIMEOUT)
+    return snapshot

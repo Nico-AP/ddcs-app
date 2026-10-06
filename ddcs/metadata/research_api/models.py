@@ -35,9 +35,13 @@ class APIVideoInfos(ResearchAPIDataModel):
                 fields=["video", "-created_at"],
                 name="apiinfos_vid_created_idx",
             ),
-            # Lets the metadata dashboard narrow videos by publish date
-            # without scanning the whole table.
-            models.Index(fields=["create_time"], name="apiinfos_create_time_idx"),
+            # Lets the metadata dashboard count videos per publish date from
+            # the index alone, without reading this (wide) table.
+            models.Index(
+                fields=["create_time"],
+                include=["video"],
+                name="apiinfos_ctime_video_idx",
+            ),
         ]
 
     def __str__(self) -> str:

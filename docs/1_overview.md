@@ -35,6 +35,10 @@ Each Django app under `ddcs/` is documented in its own file.
 For details on the end-to-end data flow that spans donation → metadata → report, see
 [6_data_pipeline.md](6_data_pipeline.md).
 
+The two ways metadata is enriched each have their own page:
+[7_research_api_sync.md](7_research_api_sync.md) for the Research API sync and
+[8_scraper.md](8_scraper.md) for the TikTok scraper.
+
 ## Stack at a glance
 
 - **Backend:** Django 5.2 + Wagtail CMS (public site) + DDM

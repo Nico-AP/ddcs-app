@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 from django.db.models import Max, Min
 from django.utils import timezone
 
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.reports.config import (
-    PUBLIC_POST_DATA_END_LAG_DAYS,
+    PUBLIC_POST_DATA_END_DATE,
     PUBLIC_POST_DATA_START_DATE,
 )
 from ddcs.reports.utils import load_account_party_mapping
 
+if TYPE_CHECKING:
+    from datetime import date
+
 
 def configured_date_range() -> tuple[date, date]:
     """The window the public plots are meant to cover."""
-    end = timezone.now().date() - timedelta(days=PUBLIC_POST_DATA_END_LAG_DAYS)
-    return PUBLIC_POST_DATA_START_DATE, end
+    return PUBLIC_POST_DATA_START_DATE, PUBLIC_POST_DATA_END_DATE
 
 
 def _monitored_usernames() -> list[str]:

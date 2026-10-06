@@ -10,13 +10,15 @@ exists.
 """
 
 import logging
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Any
 
 from plotly import graph_objects as go
 
 from ddcs.reports.config import (
     PARTIES_ORDER,
+    PUBLIC_POST_DATA_END_DATE,
+    PUBLIC_POST_DATA_START_DATE,
 )
 from ddcs.reports.metrics.account_metrics import (
     aggregate_daily_party_counts,
@@ -213,10 +215,8 @@ def build_temporal_party_distribution_figure(
     for record in daily_party_counts:
         party_data.setdefault(record["party"], {})[record["date"]] = record["count"]
 
-    min_date = min(r["date"] for r in daily_party_counts)
-    max_date = max(r["date"] for r in daily_party_counts)
-    start = date.fromisoformat(min_date)
-    end = date.fromisoformat(max_date)
+    start = PUBLIC_POST_DATA_START_DATE
+    end = PUBLIC_POST_DATA_END_DATE
     all_dates = [
         (start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)
     ]
