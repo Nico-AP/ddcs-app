@@ -91,22 +91,24 @@
 
     <div class="dashboard-card p-3">
       <h2 class="h5">Research API sync coverage — Keywords</h2>
-      <p class="dashboard-caveat">Currently monitored: {{ monitored_keywords }} active keywords. The reference line reflects today's monitored list, not historical membership.</p>
+      <p class="dashboard-caveat">Currently monitored: {{ monitored_keywords }} active keywords. The reference line reflects today's monitored list, not historical membership. "Videos returned" (right axis) is what the Research API returned for that day, summed over all sync runs; it can exceed the number of distinct videos when items were queried more than once.</p>
       {% if keyword_coverage_plot.html %}
         {{ keyword_coverage_plot.html|safe }}
       {% else %}
         <p>No data.</p>
       {% endif %}
+      {% include "metadata/_suspicious_sync_days.html" with days=keyword_suspicious_days %}
     </div>
 
     <div class="dashboard-card p-3">
       <h2 class="h5">Research API sync coverage — Users</h2>
-      <p class="dashboard-caveat">Currently monitored: {{ monitored_users }} active users. The reference line reflects today's monitored list, not historical membership.</p>
+      <p class="dashboard-caveat">Currently monitored: {{ monitored_users }} active users. The reference line reflects today's monitored list, not historical membership. "Videos returned" (right axis) is what the Research API returned for that day, summed over all sync runs; it can exceed the number of distinct videos when items were queried more than once.</p>
       {% if user_coverage_plot.html %}
         {{ user_coverage_plot.html|safe }}
       {% else %}
         <p>No data.</p>
       {% endif %}
+      {% include "metadata/_suspicious_sync_days.html" with days=user_suspicious_days %}
     </div>
 
     <div class="dashboard-card p-3">

@@ -29,7 +29,12 @@ from ddcs.metadata.models import (
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
-from ddcs.metadata.scraper.config import WATCH_WINDOW_END, WATCH_WINDOW_START
+from ddcs.metadata.scraper.config import (
+    PRIORITY_MIN_OCCURRENCES,
+    PRIORITY_WATCHED_SINCE,
+    WATCH_WINDOW_END,
+    WATCH_WINDOW_START,
+)
 from ddcs.metadata.scraper.exceptions import (
     TikTokBlockedError,
     TikTokItemUnavailableError,
@@ -357,8 +362,9 @@ class ScraperService:
     ) -> ScrapeBatchStats:
         """Scrape up to ``limit`` queued videos, in queue order.
 
-        Queue order: videos more donors watched first, among those the
-        ones watched most recently.
+        Queue order: first the videos at least ``PRIORITY_MIN_OCCURRENCES``
+        donors watched since ``PRIORITY_WATCHED_SINCE`` (most donors first),
+        then all others by most recent view.
 
         Args:
             limit: Maximum number of targets to work on.
@@ -459,22 +465,33 @@ class ScraperService:
         self, limit: int, stats: ScrapeBatchStats
     ) -> list[ScrapeTarget]:
         retry_before = timezone.now() - self.FAILED_RETRY_BACKOFF
-        targets = list(
-            ScrapeTarget.objects.filter(
-                Q(status=ScrapeTarget.Status.PENDING)
-                | Q(
-                    status=ScrapeTarget.Status.FAILED,
-                    attempts__lt=self.max_attempts,
-                    last_attempted_at__lt=retry_before,
-                )
+        due = ScrapeTarget.objects.filter(
+            Q(status=ScrapeTarget.Status.PENDING)
+            | Q(
+                status=ScrapeTarget.Status.FAILED,
+                attempts__lt=self.max_attempts,
+                last_attempted_at__lt=retry_before,
             )
-            .select_related("video")
-            .order_by(
-                "-occurrence_count",
-                F("last_watched_at").desc(nulls_last=True),
-                "id",
-            )[:limit]
+        ).select_related("video")
+
+        # First the videos many donors saw recently, most donors first.
+        targets = list(
+            due.filter(
+                occurrence_count__gte=PRIORITY_MIN_OCCURRENCES,
+                last_watched_at__gte=datetime.combine(
+                    PRIORITY_WATCHED_SINCE, dt_time.min, tzinfo=UTC
+                ),
+            ).order_by("-occurrence_count", "-last_watched_at", "id")[:limit]
         )
+        # Once those run out, everything else by most recent view. Only
+        # reached when the priority group fits the batch, so excluding the
+        # targets picked above excludes the whole group.
+        if len(targets) < limit:
+            targets += list(
+                due.exclude(pk__in=[t.pk for t in targets]).order_by(
+                    F("last_watched_at").desc(nulls_last=True), "id"
+                )[: limit - len(targets)]
+            )
 
         # The Research API may have delivered some of them since they were
         # queued; those no longer need scraping.

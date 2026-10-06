@@ -1,0 +1,23 @@
+{% if days %}
+  <h3 class="h6 mt-3">Synced successfully, but no videos returned</h3>
+  <table class="table table-sm">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th class="text-end">Items succeeded</th>
+        <th class="text-end">Videos returned</th>
+        <th class="text-end">API pages</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for day in days %}
+        <tr>
+          <td>{{ day.date|date:"Y-m-d" }}</td>
+          <td class="text-end">{{ day.succeeded }}</td>
+          <td class="text-end">0</td>
+          <td class="text-end">{{ day.pages }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
