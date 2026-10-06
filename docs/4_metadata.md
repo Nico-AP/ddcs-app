@@ -75,9 +75,10 @@ Companion models for fields obtained by scraping the public TikTok website:
 - `VideoStatisticsScraped` → `TikTokVideo`
 - `ScrapeTarget` → `TikTokVideo` (one-to-one): the scraping queue
 
-The scraper enriches **videos that have no Research API infos** (mainly donated
-videos), newest publish date first, and also collects each video's
-original-language caption. It is off unless `TIKTOK_SCRAPER_ENABLED` is set.
+The scraper enriches **videos that have no Research API infos** and that donors
+watched during the study period (2026-07-01 to 2026-09-20), starting with the
+videos most donors saw. It also collects each video's original-language
+caption. It is off unless `TIKTOK_SCRAPER_ENABLED` is set.
 
 Fields that both sources provide have the same name, type and value format as
 on the Research API models, so the two can be read interchangeably:

@@ -12,7 +12,10 @@ from ddcs.metadata.models import (
     TikTokVideo,
     TikTokVideoClassification,
 )
-from ddcs.metadata.scraper.service import enqueue_videos
+from ddcs.metadata.scraper.service import (
+    enqueue_watched_videos,
+    watched_videos_in_window,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +63,10 @@ def register_donation_metadata(data: TikTokUserData) -> None:
         TikTokUser.objects.bulk_create(users_to_add, ignore_conflicts=True)
 
     if settings.TIKTOK_SCRAPER_ENABLED:
-        enqueue_videos(
-            record["video_id"]
-            for record in [*(data.watch_history or []), *(data.liked_videos or [])]
+        # One more donation for every video it shows as watched in the window.
+        watched = watched_videos_in_window(data.watch_history)
+        enqueue_watched_videos(
+            {video_id: (1, last_view) for video_id, last_view in watched.items()}
         )
 
 

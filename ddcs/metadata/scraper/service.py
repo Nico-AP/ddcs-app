@@ -9,15 +9,16 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as dt_time
 from itertools import batched
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
 
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, F, OuterRef, Q
 from django.utils import timezone
 
 from ddcs.metadata.models import (
@@ -28,6 +29,7 @@ from ddcs.metadata.models import (
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
+from ddcs.metadata.scraper.config import WATCH_WINDOW_END, WATCH_WINDOW_START
 from ddcs.metadata.scraper.exceptions import (
     TikTokBlockedError,
     TikTokItemUnavailableError,
@@ -44,11 +46,12 @@ from ddcs.metadata.scraper.utils import int_or_none
 from ddcs.metadata.utils import infer_publication_date_from_id
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
 logger = logging.getLogger(__name__)
 
 _ENQUEUE_CHUNK_SIZE = 500
+_RESET_CHUNK_SIZE = 500
 
 # Keys dropped from the stored raw payload: large encoding details that are
 # of no analytical use. URL values (signed, short-lived) are dropped too.
@@ -64,51 +67,161 @@ def _without_api_infos(video_pks: Iterable[int]) -> dict[int, int]:
     )
 
 
-def enqueue_video_pks(video_pks: Iterable[int]) -> int:
-    """Queue the given videos (by primary key) for scraping.
+class WatchHistoryScan(NamedTuple):
+    # TikTok ID -> the donor's most recent view of that video in the window.
+    last_watched: dict[int, datetime]
+    views_in_window: int
+    # Records that could not be used: no parsed date or no video ID.
+    skipped_records: int
 
-    Videos that already have Research API infos are skipped, and videos
-    that are already queued are left as they are. Each new target records
-    the publish time encoded in the video's TikTok ID, which is what the
-    queue is ordered by (newest first): videos disappear over time, so the
-    recent ones are the ones still worth catching.
 
-    Returns the number of newly created targets.
+def scan_watch_history(
+    watch_history: Iterable[Mapping[str, Any]] | None,
+    start: date = WATCH_WINDOW_START,
+    end: date = WATCH_WINDOW_END,
+) -> WatchHistoryScan:
+    """Find the videos one donor watched between ``start`` and ``end``.
+
+    Both days are inclusive and taken in UTC, which is what donated
+    timestamps are parsed as.
     """
-    created = 0
-    for chunk in batched(set(video_pks), _ENQUEUE_CHUNK_SIZE):
-        candidates = _without_api_infos(chunk)
-        queued = set(
-            ScrapeTarget.objects.filter(video_id__in=candidates).values_list(
-                "video_id", flat=True
+    window_start = datetime.combine(start, dt_time.min, tzinfo=UTC)
+    window_end = datetime.combine(end + timedelta(days=1), dt_time.min, tzinfo=UTC)
+
+    last_watched: dict[int, datetime] = {}
+    views_in_window = skipped_records = 0
+    for record in watch_history or []:
+        video_id = record.get("video_id")
+        watched_at = record.get("date")
+        if not isinstance(video_id, int) or not isinstance(watched_at, datetime):
+            skipped_records += 1
+            continue
+        if watched_at.tzinfo is None:
+            watched_at = watched_at.replace(tzinfo=UTC)
+        if not window_start <= watched_at < window_end:
+            continue
+        views_in_window += 1
+        previous = last_watched.get(video_id)
+        if previous is None or watched_at > previous:
+            last_watched[video_id] = watched_at
+    return WatchHistoryScan(last_watched, views_in_window, skipped_records)
+
+
+def watched_videos_in_window(
+    watch_history: Iterable[Mapping[str, Any]] | None,
+) -> dict[int, datetime]:
+    """TikTok ID -> last view, for the videos one donor watched in the window."""
+    return scan_watch_history(watch_history).last_watched
+
+
+class EnqueueResult(NamedTuple):
+    created: int
+    # Existing targets whose count was raised.
+    updated: int
+    # Not queued because the Research API already delivered the video.
+    covered_by_api: int
+
+
+def enqueue_watched_videos(
+    videos: Mapping[int, tuple[int, datetime | None]],
+) -> EnqueueResult:
+    """Queue watched videos for scraping, or raise their ranking.
+
+    ``videos`` maps a TikTok ID to ``(count, last_watched_at)``: how many
+    more donations show the video as watched within the watch window
+    (1 when called for a single donation), and its most recent view there.
+    The queue is worked off by highest count, then most recent view.
+
+    This only ever adds: a video not queued yet gets a target, an already
+    queued one has ``count`` added to its ``occurrence_count`` and keeps the
+    later view. Calling it twice for the same donation therefore counts
+    that donation twice; :func:`reset_watch_ranking` starts over.
+
+    Videos without a ``TikTokVideo`` row get one; videos that already have
+    Research API infos are skipped. A target's status is never touched, so
+    nothing that was scraped is queued again.
+    """
+    created = updated = covered_by_api = 0
+
+    for chunk in batched(videos, _ENQUEUE_CHUNK_SIZE):
+        pk_by_id = _video_pks(chunk)
+        uncovered = _without_api_infos(pk_by_id.values())
+        covered_by_api += len(pk_by_id) - len(uncovered)
+        existing = {
+            target.video_id: target
+            for target in ScrapeTarget.objects.filter(video_id__in=uncovered)
+        }
+
+        new, changed = [], []
+        for pk, id_tiktok in uncovered.items():
+            count, last_watched_at = videos[id_tiktok]
+            target = existing.get(pk)
+            if target is None:
+                new.append(
+                    ScrapeTarget(
+                        video_id=pk,
+                        occurrence_count=count,
+                        last_watched_at=last_watched_at,
+                    )
+                )
+                continue
+            target.occurrence_count += count
+            target.last_watched_at = max(
+                filter(None, (target.last_watched_at, last_watched_at)),
+                default=None,
             )
-        )
-        new = [
-            ScrapeTarget(
-                video_id=pk,
-                inferred_create_time=infer_publication_date_from_id(id_tiktok),
-            )
-            for pk, id_tiktok in candidates.items()
-            if pk not in queued
-        ]
+            changed.append(target)
+
         ScrapeTarget.objects.bulk_create(new, ignore_conflicts=True)
-        created += len(new)
-    return created
-
-
-def enqueue_videos(id_tiktoks: Iterable[int]) -> int:
-    """Queue the videos with the given TikTok IDs for scraping.
-
-    IDs without a ``TikTokVideo`` row are ignored. See
-    :func:`enqueue_video_pks` for the rules.
-    """
-    created = 0
-    for chunk in batched(set(id_tiktoks), _ENQUEUE_CHUNK_SIZE):
-        video_pks = TikTokVideo.objects.filter(id_tiktok__in=chunk).values_list(
-            "pk", flat=True
+        ScrapeTarget.objects.bulk_update(
+            changed, ["occurrence_count", "last_watched_at"]
         )
-        created += enqueue_video_pks(video_pks)
-    return created
+        created += len(new)
+        updated += len(changed)
+
+    return EnqueueResult(created, updated, covered_by_api)
+
+
+def _video_pks(id_tiktoks: Iterable[int]) -> dict[int, int]:
+    """TikTok ID -> primary key of the videos, creating rows that are missing."""
+
+    def lookup(ids: Iterable[int]) -> dict[int, int]:
+        return dict(
+            TikTokVideo.objects.filter(id_tiktok__in=ids).values_list("id_tiktok", "pk")
+        )
+
+    pk_by_id = lookup(id_tiktoks)
+    missing = [id_tiktok for id_tiktok in id_tiktoks if id_tiktok not in pk_by_id]
+    if missing:
+        TikTokVideo.objects.bulk_create(
+            [
+                TikTokVideo(id_tiktok=id_tiktok, added_by=DataOrigins.DONATION)
+                for id_tiktok in missing
+            ],
+            ignore_conflicts=True,
+        )
+        pk_by_id.update(lookup(missing))
+    return pk_by_id
+
+
+def reset_watch_ranking() -> int:
+    """Set the ranking of every target back to "not watched".
+
+    Used before the watch histories are counted from scratch. Works in
+    small steps, so the scraper is not held up by one long-running update.
+    Returns the number of targets reset.
+    """
+    ranked = ScrapeTarget.objects.filter(
+        Q(occurrence_count__gt=0) | Q(last_watched_at__isnull=False)
+    )
+    reset = 0
+    while True:
+        pks = list(ranked.values_list("pk", flat=True)[:_RESET_CHUNK_SIZE])
+        if not pks:
+            return reset
+        reset += ScrapeTarget.objects.filter(pk__in=pks).update(
+            occurrence_count=0, last_watched_at=None
+        )
 
 
 class ScrapeBatchStats(TypedDict):
@@ -242,7 +355,10 @@ class ScraperService:
         limit: int,
         deadline: float | None = None,
     ) -> ScrapeBatchStats:
-        """Scrape up to ``limit`` queued videos, newest publish time first.
+        """Scrape up to ``limit`` queued videos, in queue order.
+
+        Queue order: videos more donors watched first, among those the
+        ones watched most recently.
 
         Args:
             limit: Maximum number of targets to work on.
@@ -353,7 +469,11 @@ class ScraperService:
                 )
             )
             .select_related("video")
-            .order_by("-inferred_create_time", "id")[:limit]
+            .order_by(
+                "-occurrence_count",
+                F("last_watched_at").desc(nulls_last=True),
+                "id",
+            )[:limit]
         )
 
         # The Research API may have delivered some of them since they were

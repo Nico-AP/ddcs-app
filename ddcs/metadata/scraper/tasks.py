@@ -39,7 +39,7 @@ _NEXT_RUN_COUNTDOWN = 5
     time_limit=_TIME_LIMIT,
 )
 def scrape_pending_videos(max_videos: int | None = None) -> ScrapeBatchStats | None:
-    """Scrapes queued TikTok videos (see ``ScrapeTarget``), newest first.
+    """Scrapes queued TikTok videos (see ``ScrapeTarget``) in queue order.
 
     Does nothing unless ``TIKTOK_SCRAPER_ENABLED`` is set. A run works on at
     most ``max_videos`` (default ``TIKTOK_SCRAPER_BATCH_SIZE``) targets and

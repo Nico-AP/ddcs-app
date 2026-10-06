@@ -1,3 +1,5 @@
+from datetime import date
+
 MAIN_URL = "https://www.tiktok.com"
 
 BASE_URLS = {
@@ -25,3 +27,10 @@ REQUEST_TIMEOUT = (5, 20)
 
 # HTTP statuses TikTok answers with when it refuses to serve us.
 BLOCKED_STATUS_CODES = frozenset({403, 429})
+
+# Only videos a donor watched within this period (both days inclusive, UTC)
+# are queued for scraping. Same period as the public report
+# (ddcs.reports.config.PUBLIC_POST_DATA_*), defined separately because the
+# reports app depends on this one, not the other way round.
+WATCH_WINDOW_START = date(2026, 7, 1)
+WATCH_WINDOW_END = date(2026, 9, 20)

@@ -373,7 +373,6 @@ class GetScraperQueueTests(TestCase):
                 video=video,
                 status=status,
                 last_attempted_at=attempted_at,
-                inferred_create_time=scraped_at,
             )
 
         queue = get_scraper_queue()

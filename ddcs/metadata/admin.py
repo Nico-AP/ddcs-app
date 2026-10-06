@@ -404,7 +404,8 @@ class ScrapeTargetAdmin(admin.ModelAdmin):
     list_display = (
         "video",
         "status",
-        "inferred_create_time",
+        "occurrence_count",
+        "last_watched_at",
         "attempts",
         "last_attempted_at",
         "last_error_type",
@@ -413,7 +414,7 @@ class ScrapeTargetAdmin(admin.ModelAdmin):
     list_filter = ("status", "last_error_type")
     search_fields = ("video__id_tiktok",)
     list_select_related = ("video",)
-    ordering = ("-inferred_create_time",)
+    ordering = ("-occurrence_count", "-last_watched_at")
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False

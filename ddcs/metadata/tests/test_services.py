@@ -390,38 +390,59 @@ class ZuseAPIClientProcessResultsTests(TestCase):
 
 class RegisterDonationMetadataScrapeQueueTests(TestCase):
     def setUp(self):
+        self.early = datetime(2026, 7, 5, 10, tzinfo=UTC)
+        self.late = datetime(2026, 8, 5, 10, tzinfo=UTC)
+        outside = datetime(2026, 10, 5, 10, tzinfo=UTC)
         self.data = TikTokUserData(
-            watch_history=[{"video_id": 1}, {"video_id": 2}, {"video_id": 1}],
-            liked_videos=[{"video_id": 2}, {"video_id": 3}],
+            watch_history=[
+                {"video_id": 1, "date": self.early},
+                {"video_id": 1, "date": self.late},
+                {"video_id": 2, "date": self.early},
+                {"video_id": 3, "date": outside},
+            ],
+            liked_videos=[{"video_id": 4, "date": self.early}],
         )
+
+    def _ranking(self) -> dict[int, tuple]:
+        return {
+            id_tiktok: (count, last)
+            for id_tiktok, count, last in ScrapeTarget.objects.values_list(
+                "video__id_tiktok", "occurrence_count", "last_watched_at"
+            )
+        }
 
     @override_settings(TIKTOK_SCRAPER_ENABLED=False)
     def test_queues_nothing_while_scraper_is_disabled(self):
         register_donation_metadata(self.data)
 
-        self.assertEqual(TikTokVideo.objects.count(), 3)
+        self.assertEqual(TikTokVideo.objects.count(), 4)
         self.assertFalse(ScrapeTarget.objects.exists())
 
     @override_settings(TIKTOK_SCRAPER_ENABLED=True)
-    def test_queues_donated_videos_without_api_infos(self):
+    def test_queues_videos_watched_in_the_window_only(self):
+        register_donation_metadata(self.data)
+
+        # Not video 3 (watched outside the window), not video 4 (only liked).
+        # Video 1 was watched twice by this donor: still one donation.
+        self.assertEqual(self._ranking(), {1: (1, self.late), 2: (1, self.early)})
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_skips_videos_the_research_api_covers(self):
         covered = TikTokVideo.objects.create(
-            id_tiktok=3, added_by=DataOrigins.RESEARCH_API
+            id_tiktok=2, added_by=DataOrigins.RESEARCH_API
         )
         APIVideoInfos.objects.create(video=covered)
 
         register_donation_metadata(self.data)
 
-        self.assertEqual(
-            set(ScrapeTarget.objects.values_list("video__id_tiktok", flat=True)),
-            {1, 2},
-        )
+        self.assertEqual(set(self._ranking()), {1})
 
     @override_settings(TIKTOK_SCRAPER_ENABLED=True)
-    def test_further_donation_does_not_duplicate_or_change_targets(self):
+    def test_another_donation_raises_the_count(self):
         register_donation_metadata(self.data)
-        before = list(ScrapeTarget.objects.order_by("pk").values())
 
-        register_donation_metadata(TikTokUserData(watch_history=[{"video_id": 1}]))
+        register_donation_metadata(
+            TikTokUserData(watch_history=[{"video_id": 1, "date": self.early}])
+        )
 
-        self.assertEqual(list(ScrapeTarget.objects.order_by("pk").values()), before)
-        self.assertEqual(len(before), 3)
+        self.assertEqual(self._ranking(), {1: (2, self.late), 2: (1, self.early)})

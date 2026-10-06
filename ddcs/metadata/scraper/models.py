@@ -6,7 +6,7 @@ class ScrapeTarget(models.Model):
 
     Only videos worth scraping get a row here, so picking the next batch
     never has to look at the (very large) ``TikTokVideo`` table. Rows are
-    created through :func:`ddcs.metadata.scraper.service.enqueue_videos`
+    created through :func:`ddcs.metadata.scraper.service.enqueue_watched_videos`
     and worked off by :class:`ddcs.metadata.scraper.service.ScraperService`.
     """
 
@@ -29,11 +29,19 @@ class ScrapeTarget(models.Model):
         related_name="scrape_target",
     )
 
-    inferred_create_time = models.DateTimeField(
+    # What the queue is ordered by: videos more donors watched come first,
+    # among those the ones watched most recently.
+    occurrence_count = models.PositiveIntegerField(
+        default=0,
         help_text=(
-            "Publish time inferred from the video's TikTok ID. "
-            "Newest targets are scraped first."
-        )
+            "Number of donations whose watch history contains the video "
+            "within the watch window."
+        ),
+    )
+    last_watched_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Most recent view of the video within the watch window.",
     )
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
@@ -52,7 +60,7 @@ class ScrapeTarget(models.Model):
     class Meta:
         indexes = [
             models.Index(
-                fields=["status", "-inferred_create_time"],
+                fields=["status", "-occurrence_count", "-last_watched_at"],
                 name="scrapetarget_queue_idx",
             ),
         ]

@@ -7,6 +7,7 @@ from ddm.datadonation.models import DataDonation
 from ddm.encryption.models import Decryption
 from ddm.participation.models import Participant
 from ddm.projects.models import DonationProject
+from django.db.models import QuerySet
 
 from ddcs.core.types import TikTokUserData
 from ddcs.datadonation.config import (
@@ -47,6 +48,10 @@ _BLUEPRINT_NAMES_INCL_BACKUPS = [
     bp + suffix for bp in _BLUEPRINT_NAMES for suffix in _BLUEPRINT_BACKUP_SUFFIXES
 ]
 
+_WATCH_HISTORY_BP_NAMES_INCL_BACKUPS = [
+    WATCH_HISTORY_BP_NAME + suffix for suffix in _BLUEPRINT_BACKUP_SUFFIXES
+]
+
 
 def _donation_records_for_blueprint(
     donations_by_blueprint: dict[str, list[dict[str, Any]] | None],
@@ -70,25 +75,34 @@ def _get_donation_data(participant: Participant) -> dict:
     Preference order when several variants succeeded: base, ``_txt``, ``_old``,
     then ``_old_api`` (TikTok legacy API export path).
     """
+    donations_by_blueprint = _decrypted_donations(
+        participant, _BLUEPRINT_NAMES_INCL_BACKUPS
+    )
+    return {
+        bp_name: _donation_records_for_blueprint(donations_by_blueprint, bp_name)
+        for bp_name in _BLUEPRINT_NAMES
+    }
+
+
+def _decrypted_donations(
+    participant: Participant, blueprint_names: list[str]
+) -> dict[str, list[dict[str, Any]] | None]:
+    """The participant's successful donations for the given blueprints, decrypted."""
     donations = DataDonation.objects.filter(
         participant=participant,
-        blueprint__name__in=_BLUEPRINT_NAMES_INCL_BACKUPS,
+        blueprint__name__in=blueprint_names,
         data_extraction_state=DataDonation.DataExtractionState.DATA_EXTRACTED,
     ).select_related("blueprint")
 
     project = participant.project
     decryptor = _get_decryptor(project)
-    donations_by_blueprint = {
+    return {
         donation.blueprint.name: donation.get_decrypted_data(
             project.secret,
             project.get_salt(),
             decryptor=decryptor,
         )
         for donation in donations
-    }
-    return {
-        bp_name: _donation_records_for_blueprint(donations_by_blueprint, bp_name)
-        for bp_name in _BLUEPRINT_NAMES
     }
 
 
@@ -236,6 +250,31 @@ def get_user_data(participant: Participant) -> TikTokUserData:
     data = _get_donation_data(participant)
     data = _clean_donated_data(data)
     return _map_to_user_data(data)
+
+
+def participants_with_watch_history() -> QuerySet[Participant]:
+    """Participants who have a successfully extracted watch-history donation."""
+    donors = DataDonation.objects.filter(
+        blueprint__name__in=_WATCH_HISTORY_BP_NAMES_INCL_BACKUPS,
+        data_extraction_state=DataDonation.DataExtractionState.DATA_EXTRACTED,
+    ).values("participant_id")
+    return Participant.objects.filter(pk__in=donors).select_related("project")
+
+
+def get_watch_history(participant: Participant) -> list[dict[str, Any]] | None:
+    """The participant's donated watch history, cleaned, with video IDs.
+
+    Same records as ``get_user_data(participant).watch_history``, but only
+    the watch-history donation is decrypted, which is what makes going
+    through all participants affordable. ``None`` if there is none.
+    """
+    donations_by_blueprint = _decrypted_donations(
+        participant, _WATCH_HISTORY_BP_NAMES_INCL_BACKUPS
+    )
+    records = _donation_records_for_blueprint(
+        donations_by_blueprint, WATCH_HISTORY_BP_NAME
+    )
+    return _map_video_records(_clean_records(records))
 
 
 def post_process_donation(participant: Participant) -> None:
