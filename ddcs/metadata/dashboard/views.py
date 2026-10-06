@@ -19,7 +19,11 @@ from ddcs.metadata.dashboard.plots import (
     get_origin_counts_plot,
     get_sync_coverage_plot,
 )
+from ddcs.metadata.scraper.service import clear_cooldown
+from ddcs.metadata.scraper.tasks import scrape_pending_videos
 from ddcs.metadata.tasks import request_dashboard_refresh
+
+RESUME_SCRAPER_ACTION = "resume_scraper"
 
 
 class DebugOrSuperuserMixin:
@@ -57,8 +61,18 @@ class MetadataDashboardView(DebugOrSuperuserMixin, TemplateView):
         return start, end
 
     def post(self, request: HttpRequest, *args, **kwargs) -> HttpResponseRedirect:
-        """ "Refresh now": queue a recompute, then return to the same range."""
-        request_dashboard_refresh()
+        """Handle the page's buttons, then return to the same date range.
+
+        "Resume scraping now" ends the scraper's cool-down and queues a
+        run; anything else is "Refresh now", which queues a recompute of
+        the snapshot.
+        """
+        if request.POST.get("action") == RESUME_SCRAPER_ACTION:
+            clear_cooldown()
+            if settings.TIKTOK_SCRAPER_ENABLED:
+                scrape_pending_videos.delay()
+        else:
+            request_dashboard_refresh()
         return HttpResponseRedirect(request.get_full_path())
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
@@ -106,6 +120,7 @@ class MetadataDashboardView(DebugOrSuperuserMixin, TemplateView):
         )
 
         context["scraper_enabled"] = settings.TIKTOK_SCRAPER_ENABLED
+        context["resume_scraper_action"] = RESUME_SCRAPER_ACTION
         context["scraper_queue"] = get_scraper_queue()
 
         return context

@@ -421,8 +421,16 @@ TIKTOK_RESEARCH_API_CLIENT_MAX_RETRIES: int = env.int(
 # Master switch: while off, nothing is queued for scraping and the scheduled
 # scraping task returns immediately.
 TIKTOK_SCRAPER_ENABLED: bool = env.bool("TIKTOK_SCRAPER_ENABLED", default=False)
-# Seconds to wait between two requests to tiktok.com.
+# Minimum seconds between the starts of two video-page requests.
 TIKTOK_SCRAPER_RATE_DELAY: float = env.float("TIKTOK_SCRAPER_RATE_DELAY", default=1.0)
+# Random variation of that interval, as a fraction (0.3 = each interval is
+# between 70% and 130% of the delay). The average rate is unaffected.
+TIKTOK_SCRAPER_RATE_JITTER: float = env.float("TIKTOK_SCRAPER_RATE_JITTER", default=0.3)
+# Seconds to wait before downloading a caption file. Captions come from a
+# different host than the pages, so by default they are not slowed down.
+TIKTOK_SCRAPER_CAPTION_DELAY: float = env.float(
+    "TIKTOK_SCRAPER_CAPTION_DELAY", default=0.0
+)
 # Maximum number of videos one scraping run works on.
 TIKTOK_SCRAPER_BATCH_SIZE: int = env.int("TIKTOK_SCRAPER_BATCH_SIZE", default=3000)
 # Also download each scraped video's original-language caption (transcript).

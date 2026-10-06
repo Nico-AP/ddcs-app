@@ -1,3 +1,4 @@
+import random
 import time
 from collections.abc import Callable, Generator
 from typing import Any, TypedDict
@@ -57,7 +58,11 @@ class TikTokScraper:
     Attributes:
         client (TikTokClient): HTTP client for making requests to TikTok
         parser (TikTokParser): Parser class for extracting data from responses
-        rate_delay (float): Delay in seconds between requests for rate limiting
+        rate_delay (float): Minimum time in seconds between the starts of
+            two page requests (see ``_pace``)
+        rate_jitter (float): Fraction by which the time between two page
+            requests varies randomly around ``rate_delay`` (0.3 = ±30%)
+        caption_delay (float): Pause in seconds before a caption download
 
     Examples:
         >>> scraper = TikTokScraper(rate_delay=1.0)
@@ -74,10 +79,16 @@ class TikTokScraper:
         self,
         rate_delay: float = RATE_LIMIT_DELAY,
         client: TikTokClient | None = None,
+        caption_delay: float = 0.0,
+        rate_jitter: float = 0.0,
     ) -> None:
         self.client = client or TikTokClient()
         self.parser = TikTokParser
         self.rate_delay = rate_delay
+        self.caption_delay = caption_delay
+        self.rate_jitter = rate_jitter
+        # time.monotonic() value before which no further page is requested.
+        self._next_page_request_at = 0.0
 
     def scrape_video_list(
         self,
@@ -131,8 +142,9 @@ class TikTokScraper:
 
         The caption is a separate file that the video data only links to.
         The link is signed and expires within days, so this has to happen
-        right after the video was scraped. Costs one extra request, which
-        is preceded by the usual rate-limit delay.
+        right after the video was scraped. Costs one extra request. It goes
+        to a different host (a CDN) than the pages, so it is not subject to
+        the page rate limit; ``caption_delay`` adds a pause of its own.
 
         Args:
             video_data: Video data as returned by ``scrape_video``.
@@ -149,8 +161,8 @@ class TikTokScraper:
         if caption is None:
             return None
 
-        if self.rate_delay:
-            time.sleep(self.rate_delay)
+        if self.caption_delay:
+            time.sleep(self.caption_delay)
         response = self.client.get(caption["url"])
         return ScrapedCaption(
             language=caption.get("language") or "",
@@ -210,10 +222,8 @@ class TikTokScraper:
         scrape_one: Callable[[str], dict[str, Any]],
         identifier_key: str,
     ) -> Generator[dict[str, Any], None, None]:
-        for i, identifier in enumerate(identifiers):
-            if self.rate_delay and i > 0:
-                time.sleep(self.rate_delay)
-
+        for identifier in identifiers:
+            self._pace()
             try:
                 data = self._scrape_with_fresh_session_on_block(scrape_one, identifier)
             except TikTokScraperError as e:
@@ -237,9 +247,30 @@ class TikTokScraper:
             return scrape_one(identifier)
         except TikTokBlockedError:
             self.client.reset_session()
-            if self.rate_delay:
-                time.sleep(self.rate_delay)
+            self._pace()
             return scrape_one(identifier)
+
+    def _pace(self) -> None:
+        """Wait until the next page request is due.
+
+        Page requests start ``rate_delay`` seconds apart on average.
+        Whatever happened since the previous one started (loading the page,
+        fetching a caption, the caller storing the result) counts towards
+        that interval, so the wait is only what is left of it.
+
+        With ``rate_jitter`` each interval is stretched or shortened by a
+        random factor, so requests don't arrive in a perfectly regular
+        rhythm. The average rate stays the same.
+        """
+        now = time.monotonic()
+        wait = self._next_page_request_at - now
+        if wait > 0:
+            time.sleep(wait)
+            now += wait
+        interval = self.rate_delay
+        if self.rate_jitter:
+            interval *= random.uniform(1 - self.rate_jitter, 1 + self.rate_jitter)  # noqa: S311
+        self._next_page_request_at = now + interval
 
     @staticmethod
     def get_video_url(video_id: str) -> str:

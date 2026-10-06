@@ -27,6 +27,12 @@ from ddcs.metadata.models import (
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.models import ScrapeTarget
+from ddcs.metadata.scraper.service import (
+    LastScrapeRun,
+    cooldown_until,
+    get_cooldown,
+    get_last_run,
+)
 
 DEFAULT_WINDOW_DAYS = 90
 
@@ -146,10 +152,19 @@ class ScraperQueueStatus(TypedDict):
     count: int
 
 
+class ScraperCooldown(TypedDict):
+    until: datetime
+    consecutive_aborts: int
+
+
 class ScraperQueue(TypedDict):
     total: int
     by_status: list[ScraperQueueStatus]
     last_success_at: datetime | None
+    # Statistics of the most recent scraping run, if one finished recently.
+    last_run: LastScrapeRun | None
+    # Set while scraping is paused after aborted runs.
+    cooldown: ScraperCooldown | None
 
 
 def get_scraper_queue() -> ScraperQueue:
@@ -171,6 +186,18 @@ def get_scraper_queue() -> ScraperQueue:
             for status in ScrapeTarget.Status
         ],
         "last_success_at": last_success_at,
+        "last_run": get_last_run(),
+        "cooldown": _active_scraper_cooldown(),
+    }
+
+
+def _active_scraper_cooldown() -> ScraperCooldown | None:
+    until = cooldown_until()
+    if until is None:
+        return None
+    return {
+        "until": until,
+        "consecutive_aborts": get_cooldown()["consecutive_aborts"],
     }
 
 

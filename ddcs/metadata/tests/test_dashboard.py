@@ -27,6 +27,11 @@ from ddcs.metadata.models import (
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.models import ScrapeTarget
+from ddcs.metadata.scraper.service import (
+    get_cooldown,
+    record_last_run,
+    register_abort,
+)
 from ddcs.metadata.tasks import (
     _DASHBOARD_REFRESH_PENDING_KEY,
     refresh_metadata_dashboard,
@@ -307,15 +312,51 @@ class MetadataDashboardSnapshotViewTests(TestCase):
 
 
 class GetScraperQueueTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.addCleanup(cache.clear)
+
     def test_empty_queue_lists_every_status_with_zero(self):
         queue = get_scraper_queue()
 
         self.assertEqual(queue["total"], 0)
         self.assertIsNone(queue["last_success_at"])
+        self.assertIsNone(queue["last_run"])
         self.assertEqual(
             [row["status"] for row in queue["by_status"]], ScrapeTarget.Status.values
         )
         self.assertEqual({row["count"] for row in queue["by_status"]}, {0})
+
+    def test_last_run_is_reported_and_rendered(self):
+        record_last_run(
+            {
+                "scraped": 40,
+                "unavailable": 3,
+                "failed": 2,
+                "blocked": 1,
+                "covered_by_api": 0,
+                "captions_fetched": 25,
+                "captions_failed": 4,
+                "aborted": False,
+                "seconds": 61.5,
+                "videos_per_minute": 44.9,
+            }
+        )
+
+        self.assertEqual(get_scraper_queue()["last_run"]["videos_per_minute"], 44.9)
+
+        user = get_user_model().objects.create_superuser(
+            username="admin", password="x", email="admin@example.com"
+        )
+        self.client.force_login(user)
+        with patch(_REQUEST_REFRESH):
+            response = self.client.get(reverse("metadata:dashboard"))
+
+        self.assertContains(response, "44.9 videos/min")
+        self.assertContains(response, "captions failed 4")
+        self.assertNotContains(response, "aborted:")
+        self.assertNotContains(response, "Scraping is paused")
+        self.assertNotContains(response, "Resume scraping now")
 
     def test_counts_targets_per_status_and_reports_last_success(self):
         scraped_at = timezone.now()
@@ -344,3 +385,113 @@ class GetScraperQueueTests(TestCase):
         self.assertEqual(counts["failed"], 1)
         self.assertEqual(counts["unavailable"], 0)
         self.assertEqual(queue["last_success_at"], scraped_at)
+
+
+_SCRAPE_DELAY = "ddcs.metadata.dashboard.views.scrape_pending_videos.delay"
+
+
+class ScraperCooldownDashboardTests(TestCase):
+    def setUp(self):
+        self.url = reverse("metadata:dashboard")
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.client.force_login(
+            get_user_model().objects.create_superuser(
+                username="admin", password="x", email="admin@example.com"
+            )
+        )
+        refresh_patcher = patch(_REQUEST_REFRESH)
+        self.request_refresh = refresh_patcher.start()
+        self.addCleanup(refresh_patcher.stop)
+
+    def test_queue_reports_active_cooldown_only(self):
+        self.assertIsNone(get_scraper_queue()["cooldown"])
+
+        until = register_abort()
+        register_abort()
+
+        cooldown = get_scraper_queue()["cooldown"]
+        self.assertEqual(cooldown["consecutive_aborts"], 2)
+        self.assertGreater(cooldown["until"], until)
+
+        expired = timezone.now() + timedelta(hours=3)
+        with patch("ddcs.metadata.scraper.service.timezone.now", return_value=expired):
+            self.assertIsNone(get_scraper_queue()["cooldown"])
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_paused_notice_shows_how_to_resume(self):
+        register_abort()
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, "Scraping is paused until")
+        self.assertContains(response, "after 1 aborted run in a row")
+        self.assertContains(response, "Resume scraping now")
+        self.assertContains(response, 'name="action" value="resume_scraper"')
+        self.assertContains(response, "clear_cooldown()")
+        self.assertContains(response, "scrape_pending_videos.delay()")
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=False)
+    def test_no_resume_button_while_the_scraper_is_disabled(self):
+        register_abort()
+
+        response = self.client.get(self.url)
+
+        self.assertContains(response, "Scraping is paused until")
+        self.assertNotContains(response, "Resume scraping now")
+        self.assertContains(response, "clear_cooldown()")
+
+    def test_last_run_shows_why_it_was_aborted(self):
+        stats = {
+            "scraped": 0,
+            "unavailable": 0,
+            "failed": 0,
+            "blocked": 0,
+            "covered_by_api": 0,
+            "captions_fetched": 0,
+            "captions_failed": 0,
+            "aborted": True,
+            "seconds": 6.0,
+            "videos_per_minute": 50.0,
+        }
+        for reason, text in (
+            ("blocked", "TikTok refused several requests in a row"),
+            ("consecutive_failures", "several videos in a row returned no usable data"),
+        ):
+            with self.subTest(reason=reason):
+                record_last_run({**stats, "abort_reason": reason})
+                self.assertContains(self.client.get(self.url), text)
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_resume_clears_cooldown_queues_a_run_and_redirects(self):
+        register_abort()
+        url = f"{self.url}?start=2026-08-01&end=2026-08-31"
+
+        with patch(_SCRAPE_DELAY) as delay:
+            response = self.client.post(url, {"action": "resume_scraper"})
+
+        self.assertRedirects(response, url, fetch_redirect_response=False)
+        self.assertIsNone(get_cooldown())
+        delay.assert_called_once_with()
+        self.request_refresh.assert_not_called()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=False)
+    def test_resume_queues_no_run_while_the_scraper_is_disabled(self):
+        register_abort()
+
+        with patch(_SCRAPE_DELAY) as delay:
+            self.client.post(self.url, {"action": "resume_scraper"})
+
+        self.assertIsNone(get_cooldown())
+        delay.assert_not_called()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_refresh_button_still_refreshes_and_leaves_the_scraper_alone(self):
+        register_abort()
+
+        with patch(_SCRAPE_DELAY) as delay:
+            self.client.post(self.url)
+
+        self.request_refresh.assert_called_once_with()
+        delay.assert_not_called()
+        self.assertIsNotNone(get_cooldown())

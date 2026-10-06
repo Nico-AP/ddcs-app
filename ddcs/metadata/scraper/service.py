@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
@@ -120,8 +121,88 @@ class ScrapeBatchStats(TypedDict):
     # Videos that have a caption which could not be downloaded. The videos
     # themselves still count as scraped.
     captions_failed: int
-    # True if the batch stopped early because TikTok kept blocking us.
+    # True if the batch stopped early because TikTok appears to be blocking
+    # us; ``abort_reason`` says what was seen ("" if not aborted).
     aborted: bool
+    abort_reason: str
+    # Wall time of the batch and the resulting throughput. Every target a
+    # page was requested for counts, whatever the outcome.
+    seconds: float
+    videos_per_minute: float
+
+
+class LastScrapeRun(ScrapeBatchStats):
+    finished_at: str  # ISO 8601
+
+
+_LAST_RUN_CACHE_KEY = "metadata:scraper:last_run"
+_LAST_RUN_CACHE_TIMEOUT = 60 * 60 * 25
+
+
+def record_last_run(stats: ScrapeBatchStats) -> None:
+    """Remember a finished run's statistics for the metadata dashboard."""
+    # Plain JSON-compatible values only (hence the timestamp as a string).
+    last_run: LastScrapeRun = {**stats, "finished_at": timezone.now().isoformat()}
+    cache.set(_LAST_RUN_CACHE_KEY, last_run, _LAST_RUN_CACHE_TIMEOUT)
+
+
+def get_last_run() -> LastScrapeRun | None:
+    return cache.get(_LAST_RUN_CACHE_KEY)
+
+
+ABORT_REASON_BLOCKED = "blocked"
+ABORT_REASON_CONSECUTIVE_FAILURES = "consecutive_failures"
+
+# Cool-down after aborted runs: 1 h after the first, doubling with every
+# further abort in a row, at most 24 h.
+COOLDOWN_BASE = timedelta(hours=1)
+COOLDOWN_MAX = timedelta(hours=24)
+
+_COOLDOWN_CACHE_KEY = "metadata:scraper:cooldown"
+# Outlives the longest cool-down by far, so the abort count (and with it the
+# escalation) is still known when scraping is tried again.
+_COOLDOWN_CACHE_TIMEOUT = 60 * 60 * 24 * 7
+
+
+class ScrapeCooldown(TypedDict):
+    consecutive_aborts: int
+    until: str  # ISO 8601
+
+
+def get_cooldown() -> ScrapeCooldown | None:
+    """Cool-down state since the last healthy run, whether still active or not."""
+    return cache.get(_COOLDOWN_CACHE_KEY)
+
+
+def cooldown_until() -> datetime | None:
+    """When scraping may resume, or ``None`` if no cool-down is active."""
+    cooldown = get_cooldown()
+    if cooldown is None:
+        return None
+    until = datetime.fromisoformat(cooldown["until"])
+    return until if until > timezone.now() else None
+
+
+def register_abort() -> datetime:
+    """Start (or lengthen) the cool-down after an aborted run.
+
+    Returns the time until which scraping stays paused.
+    """
+    consecutive_aborts = (get_cooldown() or {}).get("consecutive_aborts", 0) + 1
+    pause = min(COOLDOWN_BASE * 2 ** (consecutive_aborts - 1), COOLDOWN_MAX)
+    until = timezone.now() + pause
+    # Plain JSON-compatible values only.
+    cooldown: ScrapeCooldown = {
+        "consecutive_aborts": consecutive_aborts,
+        "until": until.isoformat(),
+    }
+    cache.set(_COOLDOWN_CACHE_KEY, cooldown, _COOLDOWN_CACHE_TIMEOUT)
+    return until
+
+
+def clear_cooldown() -> None:
+    """End the cool-down and forget previous aborts."""
+    cache.delete(_COOLDOWN_CACHE_KEY)
 
 
 class ScraperService:
@@ -130,6 +211,11 @@ class ScraperService:
     # After this many blocked videos in a row the batch is abandoned:
     # continuing would only burn through the queue.
     CONSECUTIVE_BLOCKS_BEFORE_ABORT = 3
+    # Same for videos that fail in a row without TikTok refusing outright
+    # (no data in the page, unexpected structure, network errors). That
+    # pattern is what a "soft" block or a changed page layout looks like
+    # from here, and neither says anything about the individual videos.
+    CONSECUTIVE_FAILURES_BEFORE_ABORT = 5
     # A failed target is not retried before this much time has passed.
     FAILED_RETRY_BACKOFF = timedelta(hours=6)
 
@@ -140,7 +226,9 @@ class ScraperService:
         fetch_captions: bool | None = None,
     ) -> None:
         self.scraper = scraper or TikTokScraper(
-            rate_delay=settings.TIKTOK_SCRAPER_RATE_DELAY
+            rate_delay=settings.TIKTOK_SCRAPER_RATE_DELAY,
+            caption_delay=settings.TIKTOK_SCRAPER_CAPTION_DELAY,
+            rate_jitter=settings.TIKTOK_SCRAPER_RATE_JITTER,
         )
         self.max_attempts = max_attempts or settings.TIKTOK_SCRAPER_MAX_ATTEMPTS
         self.fetch_captions = (
@@ -170,20 +258,31 @@ class ScraperService:
             "captions_fetched": 0,
             "captions_failed": 0,
             "aborted": False,
+            "abort_reason": "",
+            "seconds": 0.0,
+            "videos_per_minute": 0.0,
         }
+        started = time.monotonic()
+        requested = 0
         targets = self._select_targets(limit, stats)
         results = self.scraper.scrape_video_list(
             [str(target.video.id_tiktok) for target in targets]
         )
 
         consecutive_blocks = 0
+        # Failures are held back until it is clear whether they are
+        # individual ones (pages are still being served: recorded as failed)
+        # or the start of a streak (suspected block: targets left untouched).
+        failure_streak: list[tuple[ScrapeTarget, Exception]] = []
         for target in targets:
             if deadline is not None and time.monotonic() > deadline:
                 break
             result = next(results)
+            requested += 1
 
             if result["success"]:
                 consecutive_blocks = 0
+                self._record_failures(failure_streak, stats)
                 caption = self._fetch_caption(target, result["data"], stats)
                 self._handle_success(target, result["data"], caption, stats)
                 continue
@@ -195,11 +294,14 @@ class ScraperService:
                 consecutive_blocks += 1
                 if consecutive_blocks >= self.CONSECUTIVE_BLOCKS_BEFORE_ABORT:
                     stats["aborted"] = True
+                    stats["abort_reason"] = ABORT_REASON_BLOCKED
                     break
                 continue
 
-            consecutive_blocks = 0
             if isinstance(error, TikTokItemUnavailableError):
+                # A definite answer about this video, so pages are served.
+                consecutive_blocks = 0
+                self._record_failures(failure_streak, stats)
                 self._mark(
                     target,
                     ScrapeTarget.Status.UNAVAILABLE,
@@ -207,11 +309,35 @@ class ScraperService:
                     tiktok_status_code=int_or_none(error.status_code),
                 )
                 stats["unavailable"] += 1
-            else:
-                self._mark(target, ScrapeTarget.Status.FAILED, error)
-                stats["failed"] += 1
+                continue
 
+            failure_streak.append((target, error))
+            if len(failure_streak) >= self.CONSECUTIVE_FAILURES_BEFORE_ABORT:
+                # Their targets stay pending, without an attempt counted.
+                failure_streak.clear()
+                stats["aborted"] = True
+                stats["abort_reason"] = ABORT_REASON_CONSECUTIVE_FAILURES
+                break
+
+        # A streak too short to abort on: ordinary failures.
+        self._record_failures(failure_streak, stats)
+
+        seconds = time.monotonic() - started
+        stats["seconds"] = round(seconds, 1)
+        if seconds > 0:
+            stats["videos_per_minute"] = round(requested / seconds * 60, 1)
         return stats
+
+    def _record_failures(
+        self,
+        failure_streak: list[tuple[ScrapeTarget, Exception]],
+        stats: ScrapeBatchStats,
+    ) -> None:
+        """Mark the held-back failures as failed and empty the list."""
+        for target, error in failure_streak:
+            self._mark(target, ScrapeTarget.Status.FAILED, error)
+            stats["failed"] += 1
+        failure_streak.clear()
 
     def _select_targets(
         self, limit: int, stats: ScrapeBatchStats

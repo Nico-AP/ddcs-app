@@ -23,6 +23,8 @@ TEST_VIDEO_ID = "7470493179767344430"
 TEST_CREATOR_NAME = "tiktok"
 
 _SLEEP = "ddcs.metadata.scraper.scraper.time.sleep"
+_MONOTONIC = "ddcs.metadata.scraper.scraper.time.monotonic"
+_UNIFORM = "ddcs.metadata.scraper.scraper.random.uniform"
 
 
 def _response(status_code: int = 200, text: str = "") -> Mock:
@@ -318,16 +320,66 @@ class TikTokScraperTests(SimpleTestCase):
         self.assertEqual(results[1]["error_type"], "TikTokMissingRehydrationDataError")
         self.assertTrue(results[1]["error"])
 
-    def test_lists_sleep_between_items_only(self):
+    def _sleeps_for_requests_at(self, *times: float, scrape_list=None) -> list:
+        """Sleep calls made when one item is requested at each given time."""
         self.client.get.return_value = _response(text=_USER_PAGE)
+        scrape_list = scrape_list or self.scraper.scrape_user_list
+        with patch(_SLEEP) as sleep, patch(_MONOTONIC, side_effect=times):
+            list(scrape_list([str(i) for i in range(len(times))]))
+        return sleep.call_args_list
 
+    def test_first_request_is_not_delayed(self):
+        self.assertEqual(self._sleeps_for_requests_at(100.0), [])
+
+    def test_requests_start_at_least_rate_delay_apart(self):
         for scrape_list in (
             self.scraper.scrape_video_list,
             self.scraper.scrape_user_list,
         ):
-            with self.subTest(scrape_list=scrape_list), patch(_SLEEP) as sleep:
-                list(scrape_list(["a", "b", "c"]))
-                self.assertEqual(sleep.call_args_list, [call(1.0), call(1.0)])
+            with self.subTest(scrape_list=scrape_list):
+                scraper = TikTokScraper(rate_delay=1.0, client=self.client)
+                self.scraper = scraper
+                # Second item is ready 0.3 s after the first request started,
+                # the third right when its slot opens (2.0 after two waits).
+                sleeps = self._sleeps_for_requests_at(
+                    100.0,
+                    100.3,
+                    101.0,
+                    scrape_list=getattr(scraper, scrape_list.__name__),
+                )
+                self.assertEqual(len(sleeps), 2)
+                self.assertAlmostEqual(sleeps[0].args[0], 0.7)
+                self.assertAlmostEqual(sleeps[1].args[0], 1.0)
+
+    def test_time_spent_since_the_last_request_counts_towards_the_delay(self):
+        # The second item only comes 5 s later: nothing left to wait for.
+        self.assertEqual(self._sleeps_for_requests_at(100.0, 105.0), [])
+
+    def test_jitter_varies_the_interval_around_the_delay(self):
+        self.scraper = TikTokScraper(
+            rate_delay=2.0, client=self.client, rate_jitter=0.3
+        )
+
+        # Each interval is 2.0 s times the factor drawn for it.
+        with patch(_UNIFORM, side_effect=[0.75, 1.25, 1.0]) as uniform:
+            sleeps = self._sleeps_for_requests_at(100.0, 100.0, 101.5)
+
+        uniform.assert_called_with(0.7, 1.3)
+        self.assertEqual(len(sleeps), 2)
+        # Slot 2 opens at 100 + 2.0 * 0.75; slot 3 at 101.5 + 2.0 * 1.25.
+        self.assertAlmostEqual(sleeps[0].args[0], 1.5)
+        self.assertAlmostEqual(sleeps[1].args[0], 2.5)
+
+    def test_without_jitter_no_randomness_is_involved(self):
+        with patch(_UNIFORM) as uniform:
+            self._sleeps_for_requests_at(100.0, 100.0)
+
+        uniform.assert_not_called()
+
+    def test_no_delay_configured(self):
+        self.scraper = TikTokScraper(rate_delay=0, client=self.client)
+
+        self.assertEqual(self._sleeps_for_requests_at(100.0, 100.0, 100.0), [])
 
     def test_blocked_item_is_retried_once_with_a_fresh_session(self):
         self.client.get.side_effect = [
@@ -350,18 +402,27 @@ class TikTokScraperTests(SimpleTestCase):
         self.assertEqual(self.client.get.call_count, 2)
         self.assertEqual(results[0]["error_type"], "TikTokBlockedError")
 
-    def test_fetch_original_caption_downloads_it_after_the_rate_delay(self):
+    def test_fetch_original_caption_downloads_it_without_delay(self):
         self.client.get.return_value = _response(text=_VTT)
         data = _video_with_captions(_TRANSLATED_CAPTION, _ORIGINAL_CAPTION)
 
         with patch(_SLEEP) as sleep:
             caption = self.scraper.fetch_original_caption(data)
 
-        sleep.assert_called_once_with(1.0)
+        sleep.assert_not_called()
         self.client.get.assert_called_once_with("https://cdn.example/original.vtt")
         self.assertEqual(
             caption, {"language": "deu-DE", "is_auto_generated": False, "vtt": _VTT}
         )
+
+    def test_caption_delay_pauses_before_the_download(self):
+        self.client.get.return_value = _response(text=_VTT)
+        scraper = TikTokScraper(rate_delay=1.0, client=self.client, caption_delay=0.5)
+
+        with patch(_SLEEP) as sleep:
+            scraper.fetch_original_caption(_video_with_captions(_ORIGINAL_CAPTION))
+
+        sleep.assert_called_once_with(0.5)
 
     def test_fetch_original_caption_without_caption_sends_no_request(self):
         with patch(_SLEEP) as sleep:

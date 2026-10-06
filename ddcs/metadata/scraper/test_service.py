@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from io import StringIO
@@ -5,6 +6,7 @@ from unittest import skipUnless
 from unittest.mock import Mock, patch
 
 from celery.exceptions import SoftTimeLimitExceeded
+from django.core.cache import cache
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -17,18 +19,30 @@ from ddcs.metadata.models import (
     TikTokVideo,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos, APIVideoStatistics
-from ddcs.metadata.utils import infer_publication_date_from_id
-
-from .exceptions import (
+from ddcs.metadata.scraper.exceptions import (
     TikTokBlockedError,
     TikTokClientGetError,
     TikTokDataExtractionError,
     TikTokItemUnavailableError,
+    TikTokMissingRehydrationDataError,
 )
-from .models import ScrapeTarget, VideoInfosScraped, VideoStatisticsScraped
-from .scraper import TikTokScraper
-from .service import ScraperService, enqueue_video_pks, enqueue_videos
-from .tasks import scrape_pending_videos
+from ddcs.metadata.scraper.models import (
+    ScrapeTarget,
+    VideoInfosScraped,
+    VideoStatisticsScraped,
+)
+from ddcs.metadata.scraper.scraper import TikTokScraper
+from ddcs.metadata.scraper.service import (
+    ScraperService,
+    cooldown_until,
+    enqueue_video_pks,
+    enqueue_videos,
+    get_cooldown,
+    get_last_run,
+    register_abort,
+)
+from ddcs.metadata.scraper.tasks import scrape_pending_videos
+from ddcs.metadata.utils import infer_publication_date_from_id
 
 Status = ScrapeTarget.Status
 CaptionStatus = VideoInfosScraped.CaptionStatus
@@ -527,6 +541,99 @@ class ScraperServiceQueueTests(TestCase):
         self.assertEqual((stats["blocked"], stats["scraped"]), (3, 0))
         self.assertEqual(ScrapeTarget.objects.filter(status=Status.PENDING).count(), 5)
 
+    def test_block_abort_reports_its_reason(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 4)])
+        blocked = _error(TikTokBlockedError("blocked"))
+        service, _ = _service(blocked, blocked, blocked)
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertEqual(stats["abort_reason"], "blocked")
+
+    def test_five_consecutive_failures_abort_and_leave_targets_untouched(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 8)])
+        failure = _error(TikTokMissingRehydrationDataError("no data"))
+        service, _ = _service(*[failure] * 5, _success(), _success())
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertTrue(stats["aborted"])
+        self.assertEqual(stats["abort_reason"], "consecutive_failures")
+        self.assertEqual((stats["failed"], stats["scraped"]), (0, 0))
+        # Nothing was burnt: every target is still pending with no attempt.
+        self.assertEqual(
+            set(ScrapeTarget.objects.values_list("status", "attempts")),
+            {(Status.PENDING, 0)},
+        )
+        self.assertEqual(ScrapeTarget.objects.count(), 7)
+
+    def test_network_errors_count_as_failures_for_the_abort(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 6)])
+        service, _ = _service(*[_error(TikTokClientGetError("timeout"))] * 5)
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertEqual(stats["abort_reason"], "consecutive_failures")
+
+    def test_failures_before_a_success_are_recorded_as_failed(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 6)])
+        failure = _error(TikTokDataExtractionError("no key"))
+        service, _ = _service(*[failure] * 4, _success())
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertFalse(stats["aborted"])
+        self.assertEqual((stats["failed"], stats["scraped"]), (4, 1))
+        failed = ScrapeTarget.objects.filter(status=Status.FAILED)
+        self.assertEqual(failed.count(), 4)
+        self.assertEqual(set(failed.values_list("attempts", flat=True)), {1})
+
+    def test_an_unavailable_video_resets_the_failure_streak(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 10)])
+        failure = _error(TikTokDataExtractionError("no key"))
+        unavailable = _error(TikTokItemUnavailableError(10204, "gone"))
+        service, _ = _service(*[failure] * 4, unavailable, *[failure] * 4)
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertFalse(stats["aborted"])
+        self.assertEqual((stats["failed"], stats["unavailable"]), (8, 1))
+
+    def test_short_failure_streak_at_the_end_is_recorded_as_failed(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 4)])
+        failure = _error(TikTokDataExtractionError("no key"))
+        service, _ = _service(_success(), failure, failure)
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertFalse(stats["aborted"])
+        self.assertEqual(stats["failed"], 2)
+        self.assertEqual(ScrapeTarget.objects.filter(status=Status.FAILED).count(), 2)
+
+    def test_blocks_and_failures_are_counted_separately(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 8)])
+        blocked = _error(TikTokBlockedError("blocked"))
+        failure = _error(TikTokDataExtractionError("no key"))
+        # Two blocks and four failures interleaved: neither limit is reached.
+        service, _ = _service(failure, blocked, failure, failure, blocked, failure)
+
+        stats = service.scrape_batch(limit=6)
+
+        self.assertFalse(stats["aborted"])
+        self.assertEqual((stats["blocked"], stats["failed"]), (2, 4))
+
+    def test_a_failure_does_not_reset_the_block_counter(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 6)])
+        blocked = _error(TikTokBlockedError("blocked"))
+        failure = _error(TikTokDataExtractionError("no key"))
+        service, _ = _service(blocked, blocked, failure, blocked, _success())
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertEqual(stats["abort_reason"], "blocked")
+        # The single failure before the abort is an ordinary one.
+        self.assertEqual(stats["failed"], 1)
+
     def test_a_success_resets_the_block_counter(self):
         enqueue_videos([_video(i).id_tiktok for i in range(1, 6)])
         blocked = _error(TikTokBlockedError("blocked"))
@@ -566,16 +673,53 @@ class ScraperServiceQueueTests(TestCase):
         enqueue_videos([_video(1).id_tiktok, _video(2).id_tiktok])
         service, _ = _service(_success(), _success())
 
+        # Clock readings: batch start, check before video 1, check before
+        # video 2 (past the deadline), batch end.
         with patch(
-            "ddcs.metadata.scraper.service.time.monotonic", side_effect=[0.0, 100.0]
+            "ddcs.metadata.scraper.service.time.monotonic",
+            side_effect=[0.0, 10.0, 100.0, 100.0],
         ):
             stats = service.scrape_batch(limit=10, deadline=50.0)
 
         self.assertEqual(stats["scraped"], 1)
         self.assertEqual(ScrapeTarget.objects.filter(status=Status.PENDING).count(), 1)
 
+    def test_reports_duration_and_throughput(self):
+        enqueue_videos([_video(i).id_tiktok for i in range(1, 4)])
+        service, _ = _service(
+            _success(),
+            _error(TikTokItemUnavailableError(10204, "gone")),
+            _error(TikTokBlockedError("blocked")),
+        )
 
-_STATS = {"scraped": 1, "aborted": False}
+        # Clock readings: batch start, batch end (no deadline checks).
+        with patch(
+            "ddcs.metadata.scraper.service.time.monotonic", side_effect=[0.0, 90.0]
+        ):
+            stats = service.scrape_batch(limit=10)
+
+        # All three cost a request, whatever came of it: 3 in 90 s.
+        self.assertEqual(stats["seconds"], 90.0)
+        self.assertEqual(stats["videos_per_minute"], 2.0)
+
+    def test_empty_queue_reports_zero_throughput(self):
+        service, _ = _service()
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertEqual(stats["videos_per_minute"], 0.0)
+
+
+_STATS = {
+    "scraped": 1,
+    "unavailable": 0,
+    "aborted": False,
+    "abort_reason": "",
+    "videos_per_minute": 30.0,
+}
+_ABORTED_STATS = {**_STATS, "scraped": 0, "aborted": True, "abort_reason": "blocked"}
+_APPLY_ASYNC = "ddcs.metadata.scraper.tasks.scrape_pending_videos.apply_async"
+_TASK_LOGGER = "ddcs.metadata.scraper.tasks"
 
 
 class ScrapePendingVideosTaskTests(TestCase):
@@ -591,6 +735,9 @@ class ScrapePendingVideosTaskTests(TestCase):
         self.scrape_batch = self.service_cls.return_value.scrape_batch
         self.scrape_batch.return_value = _STATS
         self.addCleanup(service_patcher.stop)
+
+        cache.clear()
+        self.addCleanup(cache.clear)
 
     @override_settings(TIKTOK_SCRAPER_ENABLED=False)
     def test_does_nothing_when_disabled(self):
@@ -624,10 +771,155 @@ class ScrapePendingVideosTaskTests(TestCase):
 
     @override_settings(TIKTOK_SCRAPER_ENABLED=True)
     def test_aborted_run_logs_an_error(self):
-        self.scrape_batch.return_value = {"scraped": 0, "aborted": True}
+        self.scrape_batch.return_value = _ABORTED_STATS
 
         with self.assertLogs("ddcs.metadata.scraper.tasks", level="ERROR"):
             scrape_pending_videos()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_finished_run_is_remembered_in_json_safe_form(self):
+        scrape_pending_videos()
+
+        last_run = get_last_run()
+        self.assertEqual(last_run["videos_per_minute"], 30.0)
+        self.assertEqual(last_run["scraped"], 1)
+        # Must survive a JSON round trip (some cache tooling serialises to JSON).
+        self.assertEqual(json.loads(json.dumps(last_run)), last_run)
+        datetime.fromisoformat(last_run["finished_at"])
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True, CELERY_TASK_ALWAYS_EAGER=False)
+    def test_queues_next_run_while_targets_are_pending(self):
+        _target(_video(1))
+
+        with patch(_APPLY_ASYNC) as apply_async:
+            scrape_pending_videos()
+
+        apply_async.assert_called_once_with(countdown=5)
+        # The next run must be able to take the lock.
+        self.lock.release.assert_called_once_with()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True, CELERY_TASK_ALWAYS_EAGER=False)
+    def test_does_not_queue_next_run_when_nothing_is_pending(self):
+        _target(_video(1), status=Status.SUCCESS)
+        _target(_video(2), status=Status.FAILED)
+
+        with patch(_APPLY_ASYNC) as apply_async:
+            scrape_pending_videos()
+
+        apply_async.assert_not_called()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True, CELERY_TASK_ALWAYS_EAGER=False)
+    def test_does_not_queue_next_run_after_an_abort(self):
+        _target(_video(1))
+        self.scrape_batch.return_value = _ABORTED_STATS
+
+        with (
+            patch(_APPLY_ASYNC) as apply_async,
+            self.assertLogs("ddcs.metadata.scraper.tasks", level="ERROR"),
+        ):
+            scrape_pending_videos()
+
+        apply_async.assert_not_called()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True, CELERY_TASK_ALWAYS_EAGER=False)
+    def test_manual_run_with_max_videos_is_a_one_off(self):
+        _target(_video(1))
+
+        with patch(_APPLY_ASYNC) as apply_async:
+            scrape_pending_videos(max_videos=5)
+
+        apply_async.assert_not_called()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True, CELERY_TASK_ALWAYS_EAGER=True)
+    def test_does_not_queue_next_run_in_eager_mode(self):
+        _target(_video(1))
+
+        with patch(_APPLY_ASYNC) as apply_async:
+            scrape_pending_videos()
+
+        apply_async.assert_not_called()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True, CELERY_TASK_ALWAYS_EAGER=False)
+    def test_skipped_run_queues_nothing(self):
+        _target(_video(1))
+        self.lock.acquire.return_value = False
+
+        with patch(_APPLY_ASYNC) as apply_async:
+            scrape_pending_videos()
+
+        apply_async.assert_not_called()
+        self.assertIsNone(get_last_run())
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_aborts_pause_scraping_for_doubling_periods_up_to_a_day(self):
+        self.scrape_batch.return_value = _ABORTED_STATS
+        expected_hours = [1, 2, 4, 8, 16, 24, 24]
+
+        for aborts, hours in enumerate(expected_hours, start=1):
+            with self.subTest(aborts=aborts), self.assertLogs(_TASK_LOGGER, "ERROR"):
+                before = timezone.now()
+                # max_videos: a manual run, so the cool-down doesn't skip it.
+                scrape_pending_videos(max_videos=1)
+
+                cooldown = get_cooldown()
+                self.assertEqual(cooldown["consecutive_aborts"], aborts)
+                pause = datetime.fromisoformat(cooldown["until"]) - before
+                self.assertAlmostEqual(pause.total_seconds(), hours * 3600, delta=5)
+                self.assertEqual(json.loads(json.dumps(cooldown)), cooldown)
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True, CELERY_TASK_ALWAYS_EAGER=False)
+    def test_run_is_skipped_during_a_cooldown(self):
+        _target(_video(1))
+        register_abort()
+
+        with patch(_APPLY_ASYNC) as apply_async:
+            self.assertIsNone(scrape_pending_videos())
+
+        self.service_cls.assert_not_called()
+        self.lock.acquire.assert_not_called()
+        apply_async.assert_not_called()
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_run_proceeds_once_the_cooldown_has_passed(self):
+        register_abort()
+        later = timezone.now() + timedelta(hours=1, minutes=1)
+
+        with patch("ddcs.metadata.scraper.service.timezone.now", return_value=later):
+            self.assertIsNone(cooldown_until())
+            self.assertEqual(scrape_pending_videos(), _STATS)
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_manual_run_ignores_the_cooldown(self):
+        register_abort()
+
+        self.assertEqual(scrape_pending_videos(max_videos=5), _STATS)
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_healthy_run_ends_the_cooldown_and_forgets_previous_aborts(self):
+        register_abort()
+        register_abort()
+
+        scrape_pending_videos(max_videos=5)
+
+        self.assertIsNone(get_cooldown())
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_unavailable_videos_also_count_as_healthy(self):
+        register_abort()
+        self.scrape_batch.return_value = {**_STATS, "scraped": 0, "unavailable": 2}
+
+        scrape_pending_videos(max_videos=5)
+
+        self.assertIsNone(get_cooldown())
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_run_without_any_answer_keeps_the_abort_count(self):
+        register_abort()
+        self.scrape_batch.return_value = {**_STATS, "scraped": 0}
+
+        scrape_pending_videos(max_videos=5)
+
+        self.assertEqual(get_cooldown()["consecutive_aborts"], 1)
 
     @override_settings(TIKTOK_SCRAPER_ENABLED=True)
     def test_soft_time_limit_releases_lock(self):

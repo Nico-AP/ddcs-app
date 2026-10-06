@@ -71,18 +71,50 @@ whose `TikTokVideo.inferred_create_time` is empty.
 
 ### 3. The task
 
-`ddcs.metadata.scraper.tasks.scrape_pending_videos` runs hourly at minute 15.
+`ddcs.metadata.scraper.tasks.scrape_pending_videos` is scheduled hourly at
+minute 15, and while there is work it runs continuously:
 
 - One run takes up to `TIKTOK_SCRAPER_BATCH_SIZE` targets (default 3000) and
-  waits `TIKTOK_SCRAPER_RATE_DELAY` seconds (default 1) between requests.
+  stops starting new videos about 50 minutes in.
+- **Runs follow each other without a gap.** A run that leaves pending targets
+  behind queues the next run itself (5 seconds later). The chain ends when the
+  queue is empty or a run was aborted.
+- The hourly schedule entry is what (re)starts the chain: after the queue was
+  empty, after a worker restart, and once a
+  [cool-down](#cool-down-after-aborts) has passed.
 - A Redis lock ensures only one run is active; a run that finds the lock held
   skips.
-- A run stops starting new videos about 50 minutes in. Whatever is left stays
-  queued for the next run.
+- A run started by hand with `max_videos` is a one-off and queues nothing.
 - Targets whose video received Research API infos in the meantime are marked
   `covered_by_api` and skipped.
 
-### 4. Outcome per target
+### 4. Pacing
+
+`TIKTOK_SCRAPER_RATE_DELAY` (default 1 second) is the minimum time between the
+**starts** of two video-page requests. Time spent loading a page, downloading
+its caption and storing the result counts towards that interval, so the
+scraper only waits for what is left of it. With the default, the ceiling is
+60 videos per minute.
+
+**Jitter.** Each interval is stretched or shortened by a random factor,
+`TIKTOK_SCRAPER_RATE_JITTER` (default 0.3, so between 70% and 130% of the
+delay). Requests then don't arrive in a perfectly regular rhythm, while the
+average rate stays the same. This removes one, fairly weak, sign of
+automation. It does not hide the volume of requests, where they come from, or
+that they are not made by a browser; do not expect it to prevent blocking.
+
+Caption downloads are **not** paced by default. They go to a different host (a
+CDN) than the pages, so slowing them down would not protect the page host.
+`TIKTOK_SCRAPER_CAPTION_DELAY` adds a pause before each caption download if
+that host turns out to object.
+
+Measured on 2026-10-06 from a development machine, twelve videos of which
+eight had a caption: 27 seconds (27 videos/min) with the earlier pacing, where
+the delay was added after every request including captions, and 12 seconds
+(about 60 videos/min) with the pacing described here. This shows the effect of
+the pacing change on a small sample; it is not a production throughput figure.
+
+### 5. Outcome per target
 
 | `ScrapeTarget.status` | Meaning                                                                          | Retried? |
 |-----------------------|----------------------------------------------------------------------------------|----------|
@@ -92,10 +124,73 @@ whose `TikTokVideo.inferred_create_time` is empty.
 | `covered_by_api`      | The Research API delivered the video before it was scraped.                      | no       |
 | `failed`              | Anything else: network error, unexpected page structure, data that can't be stored. | after 6 hours, at most `TIKTOK_SCRAPER_MAX_ATTEMPTS` times |
 
-**Blocking.** HTTP 403 or 429 from TikTok counts as a block. The scraper
-fetches fresh cookies and retries that video once. Three blocked videos in a
-row abort the run and log an error (which emails the admins); the targets stay
-`pending`.
+### 6. When TikTok blocks
+
+A run is **aborted** when it looks as if TikTok has stopped serving us. There
+are two signs, counted separately:
+
+| Sign | Rule | `abort_reason` |
+|------|------|----------------|
+| TikTok refuses outright: HTTP 403 or 429. The scraper first fetches fresh cookies and retries that video once. | 3 videos in a row | `blocked` |
+| Videos fail without a refusal: the page has no data, the data has an unexpected structure, or the request fails on the network. | 5 videos in a row | `consecutive_failures` |
+
+A success or an `unavailable` answer resets both counts, because either one
+shows that pages are being served.
+
+**Aborting protects the queue.** The videos in the streak that triggered the
+abort stay `pending` and no attempt is counted for them. Failures are only
+written as `failed` once a later video shows that scraping still works (or the
+run ends with a streak too short to abort on). Without this, a night of being
+blocked would use up all three attempts of thousands of targets.
+
+The second rule rests on an assumption: that a "soft" block, where TikTok
+answers normally but without the data, shows up as many failures in a row.
+What such a block actually looks like on TikTok has **not** been observed. The
+rule keys on the pattern, not on the page content, so it also catches the
+other likely cause of mass failures: TikTok changing its page structure. In
+that case runs keep aborting, the queue is preserved, and the parser needs
+fixing.
+
+An abort logs an error (which emails the admins) with the reason and the time
+scraping will resume.
+
+#### Cool-down after aborts
+
+After an aborted run, scraping pauses:
+
+| Aborted runs in a row | Pause |
+|-----------------------|-------|
+| 1 | 1 hour |
+| 2 | 2 hours |
+| 3 | 4 hours |
+| 4 | 8 hours |
+| 5 | 16 hours |
+| 6 or more | 24 hours |
+
+- During the pause, scheduled runs are skipped. The first scheduled run after
+  the pause tries again.
+- A run that gets at least one success or `unavailable` answer ends the
+  cool-down and resets the count. Another abort lengthens it.
+- A run started by hand with `max_videos` ignores the pause (it is an explicit
+  test), but its result still counts: an abort lengthens the pause, a healthy
+  run ends it.
+- The state is kept in the cache (Redis) for a week. If the cache is flushed,
+  the cool-down is gone and the next scheduled run proceeds.
+
+**Resuming right away.** While a cool-down is active, the metadata dashboard
+shows a notice in the "Scraper queue" card with a **Resume scraping now**
+button. It ends the cool-down and queues a run. The same from a shell
+(`python manage.py shell`):
+
+```python
+from ddcs.metadata.scraper.service import clear_cooldown
+from ddcs.metadata.scraper.tasks import scrape_pending_videos
+clear_cooldown()
+scrape_pending_videos.delay()
+```
+
+Resuming while TikTok is still blocking leads to another abort and a longer
+pause.
 
 
 ## What is stored
@@ -244,10 +339,11 @@ as guaranteed to match in every case.
 
 ### Cost
 
-Each captioned video needs two requests instead of one. With the request rate
-unchanged, a run that mostly meets captioned videos gets through about half as
-many videos. To collect metadata only, set `TIKTOK_SCRAPER_FETCH_CAPTIONS` to
-false.
+Each captioned video needs two requests instead of one. The caption download
+is not paced (see [Pacing](#4-pacing)) and its duration counts towards the
+interval between page requests, so with the default settings captions cost
+little or no throughput. They do add load on TikTok's CDN. To collect metadata
+only, set `TIKTOK_SCRAPER_FETCH_CAPTIONS` to false.
 
 ### Failure handling
 
@@ -258,7 +354,8 @@ Failed downloads are not retried.
 Caption files are served from a different host (a TikTok CDN) than the video
 pages. If that host starts refusing requests, video scraping continues and the
 run does **not** abort; the sign is a high `captions_failed` count in the
-task's log line. Whether that host applies its own rate limits is not known.
+run's statistics. Whether that host applies its own rate limits is not known.
+If it does, raise `TIKTOK_SCRAPER_CAPTION_DELAY`.
 
 ### Data protection
 
@@ -275,13 +372,15 @@ All settings are read from the environment (see `.env.example`).
 | Setting                         | Default | Effect |
 |---------------------------------|---------|--------|
 | `TIKTOK_SCRAPER_ENABLED`        | `False` | Master switch. While off, donations queue nothing and the task returns immediately. |
-| `TIKTOK_SCRAPER_RATE_DELAY`     | `1.0`   | Seconds between two requests (video pages and caption files alike) |
+| `TIKTOK_SCRAPER_RATE_DELAY`     | `1.0`   | Minimum seconds between the starts of two video-page requests |
+| `TIKTOK_SCRAPER_RATE_JITTER`    | `0.3`   | Random variation of that interval as a fraction (0.3 = ±30%); `0` switches it off |
+| `TIKTOK_SCRAPER_CAPTION_DELAY`  | `0.0`   | Seconds to wait before each caption download |
 | `TIKTOK_SCRAPER_BATCH_SIZE`     | `3000`  | Maximum number of videos per run |
 | `TIKTOK_SCRAPER_MAX_ATTEMPTS`   | `3`     | Attempts before a failing video is given up on |
 | `TIKTOK_SCRAPER_FETCH_CAPTIONS` | `True`  | Also download the original-language caption |
-| `CELERY_TIKTOK_SCRAPER_QUEUE`   | default queue | Celery queue for the scraping task. A run can occupy a worker for close to an hour, so a separate queue with its own worker is advisable. |
+| `CELERY_TIKTOK_SCRAPER_QUEUE`   | default queue | Celery queue for the scraping task. While targets are pending the scraper occupies one worker continuously, so a separate queue with its own worker is advisable. |
 
-The hourly schedule entry is `scraper-scrape-pending-videos` in
+The schedule entry is `scraper-scrape-pending-videos` in
 `CELERY_BEAT_SCHEDULE`. The beat schedule is stored in the database: on an
 existing deployment the entry has to be added once in the Django admin
 (Periodic tasks).
@@ -308,7 +407,8 @@ treat it differently from a development machine. Start small:
 
 ### Reading a run's statistics
 
-The task logs and returns one dictionary per run:
+The task logs and returns one dictionary per run. The most recent run is also
+shown on the metadata dashboard ("Scraper queue" card) for about a day:
 
 | Key                | Meaning |
 |--------------------|---------|
@@ -319,12 +419,21 @@ The task logs and returns one dictionary per run:
 | `covered_by_api`   | Targets skipped because the Research API has the video now |
 | `captions_fetched` | Captions stored |
 | `captions_failed`  | Captions that exist but could not be downloaded |
-| `aborted`          | `True` if the run stopped after three blocks in a row |
+| `aborted`          | `True` if the run stopped because TikTok appears to be blocking |
+| `abort_reason`     | `blocked`, `consecutive_failures`, or empty; see [When TikTok blocks](#6-when-tiktok-blocks) |
+| `seconds`          | Wall time of the run |
+| `videos_per_minute` | Videos a page was requested for, per minute, whatever the outcome |
+
+`videos_per_minute` is the number to watch when tuning: it should sit just
+below `60 / TIKTOK_SCRAPER_RATE_DELAY`. If it is clearly lower, page loads are
+slower than the delay and lowering the delay will not help.
 
 ### Where to look
 
 - **Metadata dashboard** (`/metadata/dashboard/`): the "Scraper queue" card
-  shows the number of targets per status and the time of the last success.
+  shows the number of targets per status, the time of the last success and the
+  last run's statistics. While scraping is paused after aborts it also shows
+  until when, and how to resume immediately.
 - **Admin → Scrape targets**: every target with status, attempts, last error
   and TikTok's status code. Read-only.
 - **Admin → TikTok videos**: scraped infos and statistics appear as inlines on
@@ -348,6 +457,11 @@ those are removed.
 - **Production network.** Everything was verified from a development machine.
   Whether TikTok serves the same data to the production server, and at what
   request rate it starts blocking, is untested.
+- **What a soft block looks like.** Not observed. The abort on consecutive
+  failures assumes it shows up as many failed videos in a row.
+- **Production throughput.** No figures yet. Fill them in from the
+  `videos_per_minute` of the first production runs before changing the delay
+  or adding concurrency.
 - **`effect_list`.** Stored as scraped; its format has not been compared with
   the Research API's.
 - **Caption host limits.** Not known whether the CDN serving caption files
@@ -355,5 +469,5 @@ those are removed.
 - **Caption coverage.** The share of videos with an original-language caption
   has not been measured.
 - **Stability.** The page structure is undocumented and can change at any
-  time. A change shows up as a rising number of `failed` targets with
-  `TikTokDataExtractionError` or `TikTokMissingRehydrationDataError`.
+  time. A change shows up as runs aborting with `consecutive_failures` while
+  TikTok is otherwise reachable.
