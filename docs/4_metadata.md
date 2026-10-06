@@ -74,8 +74,10 @@ Companion models for fields obtained by scraping the public TikTok website:
 - `VideoInfosScraped` → `TikTokVideo`
 - `UserInfosScraped` → `TikTokUser`
 
-**Status:** the scraper app has not yet been implemented; everything that exists
-is placeholder code.
+**Status:** the fetch/parse core (`client`, `parsers`, `scraper`) exists and is
+tested, but nothing is wired up yet: the app is not in `INSTALLED_APPS`, the
+models are placeholders without migrations, and there is no service, task or
+schedule that persists scraped data.
 
 
 ### Data origins
