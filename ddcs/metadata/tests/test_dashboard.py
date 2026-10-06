@@ -3,7 +3,9 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -13,13 +15,16 @@ from ddcs.metadata.dashboard.metrics import (
     get_monitored_keyword_count,
     get_monitored_user_count,
     get_scraper_queue,
+    get_suspicious_sync_days,
     get_sync_coverage,
+    get_sync_video_counts,
     get_video_counts_by_origin,
     refresh_dashboard_snapshot,
 )
 from ddcs.metadata.models import (
     DataOrigins,
     Keyword,
+    ResearchAPIQueryTracker,
     SyncAttempt,
     TikTokUser,
     TikTokVideo,
@@ -132,6 +137,155 @@ class GetSyncCoverageTests(TestCase):
 
         self.assertEqual(get_monitored_keyword_count(), 1)
         self.assertEqual(get_monitored_user_count(), 1)
+
+
+def _tracker(
+    target_date: date,
+    videos: int | None,
+    *,
+    task_name: str = "daily_sync_keywords",
+    pages: int = 1,
+) -> ResearchAPIQueryTracker:
+    """A finished sync run for ``target_date``; ``videos=None`` = no result."""
+    return ResearchAPIQueryTracker.objects.create(
+        start_time=timezone.now(),
+        query_function=task_name,
+        query_parameters={"target_date": target_date.isoformat()},
+        query_result=(
+            None
+            if videos is None
+            else {"videos_retrieved": videos, "pages_retrieved": pages}
+        ),
+    )
+
+
+class GetSyncVideoCountsTests(TestCase):
+    def setUp(self):
+        self.end = timezone.localdate() - timedelta(days=4)
+        self.start = self.end - timedelta(days=2)
+
+    def _by_date(self, target_field: str = "keyword") -> dict:
+        counts = get_sync_video_counts(target_field, self.start, self.end)
+        return {day["date"]: day for day in counts}
+
+    def test_sums_runs_for_the_same_target_date(self):
+        _tracker(self.end, 10, pages=2)
+        _tracker(self.end, 5, pages=1)
+
+        day = self._by_date()[self.end]
+
+        self.assertEqual(day["videos"], 15)
+        self.assertEqual(day["pages"], 3)
+
+    def test_distinguishes_no_result_from_zero_videos(self):
+        _tracker(self.end, 0)
+        # A run that never reported a result (still running, or reaped).
+        _tracker(self.end - timedelta(days=1), None)
+
+        by_date = self._by_date()
+
+        self.assertEqual(by_date[self.end]["videos"], 0)
+        self.assertIsNone(by_date[self.end - timedelta(days=1)]["videos"])
+        self.assertIsNone(by_date[self.start]["videos"])
+
+    def test_only_counts_runs_of_the_requested_target(self):
+        _tracker(self.end, 7, task_name="daily_sync_users")
+
+        self.assertIsNone(self._by_date("keyword")[self.end]["videos"])
+        self.assertEqual(self._by_date("user")[self.end]["videos"], 7)
+
+    def test_ignores_target_dates_outside_the_range(self):
+        _tracker(self.end + timedelta(days=1), 3)
+
+        self.assertEqual(
+            [day["videos"] for day in self._by_date().values()], [None, None, None]
+        )
+
+    def test_runs_a_single_query(self):
+        _tracker(self.end, 1)
+        _tracker(self.start, 2)
+
+        with self.assertNumQueries(1):
+            get_sync_video_counts("keyword", self.start, self.end)
+
+
+class GetSuspiciousSyncDaysTests(TestCase):
+    def test_lists_only_days_with_successes_and_zero_videos_newest_first(self):
+        d1, d2, d3, d4 = (date(2026, 9, n) for n in (1, 2, 3, 4))
+        coverage = [
+            {"date": d1, "attempted": 5, "succeeded": 5},
+            {"date": d2, "attempted": 5, "succeeded": 5},  # videos came back
+            {"date": d3, "attempted": 5, "succeeded": 0},  # nothing succeeded
+            {"date": d4, "attempted": 5, "succeeded": 4},
+        ]
+        video_counts = [
+            {"date": d1, "videos": 0, "pages": 1},
+            {"date": d2, "videos": 12, "pages": 1},
+            {"date": d3, "videos": 0, "pages": 0},
+            {"date": d4, "videos": 0, "pages": 2},
+        ]
+
+        self.assertEqual(
+            get_suspicious_sync_days(coverage, video_counts),
+            [
+                {"date": d4, "succeeded": 4, "pages": 2},
+                {"date": d1, "succeeded": 5, "pages": 1},
+            ],
+        )
+
+    def test_skips_days_without_a_reported_result(self):
+        day = date(2026, 9, 1)
+
+        self.assertEqual(
+            get_suspicious_sync_days(
+                [{"date": day, "attempted": 5, "succeeded": 5}],
+                [{"date": day, "videos": None, "pages": None}],
+            ),
+            [],
+        )
+
+
+class MetadataDashboardSyncVideoCountsViewTests(TestCase):
+    def setUp(self):
+        self.url = reverse("metadata:dashboard")
+        self.client.force_login(
+            get_user_model().objects.create_superuser(
+                username="admin", password="x", email="admin@example.com"
+            )
+        )
+        cache.clear()
+        self.addCleanup(cache.clear)
+        refresh_dashboard_snapshot()
+
+    def test_flags_day_with_successful_sync_but_no_videos(self):
+        keyword = Keyword.objects.create(name="test", added_by=DataOrigins.IMPORT)
+        day = timezone.localdate() - timedelta(days=4)
+        SyncAttempt.objects.create(
+            keyword=keyword, target_date=day, status=SyncAttempt.Status.SUCCESS
+        )
+        _tracker(day, 0)
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(
+            response.context["keyword_suspicious_days"],
+            [{"date": day, "succeeded": 1, "pages": 1}],
+        )
+        self.assertEqual(response.context["user_suspicious_days"], [])
+        self.assertContains(response, "Synced successfully, but no videos returned")
+
+    def test_query_count_does_not_grow_with_the_number_of_runs(self):
+        day = timezone.localdate() - timedelta(days=4)
+        _tracker(day, 1)
+        with CaptureQueriesContext(connection) as baseline:
+            self.client.get(self.url)
+
+        for offset in range(10):
+            _tracker(day - timedelta(days=offset), offset)
+            _tracker(day - timedelta(days=offset), 3, task_name="daily_sync_users")
+
+        with self.assertNumQueries(len(baseline.captured_queries)):
+            self.client.get(self.url)
 
 
 def _aware(day: date) -> datetime:
