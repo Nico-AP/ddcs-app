@@ -34,3 +34,10 @@ BLOCKED_STATUS_CODES = frozenset({403, 429})
 # reports app depends on this one, not the other way round.
 WATCH_WINDOW_START = date(2026, 7, 1)
 WATCH_WINDOW_END = date(2026, 9, 20)
+
+# Queue order (see ``ScraperService._select_targets``): videos watched by at
+# least ``PRIORITY_MIN_OCCURRENCES`` donations, with a view on or after
+# ``PRIORITY_WATCHED_SINCE`` (UTC), are scraped first, most donations first.
+# Everything else follows by most recent view.
+PRIORITY_MIN_OCCURRENCES = 15
+PRIORITY_WATCHED_SINCE = date(2026, 8, 1)

@@ -3,7 +3,8 @@
 Goes through the donations one at a time. For every video a donor watched
 within the watch window, the video's scrape target has its donor count
 raised by one (or is created) and keeps the most recent view. The scraper
-works the queue off by donor count, then most recent view.
+first works off the videos many donors watched recently, then the rest by
+most recent view.
 
 Nothing is collected in memory: each donation is written to the database
 before the next one is read, so the size of the run does not matter.
@@ -42,7 +43,7 @@ _PROGRESS_EVERY = 100
 class Command(BaseCommand):
     help = (
         "Queue the videos donors watched within the watch window for scraping, "
-        "ranked by number of donors and most recent view."
+        "recording number of donors and most recent view."
     )
 
     def add_arguments(self, parser: CommandParser) -> None:

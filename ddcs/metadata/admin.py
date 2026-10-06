@@ -1,7 +1,10 @@
+import json
+
 from django import forms
 from django.contrib import admin
 from django.db.models import QuerySet
 from django.http import HttpRequest
+from django.utils.html import format_html
 from import_export.admin import ExportMixin
 from import_export.forms import ExportForm
 from import_export.resources import ModelResource
@@ -415,6 +418,94 @@ class ScrapeTargetAdmin(admin.ModelAdmin):
     search_fields = ("video__id_tiktok",)
     list_select_related = ("video",)
     ordering = ("-occurrence_count", "-last_watched_at")
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
+        return False
+
+
+@admin.register(VideoInfosScraped)
+class VideoInfosScrapedAdmin(admin.ModelAdmin):
+    """Read-only view of what the scraper stored for a video.
+
+    Rows are created by ``ddcs.metadata.scraper.service``.
+    """
+
+    list_display = (
+        "video",
+        "created_at",
+        "create_time",
+        "location_created",
+        "text_language",
+        "duration",
+        "is_ad",
+        "is_aigc",
+        "caption_status",
+        "caption_language",
+    )
+    list_filter = ("caption_status", "is_ad", "is_aigc", "private_item")
+    search_fields = ("video__id_tiktok",)
+    list_select_related = ("video",)
+    ordering = ("-pk",)
+    fieldsets = (
+        (None, {"fields": ("video", "created_at", "updated_at")}),
+        (
+            "Video",
+            {
+                "fields": (
+                    "description",
+                    "create_time",
+                    "duration",
+                    "location_created",
+                    "text_language",
+                    "category_type",
+                    "video_mention_list",
+                    "effect_list",
+                    "height",
+                    "width",
+                )
+            },
+        ),
+        (
+            "Flags",
+            {
+                "fields": (
+                    "original_item",
+                    "official_item",
+                    "private_item",
+                    "is_ad",
+                    "is_aigc",
+                    "aigc_description",
+                    "diversification_labels",
+                    "diversification_id",
+                )
+            },
+        ),
+        (
+            "Caption",
+            {
+                "fields": (
+                    "caption_status",
+                    "caption_language",
+                    "caption_is_auto_generated",
+                    "voice_to_text",
+                    "caption_vtt",
+                )
+            },
+        ),
+        ("Raw scrape result", {"fields": ("raw_pretty",)}),
+    )
+    readonly_fields = ("raw_pretty",)
+
+    @admin.display(description="Raw")
+    def raw_pretty(self, obj: VideoInfosScraped) -> str:
+        if obj.raw is None:
+            return "—"
+        return format_html(
+            "<pre>{}</pre>", json.dumps(obj.raw, indent=2, ensure_ascii=False)
+        )
 
     def has_add_permission(self, request: HttpRequest) -> bool:
         return False
