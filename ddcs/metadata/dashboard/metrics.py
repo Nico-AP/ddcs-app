@@ -244,6 +244,8 @@ class ScraperCooldown(TypedDict):
 class ScraperQueue(TypedDict):
     total: int
     by_status: list[ScraperQueueStatus]
+    # Targets a scraper (built-in or external) currently holds a lease on.
+    leased: int
     last_success_at: datetime | None
     # Statistics of the most recent scraping run, if one finished recently.
     last_run: LastScrapeRun | None
@@ -269,6 +271,7 @@ def get_scraper_queue() -> ScraperQueue:
             }
             for status in ScrapeTarget.Status
         ],
+        "leased": ScrapeTarget.objects.filter(claimed_until__gt=timezone.now()).count(),
         "last_success_at": last_success_at,
         "last_run": get_last_run(),
         "cooldown": _active_scraper_cooldown(),

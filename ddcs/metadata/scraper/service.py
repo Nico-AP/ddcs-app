@@ -18,7 +18,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Exists, F, OuterRef, Q
+from django.db.models import Exists, F, OuterRef, Q, TextChoices
 from django.utils import timezone
 
 from ddcs.metadata.models import (
@@ -52,6 +52,8 @@ from ddcs.metadata.utils import infer_publication_date_from_id
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping
+
+    from django.contrib.auth.models import AbstractBaseUser
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +325,252 @@ def clear_cooldown() -> None:
     cache.delete(_COOLDOWN_CACHE_KEY)
 
 
+# ``claimed_by_label`` of targets the built-in scraper has leased.
+INTERNAL_SCRAPER_LABEL = "internal"
+# Lease the built-in scraper takes on its batch; a run lasts an hour at most.
+INTERNAL_LEASE = timedelta(hours=1)
+
+# A failed target is not retried before this much time has passed.
+FAILED_RETRY_BACKOFF = timedelta(hours=6)
+
+
+@transaction.atomic
+def _claim_due_targets(  # noqa: PLR0913
+    limit: int,
+    *,
+    max_attempts: int,
+    lease: timedelta,
+    retry_backoff: timedelta = FAILED_RETRY_BACKOFF,
+    user: AbstractBaseUser | None = None,
+    label: str = "",
+) -> tuple[list[ScrapeTarget], int, datetime]:
+    """Take the next ``limit`` due targets off the queue and lease them.
+
+    Queue order: first the videos at least ``PRIORITY_MIN_OCCURRENCES``
+    donors watched since ``PRIORITY_WATCHED_SINCE`` (most donors first),
+    then all others by most recent view. Targets somebody else holds a
+    running lease on are passed over.
+
+    Returns the leased targets, the number of targets that were dropped
+    because the Research API has their video now, and the time the lease
+    runs out.
+    """
+    now = timezone.now()
+    due = (
+        ScrapeTarget.objects.filter(
+            Q(status=ScrapeTarget.Status.PENDING)
+            | Q(
+                status=ScrapeTarget.Status.FAILED,
+                attempts__lt=max_attempts,
+                last_attempted_at__lt=now - retry_backoff,
+            )
+        )
+        .filter(Q(claimed_until__isnull=True) | Q(claimed_until__lt=now))
+        .select_related("video")
+        # Two scrapers asking at the same moment get different targets
+        # instead of waiting for each other.
+        .select_for_update(skip_locked=True, of=("self",))
+    )
+
+    # First the videos many donors saw recently, most donors first.
+    targets = list(
+        due.filter(
+            occurrence_count__gte=PRIORITY_MIN_OCCURRENCES,
+            last_watched_at__gte=datetime.combine(
+                PRIORITY_WATCHED_SINCE, dt_time.min, tzinfo=UTC
+            ),
+        ).order_by("-occurrence_count", "-last_watched_at", "id")[:limit]
+    )
+    # Once those run out, everything else by most recent view. Only
+    # reached when the priority group fits the batch, so excluding the
+    # targets picked above excludes the whole group.
+    if len(targets) < limit:
+        targets += list(
+            due.exclude(pk__in=[t.pk for t in targets]).order_by(
+                F("last_watched_at").desc(nulls_last=True), "id"
+            )[: limit - len(targets)]
+        )
+
+    # The Research API may have delivered some of them since they were
+    # queued; those no longer need scraping.
+    covered_by_api = 0
+    uncovered: list[ScrapeTarget] = []
+    for chunk in batched(targets, _ENQUEUE_CHUNK_SIZE):
+        still_missing = set(_without_api_infos(t.video_id for t in chunk))
+        covered = [t.pk for t in chunk if t.video_id not in still_missing]
+        if covered:
+            ScrapeTarget.objects.filter(pk__in=covered).update(
+                status=ScrapeTarget.Status.COVERED_BY_API,
+                updated_at=now,
+            )
+            covered_by_api += len(covered)
+        uncovered.extend(t for t in chunk if t.video_id in still_missing)
+
+    claimed_until = now + lease
+    for chunk in batched(uncovered, _ENQUEUE_CHUNK_SIZE):
+        ScrapeTarget.objects.filter(pk__in=[t.pk for t in chunk]).update(
+            claimed_by=user,
+            claimed_by_label=label,
+            claimed_until=claimed_until,
+            updated_at=now,
+        )
+        for target in chunk:
+            target.claimed_by = user
+            target.claimed_by_label = label
+            target.claimed_until = claimed_until
+    return uncovered, covered_by_api, claimed_until
+
+
+def claim_targets(
+    user: AbstractBaseUser, limit: int, label: str = ""
+) -> tuple[list[ScrapeTarget], datetime]:
+    """Lease the next ``limit`` due targets to an external scraper.
+
+    ``label`` is the name the scraper gave itself; it is stored for
+    information only. Returns the targets in queue order and the time the
+    lease runs out. A target no result arrives for returns to the queue
+    then.
+    """
+    targets, _, claimed_until = _claim_due_targets(
+        limit,
+        max_attempts=settings.TIKTOK_SCRAPER_MAX_ATTEMPTS,
+        lease=timedelta(minutes=settings.TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES),
+        user=user,
+        label=label,
+    )
+    return targets, claimed_until
+
+
+class ExternalOutcome(TextChoices):
+    """What an external scraper reports for a target."""
+
+    SUCCESS = "success"
+    # TikTok reports the video as gone/private.
+    UNAVAILABLE = "unavailable"
+    FAILED = "failed"
+    # Not scraped (e.g. the scraper got blocked): back to the queue, no
+    # attempt counted.
+    RELEASED = "released"
+
+
+class ExternalResultStatus(TextChoices):
+    """What became of a result an external scraper submitted."""
+
+    STORED = "stored"
+    RECORDED = "recorded"
+    RELEASED = "released"
+    ALREADY_DONE = "already_done"
+    NOT_CLAIMED = "not_claimed"
+    INVALID = "invalid"
+
+
+class ExternalScrapeError(Exception):
+    """A failure an external scraper reported, in its own words."""
+
+
+_FINAL_STATUSES = (
+    ScrapeTarget.Status.SUCCESS,
+    ScrapeTarget.Status.UNAVAILABLE,
+    ScrapeTarget.Status.COVERED_BY_API,
+)
+
+
+@transaction.atomic
+def record_external_result(
+    user: AbstractBaseUser, result: Mapping[str, Any]
+) -> tuple[ExternalResultStatus, str]:
+    """Store what an external scraper reports for one target it claimed.
+
+    ``result`` has the shape validated by
+    ``ddcs.metadata.scraper.serializers.ScrapeResultSerializer``. Only the
+    account that claimed a target may report on it. A lease that ran out
+    does not matter as long as nobody else has taken or finished the
+    target since.
+
+    Returns what was done and a detail message (empty unless there is
+    something to explain).
+    """
+    status = ExternalResultStatus
+    id_tiktok = result["id_tiktok"]
+    target = (
+        ScrapeTarget.objects.select_for_update(of=("self",))
+        .select_related("video")
+        .filter(video__id_tiktok=id_tiktok, claimed_by=user)
+        .first()
+    )
+    if target is None:
+        return status.NOT_CLAIMED, "No target for this video is claimed by you."
+    if target.status in _FINAL_STATUSES:
+        return status.ALREADY_DONE, f"Target is already '{target.status}'."
+
+    outcome = result["outcome"]
+    if outcome == ExternalOutcome.RELEASED:
+        target.claimed_until = None
+        target.save(update_fields=["claimed_until", "updated_at"])
+        return status.RELEASED, ""
+
+    if outcome == ExternalOutcome.UNAVAILABLE:
+        status_code = result.get("tiktok_status_code")
+        ScraperService._mark(  # noqa: SLF001
+            target,
+            ScrapeTarget.Status.UNAVAILABLE,
+            TikTokItemUnavailableError(status_code, result.get("error_msg") or None),
+            tiktok_status_code=status_code,
+        )
+        return status.RECORDED, ""
+
+    if outcome == ExternalOutcome.FAILED:
+        error = ExternalScrapeError(result.get("error_msg") or "")
+        ScraperService._mark(  # noqa: SLF001
+            target,
+            ScrapeTarget.Status.FAILED,
+            error,
+            error_type=result.get("error_type") or None,
+        )
+        return status.RECORDED, ""
+
+    return _store_external_success(target, result)
+
+
+def _store_external_success(
+    target: ScrapeTarget, result: Mapping[str, Any]
+) -> tuple[ExternalResultStatus, str]:
+    status = ExternalResultStatus
+    id_tiktok = target.video.id_tiktok
+    data = result.get("data")
+    if not isinstance(data, dict) or str(data.get("id")) != str(id_tiktok):
+        # Most likely the payload of another video: don't touch the target.
+        return status.INVALID, "'data' must be the video's itemStruct ('id' differs)."
+
+    try:
+        ScraperService._store(  # noqa: SLF001
+            target, data, _external_caption(result.get("caption"))
+        )
+    except Exception as e:
+        logger.exception(
+            "Could not store externally scraped data for video %s.", id_tiktok
+        )
+        ScraperService._mark(target, ScrapeTarget.Status.FAILED, e)  # noqa: SLF001
+        return status.INVALID, f"Data could not be stored ({type(e).__name__})."
+    return status.STORED, ""
+
+
+def _external_caption(caption: Mapping[str, Any] | None) -> dict[str, Any]:
+    """An externally scraped caption as ``VideoInfosScraped`` fields."""
+    status = VideoInfosScraped.CaptionStatus
+    if not caption:
+        return {"caption_status": status.NOT_REQUESTED}
+    if caption["status"] != status.FETCHED:
+        return {"caption_status": caption["status"]}
+    return {
+        "caption_status": status.FETCHED,
+        "voice_to_text": TikTokParser.webvtt_to_text(caption["vtt"]),
+        "caption_vtt": caption["vtt"],
+        "caption_language": caption.get("language") or "",
+        "caption_is_auto_generated": caption.get("is_auto_generated"),
+    }
+
+
 class ScraperService:
     """Works off the ``ScrapeTarget`` queue and stores what was scraped."""
 
@@ -335,7 +583,7 @@ class ScraperService:
     # from here, and neither says anything about the individual videos.
     CONSECUTIVE_FAILURES_BEFORE_ABORT = 5
     # A failed target is not retried before this much time has passed.
-    FAILED_RETRY_BACKOFF = timedelta(hours=6)
+    FAILED_RETRY_BACKOFF = FAILED_RETRY_BACKOFF
 
     def __init__(
         self,
@@ -443,6 +691,9 @@ class ScraperService:
 
         # A streak too short to abort on: ordinary failures.
         self._record_failures(failure_streak, stats)
+        # Whatever was not worked on (deadline, abort, blocked) goes back to
+        # the queue right away instead of waiting for the lease to run out.
+        self._release(targets)
 
         seconds = time.monotonic() - started
         stats["seconds"] = round(seconds, 1)
@@ -464,49 +715,22 @@ class ScraperService:
     def _select_targets(
         self, limit: int, stats: ScrapeBatchStats
     ) -> list[ScrapeTarget]:
-        retry_before = timezone.now() - self.FAILED_RETRY_BACKOFF
-        due = ScrapeTarget.objects.filter(
-            Q(status=ScrapeTarget.Status.PENDING)
-            | Q(
-                status=ScrapeTarget.Status.FAILED,
-                attempts__lt=self.max_attempts,
-                last_attempted_at__lt=retry_before,
-            )
-        ).select_related("video")
-
-        # First the videos many donors saw recently, most donors first.
-        targets = list(
-            due.filter(
-                occurrence_count__gte=PRIORITY_MIN_OCCURRENCES,
-                last_watched_at__gte=datetime.combine(
-                    PRIORITY_WATCHED_SINCE, dt_time.min, tzinfo=UTC
-                ),
-            ).order_by("-occurrence_count", "-last_watched_at", "id")[:limit]
+        targets, covered_by_api, _ = _claim_due_targets(
+            limit,
+            max_attempts=self.max_attempts,
+            retry_backoff=self.FAILED_RETRY_BACKOFF,
+            lease=INTERNAL_LEASE,
+            label=INTERNAL_SCRAPER_LABEL,
         )
-        # Once those run out, everything else by most recent view. Only
-        # reached when the priority group fits the batch, so excluding the
-        # targets picked above excludes the whole group.
-        if len(targets) < limit:
-            targets += list(
-                due.exclude(pk__in=[t.pk for t in targets]).order_by(
-                    F("last_watched_at").desc(nulls_last=True), "id"
-                )[: limit - len(targets)]
-            )
+        stats["covered_by_api"] += covered_by_api
+        return targets
 
-        # The Research API may have delivered some of them since they were
-        # queued; those no longer need scraping.
-        uncovered: list[ScrapeTarget] = []
-        for chunk in batched(targets, _ENQUEUE_CHUNK_SIZE):
-            still_missing = set(_without_api_infos(t.video_id for t in chunk))
-            covered = [t.pk for t in chunk if t.video_id not in still_missing]
-            if covered:
-                ScrapeTarget.objects.filter(pk__in=covered).update(
-                    status=ScrapeTarget.Status.COVERED_BY_API,
-                    updated_at=timezone.now(),
-                )
-                stats["covered_by_api"] += len(covered)
-            uncovered.extend(t for t in chunk if t.video_id in still_missing)
-        return uncovered
+    @staticmethod
+    def _release(targets: Iterable[ScrapeTarget]) -> None:
+        """Give back the targets of a batch that were not worked on."""
+        leftover = [t.pk for t in targets if t.claimed_until is not None]
+        for chunk in batched(leftover, _ENQUEUE_CHUNK_SIZE):
+            ScrapeTarget.objects.filter(pk__in=chunk).update(claimed_until=None)
 
     def _fetch_caption(
         self, target: ScrapeTarget, data: dict[str, Any], stats: ScrapeBatchStats
@@ -564,16 +788,17 @@ class ScraperService:
         else:
             stats["scraped"] += 1
 
+    @classmethod
     @transaction.atomic
     def _store(
-        self, target: ScrapeTarget, data: dict[str, Any], caption: dict[str, Any]
+        cls, target: ScrapeTarget, data: dict[str, Any], caption: dict[str, Any]
     ) -> None:
         video = target.video
         VideoInfosScraped.objects.create(
-            video=video, **self._clean_video(data), **caption
+            video=video, **cls._clean_video(data), **caption
         )
         VideoStatisticsScraped.objects.create(
-            video=video, **self._clean_video_statistics(data)
+            video=video, **cls._clean_video_statistics(data)
         )
 
         # Base-model links are only filled in, never replaced: where the
@@ -582,9 +807,9 @@ class ScraperService:
         if video.inferred_create_time is None:
             video.inferred_create_time = infer_publication_date_from_id(video.id_tiktok)
         if video.user_id is None:
-            video.user = self._sync_user(data.get("author"))
+            video.user = cls._sync_user(data.get("author"))
         if video.music_id is None:
-            video.music = self._sync_music(data.get("music"))
+            video.music = cls._sync_music(data.get("music"))
         video.save(
             update_fields=[
                 "scraped_at",
@@ -595,11 +820,11 @@ class ScraperService:
             ]
         )
 
-        hashtags = self._sync_hashtags(data.get("challenges"))
+        hashtags = cls._sync_hashtags(data.get("challenges"))
         if hashtags:
             video.hashtags.add(*hashtags)
 
-        self._mark(target, ScrapeTarget.Status.SUCCESS)
+        cls._mark(target, ScrapeTarget.Status.SUCCESS)
 
     @staticmethod
     def _mark(
@@ -607,13 +832,18 @@ class ScraperService:
         status: ScrapeTarget.Status,
         error: Exception | None = None,
         tiktok_status_code: int | None = None,
+        error_type: str | None = None,
     ) -> None:
         target.status = status
         target.attempts += 1
         target.last_attempted_at = timezone.now()
-        target.last_error_type = type(error).__name__ if error else ""
+        # ``error_type`` names an error that happened elsewhere (an external
+        # scraper), where there is no exception class to take it from.
+        target.last_error_type = error_type or (type(error).__name__ if error else "")
         target.last_error_msg = str(error) if error else ""
         target.tiktok_status_code = tiktok_status_code
+        # Worked on: the lease ends, who held it stays on record.
+        target.claimed_until = None
         target.save()
 
     @staticmethod

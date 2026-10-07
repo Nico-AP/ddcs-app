@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 
@@ -56,11 +57,39 @@ class ScrapeTarget(models.Model):
         help_text="statusCode TikTok returned in place of the video data.",
     )
 
+    # Lease: who is working on the target, and until when nobody else should
+    # pick it up. Taken by external scrapers through the API and by the
+    # built-in scraper for its batch; see ``service.claim_targets``.
+    # ``claimed_by`` and ``claimed_by_label`` stay set once the target is
+    # done, as a record of who scraped it.
+    claimed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        help_text="API account that claimed the target (empty: built-in scraper).",
+    )
+    claimed_by_label = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text=(
+            "Name the scraper gave itself when claiming (e.g. its host). Not verified."
+        ),
+    )
+    claimed_until = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         indexes = [
             models.Index(
                 fields=["status", "-occurrence_count", "-last_watched_at"],
                 name="scrapetarget_queue_idx",
+            ),
+        ]
+        permissions = [
+            (
+                "sync_scrape_targets",
+                "Can claim scrape targets and submit scraped results",
             ),
         ]
 
