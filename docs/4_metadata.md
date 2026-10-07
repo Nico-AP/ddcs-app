@@ -97,6 +97,11 @@ The full description (queueing, outcomes, every stored field, captions,
 configuration, operation and known limits) is in
 [8_scraper.md](8_scraper.md).
 
+Scrapers running elsewhere can work on the same queue through the API: they
+claim videos that are missing metadata and submit what they scraped, which is
+stored through the same service. See
+[8_scraper.md → External scrapers](8_scraper.md#external-scrapers).
+
 
 ### Data origins
 
