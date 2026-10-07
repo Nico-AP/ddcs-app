@@ -446,20 +446,162 @@ covered by the project's data protection and ethics framing, and not passed on
 more freely than that field.
 
 
+## External scrapers
+
+Scrapers running outside this application can work on the same queue through
+two API endpoints: they **claim** videos that are missing metadata, scrape
+them, and **submit** what they found. The server stores it with the same code
+the built-in scraper uses, so the stored data is identical whichever scraper
+produced it.
+
+Both endpoints are listed in the API docs (`/api/docs/`).
+
+### Access
+
+Token authentication, as for the rest of the API, plus a permission. To set up
+a scraper, in the Django admin:
+
+1. Create a user for it (it needs no staff status and no usable password).
+2. Give the user the permission **"Can claim scrape targets and submit scraped
+   results"** (`ddcs_metadata_scraper.sync_scrape_targets`), directly or
+   through a group.
+3. Create a token for the user (Auth Token → Tokens) and hand it to the
+   scraper, which sends it as `Authorization: Token <key>`.
+
+A token without the permission can read the metadata API but gets `403` here.
+
+### Claiming videos
+
+```
+POST /metadata/api/v1/tiktok/scrape-targets/claim/
+{"limit": 100, "scraper_id": "uzh-vm-2"}
+```
+
+| Field        | Meaning                                                                                                                           |
+|--------------|-----------------------------------------------------------------------------------------------------------------------------------|
+| `limit`      | Number of videos wanted, 1 to 500 (default 100)                                                                                   |
+| `scraper_id` | Optional free text (up to 100 characters) naming the scraper instance, e.g. its host. Stored with the targets, see below.         |
+
+```
+{
+  "lease_expires_at": "2026-10-07T09:15:00Z",
+  "results": [
+    {"id_tiktok": 7470493179767344430, "occurrence_count": 21, "last_watched_at": "2026-09-12T18:03:11Z"}
+  ]
+}
+```
+
+The videos come in [queue order](#2-order-widely-seen-recent-videos-then-most-recent).
+An empty list means there is nothing to scrape at the moment.
+
+Claiming **leases** the videos to the caller for
+`TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES` (default 60). While the lease runs,
+no other scraper gets them, including the built-in one, which leases its own
+batch in the same way. A video no result arrives for returns to the queue
+when the lease runs out. Claim only as much as can be scraped within the
+lease.
+
+### Submitting results
+
+```
+POST /metadata/api/v1/tiktok/scrape-targets/results/
+{"results": [ {...}, {...} ]}
+```
+
+At most 50 entries per request, one per video:
+
+| Field                     | For outcome   | Content                                                                                                                                |
+|---------------------------|---------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| `id_tiktok`               | all           | The video                                                                                                                              |
+| `outcome`                 | all           | `success`, `unavailable`, `failed` or `released`, see below                                                                            |
+| `data`                    | `success`     | The video's **raw** `itemStruct` object from the page (`__DEFAULT_SCOPE__` → `webapp.video-detail` → `itemInfo` → `itemStruct`), as is |
+| `caption`                 | `success`     | Optional, see below                                                                                                                    |
+| `tiktok_status_code`      | `unavailable` | The `statusCode` TikTok returned in place of the video                                                                                 |
+| `error_type`, `error_msg` | `failed`      | What went wrong, in the scraper's words                                                                                                |
+
+| `outcome`     | When                                                         | Effect on the target                                                                    |
+|---------------|--------------------------------------------------------------|-----------------------------------------------------------------------------------------|
+| `success`     | The page was loaded and contained the video                  | Data stored as described under [What is stored](#what-is-stored); `success`              |
+| `unavailable` | TikTok reports the video as gone or private                  | `unavailable`, not retried                                                              |
+| `failed`      | Something specific to this video went wrong                  | `failed`, attempt counted; retried after 6 hours, at most `TIKTOK_SCRAPER_MAX_ATTEMPTS` |
+| `released`    | The video was not scraped, e.g. because TikTok blocks        | Back in the queue at once, no attempt counted                                           |
+
+**A blocked scraper must release, not fail.** The built-in scraper leaves
+targets untouched when TikTok stops serving it
+(see [When TikTok blocks](#6-when-tiktok-blocks)). The server cannot tell
+this for a remote scraper: reporting such videos as `failed` uses up their
+attempts. Send `released` for them, or nothing at all and let the lease run
+out.
+
+**Caption.** `caption` is an object with a `status`:
+
+| `status`         | Other fields                                                                 |
+|------------------|------------------------------------------------------------------------------|
+| `fetched`        | `vtt` (the WebVTT file as downloaded), `language`, `is_auto_generated`       |
+| `none_available` |                                                                              |
+| `failed`         |                                                                              |
+
+Without `caption`, the video is stored as `not_requested`. The server derives
+`voice_to_text` from `vtt`; the meaning of the fields and which caption to
+pick are described under [Captions](#captions).
+
+**Response.** Always `200` with one entry per submitted entry, in the same
+order: `{"id_tiktok": ..., "status": ..., "detail": "..."}`. Entries are
+handled independently, so one unusable entry does not affect the others.
+
+| `status`       | Meaning                                                                                                                         |
+|----------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `stored`       | `success` accepted, data stored                                                                                                 |
+| `recorded`     | `unavailable` or `failed` noted                                                                                                 |
+| `released`     | Lease ended                                                                                                                     |
+| `already_done` | The target was finished before (e.g. the same result sent twice). Nothing changed.                                              |
+| `not_claimed`  | The video is not claimed by this account: never claimed, unknown, or claimed by someone else after the lease ran out            |
+| `invalid`      | The entry is malformed, `data` belongs to another video (target left untouched), or the data could not be stored (target `failed`) |
+
+A result that arrives after the lease ran out is still accepted, as long as
+nobody else has claimed or finished the video since. Only a request whose
+outer structure is wrong (no `results` list, more than 50 entries) is
+answered with `400`.
+
+### Who scraped what
+
+`ScrapeTarget` records the account that claimed a target (`claimed_by`), the
+`scraper_id` it gave (`claimed_by_label`) and the end of the lease
+(`claimed_until`). Account and label stay on the target after it is finished.
+The built-in scraper has no account and the label `internal`. The label is
+whatever the client sent: it tells instances apart, it does not prove
+anything. All three are shown in Admin → Scrape targets, and the dashboard's
+"Scraper queue" card shows how many targets are currently claimed.
+
+### Things to know
+
+- **Queueing still depends on `TIKTOK_SCRAPER_ENABLED`.** While it is off,
+  donations queue nothing. To use external scrapers only, switch it on and do
+  not add the periodic task (or remove it); the endpoints themselves work
+  regardless of the setting.
+- **Request size.** One entry can be tens of kilobytes (`itemStruct` plus
+  caption file). The web server's request size limit has to allow for 50 of
+  them, or clients have to send smaller batches.
+- **Trust.** An account with the permission can store metadata for the videos
+  it claimed, and the server cannot check it against TikTok. It only refuses
+  data whose `id` is not the claimed video's.
+
+
 ## Configuration
 
 All settings are read from the environment (see `.env.example`).
 
-| Setting                         | Default       | Effect                                                                                                                                                            |
-|---------------------------------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `TIKTOK_SCRAPER_ENABLED`        | `False`       | Master switch. While off, donations queue nothing and the task returns immediately.                                                                               |
-| `TIKTOK_SCRAPER_RATE_DELAY`     | `1.0`         | Minimum seconds between the starts of two video-page requests                                                                                                     |
-| `TIKTOK_SCRAPER_RATE_JITTER`    | `0.3`         | Random variation of that interval as a fraction (0.3 = ±30%); `0` switches it off                                                                                 |
-| `TIKTOK_SCRAPER_CAPTION_DELAY`  | `0.0`         | Seconds to wait before each caption download                                                                                                                      |
-| `TIKTOK_SCRAPER_BATCH_SIZE`     | `3000`        | Maximum number of videos per run                                                                                                                                  |
-| `TIKTOK_SCRAPER_MAX_ATTEMPTS`   | `3`           | Attempts before a failing video is given up on                                                                                                                    |
-| `TIKTOK_SCRAPER_FETCH_CAPTIONS` | `True`        | Also download the original-language caption                                                                                                                       |
-| `CELERY_TIKTOK_SCRAPER_QUEUE`   | default queue | Celery queue for the scraping task. While targets are pending the scraper occupies one worker continuously, so a separate queue with its own worker is advisable. |
+| Setting                                 | Default        | Effect                                                                                                                                                            |
+|-----------------------------------------|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `TIKTOK_SCRAPER_ENABLED`                | `False`        | Master switch. While off, donations queue nothing and the task returns immediately.                                                                               |
+| `TIKTOK_SCRAPER_RATE_DELAY`             | `1.0`          | Minimum seconds between the starts of two video-page requests                                                                                                     |
+| `TIKTOK_SCRAPER_RATE_JITTER`            | `0.3`          | Random variation of that interval as a fraction (0.3 = ±30%); `0` switches it off                                                                                 |
+| `TIKTOK_SCRAPER_CAPTION_DELAY`          | `0.0`          | Seconds to wait before each caption download                                                                                                                      |
+| `TIKTOK_SCRAPER_BATCH_SIZE`             | `3000`         | Maximum number of videos per run                                                                                                                                  |
+| `TIKTOK_SCRAPER_MAX_ATTEMPTS`           | `3`            | Attempts before a failing video is given up on                                                                                                                    |
+| `TIKTOK_SCRAPER_FETCH_CAPTIONS`         | `True`         | Also download the original-language caption                                                                                                                       |
+| `TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES` | `60`           | Minutes an [external scraper](#external-scrapers) keeps the videos it claimed                                                                                     |
+| `CELERY_TIKTOK_SCRAPER_QUEUE`           | default queue  | Celery queue for the scraping task. While targets are pending the scraper occupies one worker continuously, so a separate queue with its own worker is advisable. |
 
 The schedule entry is `scraper-scrape-pending-videos` in
 `CELERY_BEAT_SCHEDULE`. The beat schedule is stored in the database: on an
@@ -523,8 +665,8 @@ slower than the delay and lowering the delay will not help.
   last run's statistics. While scraping is paused after aborts it also shows
   until when, and how to resume immediately.
 - **Admin → Scrape targets**: every target with status, donor count, last
-  watch date, attempts, last error and TikTok's status code, in queue order.
-  Read-only.
+  watch date, attempts, last error and TikTok's status code, in queue order,
+  and who claimed it. Read-only.
 - **Admin → TikTok videos**: scraped infos and statistics appear as inlines on
   the video.
 
