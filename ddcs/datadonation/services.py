@@ -48,10 +48,6 @@ _BLUEPRINT_NAMES_INCL_BACKUPS = [
     bp + suffix for bp in _BLUEPRINT_NAMES for suffix in _BLUEPRINT_BACKUP_SUFFIXES
 ]
 
-_WATCH_HISTORY_BP_NAMES_INCL_BACKUPS = [
-    WATCH_HISTORY_BP_NAME + suffix for suffix in _BLUEPRINT_BACKUP_SUFFIXES
-]
-
 # The blueprints that say which videos a donor interacted with.
 _VIDEO_BP_NAMES = [
     WATCH_HISTORY_BP_NAME,
@@ -261,31 +257,6 @@ def get_user_data(participant: Participant) -> TikTokUserData:
     data = _get_donation_data(participant)
     data = _clean_donated_data(data)
     return _map_to_user_data(data)
-
-
-def participants_with_watch_history() -> QuerySet[Participant]:
-    """Participants who have a successfully extracted watch-history donation."""
-    donors = DataDonation.objects.filter(
-        blueprint__name__in=_WATCH_HISTORY_BP_NAMES_INCL_BACKUPS,
-        data_extraction_state=DataDonation.DataExtractionState.DATA_EXTRACTED,
-    ).values("participant_id")
-    return Participant.objects.filter(pk__in=donors).select_related("project")
-
-
-def get_watch_history(participant: Participant) -> list[dict[str, Any]] | None:
-    """The participant's donated watch history, cleaned, with video IDs.
-
-    Same records as ``get_user_data(participant).watch_history``, but only
-    the watch-history donation is decrypted, which is what makes going
-    through all participants affordable. ``None`` if there is none.
-    """
-    donations_by_blueprint = _decrypted_donations(
-        participant, _WATCH_HISTORY_BP_NAMES_INCL_BACKUPS
-    )
-    records = _donation_records_for_blueprint(
-        donations_by_blueprint, WATCH_HISTORY_BP_NAME
-    )
-    return _map_video_records(_clean_records(records))
 
 
 def participants_with_video_donations() -> QuerySet[Participant]:

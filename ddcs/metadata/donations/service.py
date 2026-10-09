@@ -1,9 +1,9 @@
 """What donations contribute to the metadata registry.
 
 This module is the single ingestion path for donated data: it registers the
-videos and users a donation contains and records, per video, how many
-donors watched, liked or bookmarked it and when. Nothing else should create
-``DonationVideoInfos`` rows.
+videos and users a donation contains, records, per video, how many donors
+watched, liked or bookmarked it and when, and queues the videos for scraping.
+Nothing else should create ``DonationVideoInfos`` rows.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from datetime import time as dt_time
 from itertools import batched
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from django.conf import settings
 from django.db import transaction
@@ -21,11 +21,11 @@ from django.utils import timezone
 from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.models import DataOrigins, TikTokUser, TikTokVideo
 from ddcs.metadata.scraper.config import WATCH_WINDOW_END, WATCH_WINDOW_START
-from ddcs.metadata.scraper.service import enqueue_watched_videos
+from ddcs.metadata.scraper.service import enqueue_donated_videos
 from ddcs.metadata.utils import video_pks
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Mapping
 
     from ddcs.core.types import TikTokUserData
 
@@ -40,14 +40,6 @@ _RECORDED_FIELDS = [
 ]
 
 
-class WatchHistoryScan(NamedTuple):
-    # TikTok ID -> the donor's most recent view of that video in the window.
-    last_watched: dict[int, datetime]
-    views_in_window: int
-    # Records that could not be used: no parsed date or no video ID.
-    skipped_records: int
-
-
 def _window_bounds(start: date, end: date) -> tuple[datetime, datetime]:
     """The window from ``start`` to ``end``, both days included, in UTC."""
     return (
@@ -58,38 +50,6 @@ def _window_bounds(start: date, end: date) -> tuple[datetime, datetime]:
 
 def _later(current: datetime | None, candidate: datetime | None) -> datetime | None:
     return max(filter(None, (current, candidate)), default=None)
-
-
-def scan_watch_history(
-    watch_history: Iterable[Mapping[str, Any]] | None,
-    start: date = WATCH_WINDOW_START,
-    end: date = WATCH_WINDOW_END,
-) -> WatchHistoryScan:
-    """Find the videos one donor watched between ``start`` and ``end``.
-
-    Both days are inclusive and taken in UTC, which is what donated
-    timestamps are parsed as. This is what the scrape queue is filled from;
-    for the donation infos see :func:`scan_donated_videos`.
-    """
-    window_start, window_end = _window_bounds(start, end)
-
-    last_watched: dict[int, datetime] = {}
-    views_in_window = skipped_records = 0
-    for record in watch_history or []:
-        video_id = record.get("video_id")
-        watched_at = record.get("date")
-        if not isinstance(video_id, int) or not isinstance(watched_at, datetime):
-            skipped_records += 1
-            continue
-        if watched_at.tzinfo is None:
-            watched_at = watched_at.replace(tzinfo=UTC)
-        if not window_start <= watched_at < window_end:
-            continue
-        views_in_window += 1
-        previous = last_watched.get(video_id)
-        if previous is None or watched_at > previous:
-            last_watched[video_id] = watched_at
-    return WatchHistoryScan(last_watched, views_in_window, skipped_records)
 
 
 class VideoInteractions(NamedTuple):
@@ -167,8 +127,9 @@ def register_donation_metadata(data: TikTokUserData) -> None:
 
     Handles watch history, followed accounts, liked and bookmarked videos.
     The watched, liked and bookmarked videos are recorded as donated. If the
-    scraper is enabled, those watched within the watch window are queued for
-    scraping (those the Research API already covers are skipped).
+    scraper is enabled, those with such an interaction within the watch
+    window are queued for scraping (those the Research API already covers
+    are skipped).
     """
     # Watch history
     if data.watch_history:
@@ -197,14 +158,27 @@ def register_donation_metadata(data: TikTokUserData) -> None:
         ]
         TikTokUser.objects.bulk_create(users_to_add, ignore_conflicts=True)
 
-    record_donated_videos(scan_donated_videos(data))
+    videos = scan_donated_videos(data)
+    record_donated_videos(videos)
 
     if settings.TIKTOK_SCRAPER_ENABLED:
-        # One more donation for every video it shows as watched in the window.
-        watched = scan_watch_history(data.watch_history).last_watched
-        enqueue_watched_videos(
-            {video_id: (1, last_view) for video_id, last_view in watched.items()}
-        )
+        enqueue_donated_videos(queue_entries(videos))
+
+
+def queue_entries(
+    videos: Mapping[int, VideoInteractions],
+) -> dict[int, tuple[int, datetime]]:
+    """What one donation adds to the scrape queue.
+
+    Every video the donation shows as watched, liked or bookmarked within
+    the watch window, as ``enqueue_donated_videos`` takes it: TikTok ID ->
+    (one more donation, most recent interaction in the window).
+    """
+    return {
+        video_id: (1, video.last_interaction_in_window_at)
+        for video_id, video in videos.items()
+        if video.last_interaction_in_window_at is not None
+    }
 
 
 class DonatedVideosResult(NamedTuple):

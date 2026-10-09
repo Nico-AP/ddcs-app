@@ -81,20 +81,22 @@ class EnqueueResult(NamedTuple):
     covered_by_api: int
 
 
-def enqueue_watched_videos(
+def enqueue_donated_videos(
     videos: Mapping[int, tuple[int, datetime | None]],
 ) -> EnqueueResult:
-    """Queue watched videos for scraping, or raise their ranking.
+    """Queue donated videos for scraping, or raise their ranking.
 
     ``videos`` maps a TikTok ID to ``(count, last_watched_at)``: how many
-    more donations show the video as watched within the watch window
-    (1 when called for a single donation), and its most recent view there.
-    The queue is worked off by highest count, then most recent view.
+    more donations show the video as watched, liked or bookmarked within
+    the watch window (1 when called for a single donation), and the most
+    recent of those interactions. The queue is worked off by highest count,
+    then most recent interaction. (The field is called ``last_watched_at``
+    since the queue was first filled from watch histories only.)
 
     This only ever adds: a video not queued yet gets a target, an already
     queued one has ``count`` added to its ``occurrence_count`` and keeps the
-    later view. Calling it twice for the same donation therefore counts
-    that donation twice; :func:`reset_watch_ranking` starts over.
+    later interaction. Calling it twice for the same donation therefore
+    counts that donation twice; :func:`reset_queue_ranking` starts over.
 
     Videos without a ``TikTokVideo`` row get one; videos that already have
     Research API infos are skipped. A target's status is never touched, so
@@ -141,10 +143,10 @@ def enqueue_watched_videos(
     return EnqueueResult(created, updated, covered_by_api)
 
 
-def reset_watch_ranking() -> int:
-    """Set the ranking of every target back to "not watched".
+def reset_queue_ranking() -> int:
+    """Set the ranking of every target back to "in no donation".
 
-    Used before the watch histories are counted from scratch. Works in
+    Used before the donations are counted from scratch. Works in
     small steps, so the scraper is not held up by one long-running update.
     Returns the number of targets reset.
     """

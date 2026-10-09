@@ -1,21 +1,26 @@
-"""Rebuild the donation infos from the stored donations.
+"""Rebuild the donation infos and the scrape queue from the stored donations.
 
 Goes through the donations one at a time. Every video a donor watched,
 liked or bookmarked has the matching counts of its ``DonationVideoInfos``
 raised by one (or gets a row) and keeps the most recent interaction, at any
-time and within the watch window.
+time and within the watch window. If the interaction lies within the watch
+window, the video's scrape target also has its donor count raised by one
+(or is created) and keeps the most recent interaction; the scraper works
+off the videos many donors interacted with recently first.
 
 Nothing is collected in memory: each donation is written to the database
 before the next one is read, so the size of the run does not matter.
 
-Because the command adds to the counts, it first resets them all to zero; a
-run therefore always counts from scratch and can be repeated. Rows and
-interaction times are kept, so the priorities derived from them stay as they
-are while it runs. The counts are still not exact: donations processed while
-it runs, or retried later, may be counted twice.
+Because the command adds to the counts, it first resets them all to zero,
+on the donation infos and on the scrape targets; a run therefore always
+counts from scratch and can be repeated. Donation infos keep their rows and
+interaction times, so the priorities derived from them stay as they are
+while it runs. The counts are still not exact: donations processed while it
+runs, or retried later, may be counted twice. Nothing already scraped is
+queued again.
 
 Known test participants (``EXCLUDED_PARTICIPANT_IDS``) are left out. See
-docs/4_metadata.md.
+docs/4_metadata.md and docs/8_scraper.md.
 """
 
 from __future__ import annotations
@@ -32,11 +37,13 @@ from ddcs.datadonation.services import (
 )
 from ddcs.metadata.donations.config import EXCLUDED_PARTICIPANT_IDS
 from ddcs.metadata.donations.service import (
+    queue_entries,
     record_donated_videos,
     reset_donation_counts,
     scan_donated_videos,
 )
 from ddcs.metadata.scraper.config import WATCH_WINDOW_END, WATCH_WINDOW_START
+from ddcs.metadata.scraper.service import enqueue_donated_videos, reset_queue_ranking
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +52,9 @@ _PROGRESS_EVERY = 100
 
 class Command(BaseCommand):
     help = (
-        "Record the videos donors watched, liked or bookmarked: number of "
-        "donors per kind of interaction and most recent interaction."
+        "Record the videos donors watched, liked or bookmarked (number of "
+        "donors per kind of interaction, most recent interaction) and queue "
+        "those with an interaction in the watch window for scraping."
     )
 
     def add_arguments(self, parser: CommandParser) -> None:
@@ -75,10 +83,12 @@ class Command(BaseCommand):
             raise CommandError(msg)
 
         counts_reset = None if dry_run else reset_donation_counts()
+        targets_reset = None if dry_run else reset_queue_ranking()
 
         donations_read = donations_unreadable = participants_excluded = 0
         watched = liked = bookmarked = in_window = 0
         created = updated = 0
+        targets_created = targets_updated = covered_by_api = 0
 
         for participant in participants_with_video_donations().iterator():
             if participant.external_id in EXCLUDED_PARTICIPANT_IDS:
@@ -108,6 +118,10 @@ class Command(BaseCommand):
                 result = record_donated_videos(videos)
                 created += result.created
                 updated += result.updated
+                queued = enqueue_donated_videos(queue_entries(videos))
+                targets_created += queued.created
+                targets_updated += queued.updated
+                covered_by_api += queued.covered_by_api
 
             if donations_read % _PROGRESS_EVERY == 0:
                 self.stdout.write(f"  {donations_read} donations read ...")
@@ -128,8 +142,17 @@ class Command(BaseCommand):
             return
 
         self.stdout.write(
-            f"Rows with counts reset: {counts_reset}\n"
-            f"Rows created: {created}\n"
-            f"Counts raised on existing rows: {updated}"
+            "Donation infos:\n"
+            f"  Rows with counts reset: {counts_reset}\n"
+            f"  Rows created: {created}\n"
+            f"  Counts raised on existing rows: {updated}\n"
+            "Scrape queue:\n"
+            f"  Targets with ranking reset: {targets_reset}\n"
+            f"  Targets created: {targets_created}\n"
+            f"  Counts raised on existing targets: {targets_updated}\n"
+            "  Skipped, Research API has the video (per donation): "
+            f"{covered_by_api}"
         )
-        self.stdout.write(self.style.SUCCESS("Donation infos updated."))
+        self.stdout.write(
+            self.style.SUCCESS("Donation infos and scrape queue updated.")
+        )

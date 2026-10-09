@@ -10,139 +10,20 @@ from ddcs.metadata.donations.config import EXCLUDED_PARTICIPANT_IDS
 from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.donations.service import (
     VideoInteractions,
+    queue_entries,
     record_donated_videos,
     register_donation_metadata,
     reset_donation_counts,
     scan_donated_videos,
-    scan_watch_history,
 )
 from ddcs.metadata.models import DataOrigins, TikTokVideo
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.models import ScrapeTarget
+from ddcs.metadata.scraper.service import enqueue_donated_videos
 
 
 def _view(video_id: object, watched_at: object) -> dict:
     return {"video_id": video_id, "date": watched_at, "link": "https://example"}
-
-
-class ScanWatchHistoryTests(TestCase):
-    def test_window_includes_both_days_in_utc(self):
-        history = [
-            _view(1, datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)),  # day before
-            _view(2, datetime(2026, 7, 1, 0, 0, 0, tzinfo=UTC)),  # first moment
-            _view(3, datetime(2026, 9, 20, 23, 59, 59, tzinfo=UTC)),  # last moment
-            _view(4, datetime(2026, 9, 21, 0, 0, 0, tzinfo=UTC)),  # day after
-        ]
-
-        scan = scan_watch_history(history)
-
-        self.assertEqual(set(scan.last_watched), {2, 3})
-        self.assertEqual(scan.views_in_window, 2)
-        self.assertEqual(scan.skipped_records, 0)
-
-    def test_repeat_views_collapse_to_the_latest(self):
-        early = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        late = datetime(2026, 8, 5, 10, tzinfo=UTC)
-
-        scan = scan_watch_history([_view(1, late), _view(1, early), _view(1, late)])
-
-        self.assertEqual(scan.last_watched, {1: late})
-        self.assertEqual(scan.views_in_window, 3)
-
-    def test_views_outside_the_window_do_not_set_the_last_view(self):
-        inside = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        after = datetime(2026, 10, 1, 10, tzinfo=UTC)
-
-        scan = scan_watch_history([_view(1, inside), _view(1, after)])
-
-        self.assertEqual(scan.last_watched, {1: inside})
-
-    def test_records_without_usable_date_or_video_id_are_skipped(self):
-        inside = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        history = [
-            _view(1, "05.07.2026 10:00"),  # date that could not be parsed
-            _view(None, inside),  # link without an ID
-            {"link": "https://example"},  # neither
-            _view(2, inside),
-        ]
-
-        scan = scan_watch_history(history)
-
-        self.assertEqual(scan.last_watched, {2: inside})
-        self.assertEqual(scan.skipped_records, 3)
-
-    def test_naive_dates_are_taken_as_utc(self):
-        scan = scan_watch_history([_view(1, datetime(2026, 7, 1, 0, 0, 0))])  # noqa: DTZ001
-
-        self.assertEqual(scan.last_watched, {1: datetime(2026, 7, 1, tzinfo=UTC)})
-
-    def test_custom_window_and_empty_history(self):
-        view = _view(1, datetime(2026, 1, 15, tzinfo=UTC))
-
-        self.assertEqual(scan_watch_history([view]).last_watched, {})
-        scan = scan_watch_history([view], start=date(2026, 1, 1), end=date(2026, 1, 31))
-        self.assertEqual(set(scan.last_watched), {1})
-        self.assertEqual(scan_watch_history(None).last_watched, {})
-
-
-class RegisterDonationMetadataScrapeQueueTests(TestCase):
-    def setUp(self):
-        self.early = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        self.late = datetime(2026, 8, 5, 10, tzinfo=UTC)
-        outside = datetime(2026, 10, 5, 10, tzinfo=UTC)
-        self.data = TikTokUserData(
-            watch_history=[
-                {"video_id": 1, "date": self.early},
-                {"video_id": 1, "date": self.late},
-                {"video_id": 2, "date": self.early},
-                {"video_id": 3, "date": outside},
-            ],
-            liked_videos=[{"video_id": 4, "date": self.early}],
-        )
-
-    def _ranking(self) -> dict[int, tuple]:
-        return {
-            id_tiktok: (count, last)
-            for id_tiktok, count, last in ScrapeTarget.objects.values_list(
-                "video__id_tiktok", "occurrence_count", "last_watched_at"
-            )
-        }
-
-    @override_settings(TIKTOK_SCRAPER_ENABLED=False)
-    def test_queues_nothing_while_scraper_is_disabled(self):
-        register_donation_metadata(self.data)
-
-        self.assertEqual(TikTokVideo.objects.count(), 4)
-        self.assertFalse(ScrapeTarget.objects.exists())
-
-    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
-    def test_queues_videos_watched_in_the_window_only(self):
-        register_donation_metadata(self.data)
-
-        # Not video 3 (watched outside the window), not video 4 (only liked).
-        # Video 1 was watched twice by this donor: still one donation.
-        self.assertEqual(self._ranking(), {1: (1, self.late), 2: (1, self.early)})
-
-    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
-    def test_skips_videos_the_research_api_covers(self):
-        covered = TikTokVideo.objects.create(
-            id_tiktok=2, added_by=DataOrigins.RESEARCH_API
-        )
-        APIVideoInfos.objects.create(video=covered)
-
-        register_donation_metadata(self.data)
-
-        self.assertEqual(set(self._ranking()), {1})
-
-    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
-    def test_another_donation_raises_the_count(self):
-        register_donation_metadata(self.data)
-
-        register_donation_metadata(
-            TikTokUserData(watch_history=[{"video_id": 1, "date": self.early}])
-        )
-
-        self.assertEqual(self._ranking(), {1: (2, self.late), 2: (1, self.early)})
 
 
 EARLY = datetime(2026, 7, 5, 10, tzinfo=UTC)
@@ -178,6 +59,16 @@ def _interactions() -> dict[int, tuple]:
         id_tiktok: tuple(times)
         for id_tiktok, *times in DonationVideoInfos.objects.values_list(
             "video__id_tiktok", "last_interaction_at", "last_interaction_in_window_at"
+        )
+    }
+
+
+def _ranking() -> dict[int, tuple[int, datetime | None]]:
+    """TikTok ID -> (donor count, most recent interaction) of the scrape targets."""
+    return {
+        id_tiktok: (count, last)
+        for id_tiktok, count, last in ScrapeTarget.objects.values_list(
+            "video__id_tiktok", "occurrence_count", "last_watched_at"
         )
     }
 
@@ -273,6 +164,88 @@ class ScanDonatedVideosTests(TestCase):
 
         self.assertEqual(scan, {1: _seen("l", OUTSIDE, OUTSIDE)})
         self.assertEqual(scan_donated_videos(TikTokUserData()), {})
+
+
+class QueueEntriesTests(TestCase):
+    def test_videos_with_an_interaction_in_the_window(self):
+        videos = {
+            1: _seen("w", LATE, LATE),
+            2: _seen("l", OUTSIDE, EARLY),  # liked in the window, seen after it
+            3: _seen("b", OUTSIDE, None),
+            4: _seen("w"),
+        }
+
+        self.assertEqual(queue_entries(videos), {1: (1, LATE), 2: (1, EARLY)})
+        self.assertEqual(queue_entries({}), {})
+
+
+class RegisterDonationMetadataScrapeQueueTests(TestCase):
+    def setUp(self):
+        self.data = TikTokUserData(
+            watch_history=[
+                {"video_id": 1, "date": EARLY},
+                {"video_id": 1, "date": LATE},
+                {"video_id": 2, "date": EARLY},
+                {"video_id": 3, "date": OUTSIDE},
+            ],
+            liked_videos=[
+                {"video_id": 3, "date": LATE},
+                {"video_id": 4, "date": EARLY},
+            ],
+            video_bookmarks=[
+                {"video_id": 5, "date": LATE},
+                {"video_id": 6, "date": OUTSIDE},
+            ],
+            shared_videos=[{"video_id": 7, "date": EARLY}],
+        )
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=False)
+    def test_queues_nothing_while_scraper_is_disabled(self):
+        register_donation_metadata(self.data)
+
+        self.assertTrue(DonationVideoInfos.objects.exists())
+        self.assertFalse(ScrapeTarget.objects.exists())
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_queues_videos_with_an_interaction_in_the_window(self):
+        register_donation_metadata(self.data)
+
+        self.assertEqual(
+            _ranking(),
+            {
+                # Watched twice by this donor: still one donation.
+                1: (1, LATE),
+                2: (1, EARLY),
+                # Watched after the window, but liked within it.
+                3: (1, LATE),
+                4: (1, EARLY),
+                5: (1, LATE),
+                # Not video 6 (bookmarked outside the window), not video 7
+                # (only shared).
+            },
+        )
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_skips_videos_the_research_api_covers(self):
+        covered = TikTokVideo.objects.create(
+            id_tiktok=2, added_by=DataOrigins.RESEARCH_API
+        )
+        APIVideoInfos.objects.create(video=covered)
+
+        register_donation_metadata(self.data)
+
+        self.assertEqual(set(_ranking()), {1, 3, 4, 5})
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
+    def test_another_donation_raises_the_count(self):
+        register_donation_metadata(self.data)
+
+        register_donation_metadata(
+            TikTokUserData(video_bookmarks=[{"video_id": 1, "date": EARLY}])
+        )
+
+        self.assertEqual(_ranking()[1], (2, LATE))
+        self.assertEqual(_ranking()[2], (1, EARLY))
 
 
 class RecordDonatedVideosTests(TestCase):
@@ -412,15 +385,6 @@ class RegisterDonationMetadataDonationInfosTests(TestCase):
         )
 
     @override_settings(TIKTOK_SCRAPER_ENABLED=True)
-    def test_only_watched_videos_in_the_window_are_queued(self):
-        register_donation_metadata(self.data)
-
-        # Videos 2 and 3 were liked in the window, but not watched in it.
-        self.assertEqual(
-            set(ScrapeTarget.objects.values_list("video__id_tiktok", flat=True)), {1}
-        )
-
-    @override_settings(TIKTOK_SCRAPER_ENABLED=True)
     def test_records_videos_the_research_api_covers(self):
         covered = TikTokVideo.objects.create(
             id_tiktok=1, added_by=DataOrigins.RESEARCH_API
@@ -494,6 +458,82 @@ class RecordDonatedVideosCommandTests(TestCase):
         self.assertIn("Videos with an interaction in the window: 3", out)
         self.assertIn("Rows created: 3", out)
 
+    def test_queues_videos_with_an_interaction_in_the_window(self):
+        out = self._call()
+
+        # Video 1: two donors, last interaction Anna's like. Video 2 was only
+        # watched outside the window.
+        self.assertEqual(_ranking(), {1: (2, LATE), 3: (1, EARLY)})
+        self.assertIn("Targets created: 2", out)
+        self.assertIn("Counts raised on existing targets: 1", out)
+
+    def test_rerun_counts_the_queue_from_scratch(self):
+        self._call()
+        # E.g. a retried donation counted twice.
+        enqueue_donated_videos({1: (1, LATE)})
+        self.assertEqual(_ranking()[1][0], 3)
+
+        out = self._call()
+
+        self.assertEqual(_ranking(), {1: (2, LATE), 3: (1, EARLY)})
+        self.assertIn("Targets with ranking reset: 2", out)
+        self.assertIn("Targets created: 0", out)
+
+    def test_rerun_does_not_requeue_scraped_videos(self):
+        self._call()
+        ScrapeTarget.objects.filter(video__id_tiktok=1).update(
+            status=ScrapeTarget.Status.SUCCESS, attempts=1
+        )
+
+        self._call()
+
+        target = ScrapeTarget.objects.get(video__id_tiktok=1)
+        self.assertEqual(
+            (target.status, target.attempts), (ScrapeTarget.Status.SUCCESS, 1)
+        )
+        self.assertEqual(target.occurrence_count, 2)
+
+    def test_targets_no_donation_backs_any_more_drop_to_the_end(self):
+        self._call()
+        del self.donations["ben"]
+
+        self._call()
+
+        self.assertEqual(_ranking(), {1: (1, LATE), 3: (0, None)})
+
+    def test_videos_covered_by_the_research_api_are_reported_not_queued(self):
+        covered = TikTokVideo.objects.create(
+            id_tiktok=1, added_by=DataOrigins.RESEARCH_API
+        )
+        APIVideoInfos.objects.create(video=covered)
+
+        out = self._call()
+
+        # Both Anna and Ben interacted with video 1: skipped once per donation.
+        self.assertIn("Skipped, Research API has the video (per donation): 2", out)
+        self.assertEqual(set(_ranking()), {3})
+        # It is still recorded as donated.
+        self.assertEqual(_counts()[1], (1, 2, 0))
+
+    def test_each_donation_is_stored_before_the_next_is_read(self):
+        queued_before_ben = []
+
+        def video_donations(participant: Mock) -> TikTokUserData:
+            if participant.pk == "ben":
+                queued_before_ben.extend(_ranking())
+            return self.donations[participant.pk]
+
+        with (
+            patch(f"{_COMMAND}.participants_with_video_donations") as with_videos,
+            patch(f"{_COMMAND}.get_video_donations", side_effect=video_donations),
+        ):
+            with_videos.return_value.iterator.return_value = iter(
+                [Mock(pk="anna", external_id="anna"), Mock(pk="ben", external_id="ben")]
+            )
+            call_command("record_donated_videos", stdout=StringIO())
+
+        self.assertEqual(queued_before_ben, [1])
+
     def test_rerun_counts_from_scratch_without_marking_videos_as_changed(self):
         self._call()
         past = datetime(2026, 1, 1, tzinfo=UTC)
@@ -532,6 +572,7 @@ class RecordDonatedVideosCommandTests(TestCase):
         out = self._call()
 
         self.assertEqual(_counts(), {1: (1, 2, 0), 2: (1, 0, 0), 3: (0, 0, 1)})
+        self.assertEqual(_ranking(), {1: (2, LATE), 3: (1, EARLY)})
         self.assertFalse(TikTokVideo.objects.filter(id_tiktok=99).exists())
         self.assertIn("Donations read: 2", out)
         self.assertIn("Test participants left out: 1", out)
@@ -548,10 +589,12 @@ class RecordDonatedVideosCommandTests(TestCase):
 
     def test_dry_run_changes_nothing(self):
         record_donated_videos({7: _seen("w", EARLY)})
+        enqueue_donated_videos({7: (5, LATE)})
 
         out = self._call("--dry-run")
 
         self.assertEqual(_counts(), {7: (1, 0, 0)})
+        self.assertEqual(_ranking(), {7: (5, LATE)})
         self.assertIn("Videos liked: 2", out)
         self.assertIn("Dry run", out)
 
@@ -562,6 +605,7 @@ class RecordDonatedVideosCommandTests(TestCase):
             _interactions(),
             {1: (LATE, None), 2: (OUTSIDE, OUTSIDE), 3: (EARLY, None)},
         )
+        self.assertEqual(_ranking(), {2: (1, OUTSIDE)})
 
     def test_start_after_end_is_rejected(self):
         with self.assertRaises(CommandError):

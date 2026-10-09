@@ -77,8 +77,8 @@ Companion models for fields obtained by scraping the public TikTok website:
 - `ScrapeTarget` → `TikTokVideo` (one-to-one): the scraping queue
 
 The scraper enriches **videos that have no Research API infos** and that donors
-watched during the study period (2026-07-01 to 2026-09-20), starting with the
-videos most donors saw. It also collects each video's original-language
+watched, liked or bookmarked during the study period (2026-07-01 to
+2026-09-20), starting with the videos most donors interacted with. It also collects each video's original-language
 caption. It is off unless `TIKTOK_SCRAPER_ENABLED` is set.
 
 Fields that both sources provide have the same name, type and value format as
@@ -125,9 +125,9 @@ video keeps that fact:
 Unlike `added_by`, a row exists for every such video, whichever source
 registered the video first. Unlike `ScrapeTarget`, it also covers videos the
 Research API delivered, videos that were liked or bookmarked but not watched,
-and interactions outside the study period; `watched_count` is therefore not
-the same number as `ScrapeTarget.occurrence_count`, which only counts views
-within the study period.
+and interactions outside the study period. The counts here are therefore not
+the same number as `ScrapeTarget.occurrence_count`, which counts donors with
+any interaction within the study period.
 
 **Where the data comes from.** Three DDM blueprints, each with its backup
 variants (the first one that was extracted is used, in this order):
@@ -155,26 +155,9 @@ it):
   python manage.py record_donated_videos [--start 2026-07-01] [--end 2026-09-20] [--dry-run]
   ```
 
-  It ends with a summary:
-
-  ```
-  Watch window: 2026-07-01 to 2026-09-20 (UTC, both days included)
-  Donations read: 25
-  Donations that could not be read: 0
-  Test participants left out: 2
-  Summed over donations:
-    Videos watched: 5310
-    Videos liked: 412
-    Videos bookmarked: 87
-    Videos with an interaction in the window: 2140
-  Rows with counts reset: 0
-  Rows created: 5120
-  Counts raised on existing rows: 689
-  ```
-
-  (Figures are illustrative.) `--dry-run` only reads and stops before the
-  last three lines. A donation that cannot be read is logged, counted and
-  skipped.
+  The same pass rebuilds the scrape queue from the same donations. Options,
+  the summary it prints and how to read it are described in
+  [8_scraper.md → Queueing](8_scraper.md#1-queueing).
 
 **Counts are added, so the command resets them first.** Recording a donation
 raises the counts by one; recording the same donation twice counts it twice.
@@ -200,8 +183,8 @@ video as changed.
 ([`donations/config.py`](../ddcs/metadata/donations/config.py)), matched on
 `Participant.external_id`. They are known test cases. Incoming donations are
 not checked against the list: new donations always arrive under other IDs.
-The list only applies to this command; `enqueue_watched_videos`, which fills
-the scrape queue, does not use it yet.
+As the command also rebuilds the scrape queue, the test participants are left
+out of the queue's counts as well.
 
 
 ### Data origins

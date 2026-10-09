@@ -16,15 +16,15 @@ that enter the database another way, mainly through data donations, have no
 Research API details. The scraper fills that gap by loading the public video
 page on tiktok.com and reading the data embedded in it.
 
-It does not try to cover every donated video. It scrapes what donors actually
-**watched during the study period (2026-07-01 to 2026-09-20)**, starting with
-the videos most donors saw.
+It does not try to cover every donated video. It scrapes what donors
+**watched, liked or bookmarked during the study period (2026-07-01 to
+2026-09-20)**, starting with the videos most donors interacted with.
 
 | Scraped                                                                                   | Not scraped                                                     |
 |-------------------------------------------------------------------------------------------|-----------------------------------------------------------------|
-| Videos in a donor's watch history within the study period, **without** Research API infos | Videos the Research API already delivered                       |
-|                                                                                           | Videos only watched outside the study period                    |
-|                                                                                           | Videos that were only liked, shared, bookmarked or commented on |
+| Videos a donor watched, liked or bookmarked within the study period, **without** Research API infos | Videos the Research API already delivered             |
+|                                                                                           | Videos with interactions only outside the study period          |
+|                                                                                           | Videos that were only shared or commented on                    |
 | The video's metadata, statistics and original caption                                     | Video files, cover images, comments                             |
 |                                                                                           | User pages (the code can fetch them, but nothing uses it)       |
 |                                                                                           | Translated captions and creator-written caption files           |
@@ -50,35 +50,44 @@ donation / management command        hourly Celery task
 
 A video is scraped only if it has a `ScrapeTarget` row.
 
-**Which videos are queued.** A video is queued if it appears in the watch
-history of at least one donation with a view inside the **watch window**:
+**Which videos are queued.** A video is queued if at least one donation shows
+it as **watched, liked or bookmarked** inside the **watch window**:
 2026-07-01 to 2026-09-20, both days included, in UTC (donated timestamps are
 parsed as UTC). The window is defined in
 [`scraper/config.py`](../ddcs/metadata/scraper/config.py)
-(`WATCH_WINDOW_START`, `WATCH_WINDOW_END`). Only the watch-history blueprint
-counts, including its backup variants; likes, shares, bookmarks and comments
-do not. Videos that already have Research API infos are never queued.
+(`WATCH_WINDOW_START`, `WATCH_WINDOW_END`). The watch-history, liked-videos
+and video-bookmarks blueprints count, including their backup variants; shares
+and comments do not. This is the same rule as priority 3 of the
+[prioritised video API](4_metadata.md#prioritised-video-api). Videos that
+already have Research API infos are never queued.
 
 **What is recorded per target.**
 
-| Field              | Meaning                                                                                                                            |
-|--------------------|------------------------------------------------------------------------------------------------------------------------------------|
-| `occurrence_count` | Number of **donations** whose watch history contains the video within the window. A donor who watched it twenty times counts once. |
-| `last_watched_at`  | The most recent view of the video within the window, across all donations                                                          |
+| Field              | Meaning                                                                                                                                         |
+|--------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| `occurrence_count` | Number of **donations** that show the video as watched, liked or bookmarked within the window. A donor who watched and liked it counts once.     |
+| `last_watched_at`  | The most recent view, like or bookmark of the video within the window, across all donations. (Named after views for historical reasons.)        |
 
 **How targets get there.** Two paths, both through
-`ddcs.metadata.scraper.service.enqueue_watched_videos`:
+`ddcs.metadata.scraper.service.enqueue_donated_videos`:
 
-- **The retrospective command** goes through all donated watch histories:
+- **The retrospective command** goes through all stored donations:
 
   ```
-  python manage.py enqueue_watched_videos [--start 2026-07-01] [--end 2026-09-20] [--keep-counts] [--dry-run]
+  python manage.py record_donated_videos [--start 2026-07-01] [--end 2026-09-20] [--dry-run]
   ```
 
-  It takes the participants that have a successfully extracted watch-history
-  donation one at a time, decrypts only that donation, and for every video
-  the donor watched in the window raises the video's count by one (or
-  creates the target) and keeps the later view.
+  It takes the participants that have a successfully extracted donation of
+  watched, liked or bookmarked videos one at a time and decrypts only those
+  donations. For every video the donor interacted with in the window it
+  raises the video's count by one (or creates the target) and keeps the later
+  interaction. In the same pass it rebuilds the donation infos (see
+  [4_metadata.md → Donation Information Models](4_metadata.md#donation-information-models-ddcsmetadatadonationsmodels)),
+  so both are always based on the same donations.
+
+  Known test participants (`EXCLUDED_PARTICIPANT_IDS` in
+  [`donations/config.py`](../ddcs/metadata/donations/config.py)) are left
+  out.
 
   Each donation is written to the database before the next one is read.
   Nothing is collected in memory, so the number of donated videos (about 9.5
@@ -87,42 +96,51 @@ do not. Videos that already have Research API infos are never queued.
 
   Because the command **adds** to the counts, it first **resets all counts
   to zero**. A run therefore always counts from scratch and can be repeated;
-  a target that no view backs any more (for example after the window was
-  narrowed) stays at 0 and at the end of the queue. The status of a target is
-  never changed, so nothing that was already scraped is queued again.
+  a target that no interaction backs any more (for example one only test
+  participants contributed, or after the window was narrowed) stays at 0 and
+  at the end of the queue. The status of a target is never changed, so
+  nothing that was already scraped is queued again.
 
-  | Option             | Effect                                                                                         |
-  |--------------------|------------------------------------------------------------------------------------------------|
-  | `--start`, `--end` | Use a different watch window for this run                                                      |
-  | `--keep-counts`    | Skip the reset and add to the stored counts. Every donation read is then counted again on top. |
-  | `--dry-run`        | Only read the watch histories and print the summary; nothing is reset or written               |
+  | Option             | Effect                                                                 |
+  |--------------------|------------------------------------------------------------------------|
+  | `--start`, `--end` | Use a different watch window for this run                              |
+  | `--dry-run`        | Only read the donations and print the summary; nothing is reset or written |
 
-  It ends with a summary:
+  It ends with a summary (figures are illustrative):
 
   ```
   Watch window: 2026-07-01 to 2026-09-20 (UTC, both days included)
   Donations read: 25
   Donations that could not be read: 0
-  Views in the window: 2164
-  Records skipped (no date or no video ID): 0
-  Videos watched in the window, summed over donations: 2097
-  Counts reset on existing targets: 0
-  Targets created: 652
-  Counts raised on existing targets: 1445
-  Skipped, Research API has the video (per donation): 0
+  Test participants left out: 2
+  Summed over donations:
+    Videos watched: 5310
+    Videos liked: 412
+    Videos bookmarked: 87
+    Videos with an interaction in the window: 2140
+  Donation infos:
+    Rows with counts reset: 0
+    Rows created: 5120
+    Counts raised on existing rows: 689
+  Scrape queue:
+    Targets with ranking reset: 0
+    Targets created: 680
+    Counts raised on existing targets: 1460
+    Skipped, Research API has the video (per donation): 0
   ```
 
-  "Summed over donations" counts a video once per donor who watched it, so it
-  is an upper bound on the number of distinct videos, which the command does
-  not track. A dry run stops after that line.
+  "Summed over donations" counts a video once per donor, so each figure is an
+  upper bound on the number of distinct videos, which the command does not
+  track. A dry run stops after that block.
 
   If the command is interrupted, the counts are partial. Run it again; the
   reset makes it start over. The scraper can keep running in the meantime: it
   simply works with the counts as they fill in.
 
 - **New donations.** `register_donation_metadata` applies the same rule to
-  every incoming donation: each video it shows as watched in the window gets
-  its count raised by one (or a new target), and the later view is kept.
+  every incoming donation: each video it shows as watched, liked or
+  bookmarked in the window gets its count raised by one (or a new target),
+  and the later interaction is kept.
 
 **The counts are not exact, by design.** They only rank the queue. A donation
 is counted twice if its processing is retried after a later step failed, or
@@ -137,12 +155,13 @@ The queue is worked off in two steps:
 
 1. **Priority group, most donors first.** Targets with an
    `occurrence_count` of at least 15 and a `last_watched_at` on or after
-   2026-08-01 (UTC), ordered by count, then most recent view. Videos that
-   many donors saw matter most for the study.
-2. **Everything else, most recent view first**, whatever the count. The
-   videos watched most recently are the most likely to still be online.
-   Targets last watched before 2026-08-01 therefore follow after the newer
-   ones, and targets without a watch date come last.
+   2026-08-01 (UTC), ordered by count, then most recent interaction. Videos
+   that many donors saw matter most for the study.
+2. **Everything else, most recent interaction first**, whatever the count.
+   The videos donors interacted with most recently are the most likely to
+   still be online. Targets with a last interaction before 2026-08-01
+   therefore follow after the newer ones, and targets without a date come
+   last.
 
 The thresholds are defined in
 [`scraper/config.py`](../ddcs/metadata/scraper/config.py)
@@ -618,11 +637,12 @@ treat it differently from a development machine. Start small:
 
 1. Set `TIKTOK_SCRAPER_ENABLED=True` and deploy (migrations included). Do not
    add the periodic task yet: without it nothing is scraped on its own.
-2. See how much there is: `python manage.py enqueue_watched_videos --dry-run`.
-   This already reads and decrypts every watch history, so it also shows how
-   long that part takes.
-3. Fill the queue: `python manage.py enqueue_watched_videos`. Queueing alone
-   sends no requests to TikTok.
+2. See how much there is: `python manage.py record_donated_videos --dry-run`.
+   This already reads and decrypts every donation of watched, liked and
+   bookmarked videos, so it also shows how long that part takes. Check that
+   the test participants are reported as left out.
+3. Fill the queue: `python manage.py record_donated_videos`. This also
+   rebuilds the donation infos. Queueing alone sends no requests to TikTok.
 4. Run one small batch by hand and look at the returned statistics:
 
    ```python
@@ -632,7 +652,7 @@ treat it differently from a development machine. Start small:
 
 5. If the result looks right, add the periodic task.
 
-Re-run `enqueue_watched_videos` from time to time to bring the counts back in
+Re-run `record_donated_videos` from time to time to bring the counts back in
 line (see [Queueing](#1-queueing)).
 
 ### Reading a run's statistics
@@ -688,10 +708,12 @@ those are removed.
 - **Production network.** Everything was verified from a development machine.
   Whether TikTok serves the same data to the production server, and at what
   request rate it starts blocking, is untested.
-- **Duration of the retrospective run.** `enqueue_watched_videos` needs
+- **Duration of the retrospective run.** `record_donated_videos` needs
   little memory whatever the data size, but its run time on the production
   data (about 9.5 million donated videos) is not measured. It was run
-  against a development database with 25 donations.
+  against a development database with 25 donations, none of which had
+  liked or bookmarked videos extracted: reading those two blueprints is
+  covered by tests only.
 - **What a soft block looks like.** Not observed. The abort on consecutive
   failures assumes it shows up as many failed videos in a row.
 - **Production throughput.** No figures yet. Fill them in from the
