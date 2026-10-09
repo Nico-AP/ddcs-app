@@ -14,11 +14,6 @@ a run therefore always counts from scratch and can be repeated. The counts
 are still not exact: donations processed while it runs, or retried later,
 may be counted twice. That is accepted, the counts only rank the queue.
 Nothing already scraped is queued again. See docs/8_scraper.md.
-
-The same pass records every video of a watch history, watched within the
-window or not, as donated (see ``record_donated_videos``). That part only
-ever keeps the later view, so it needs no reset; ``--donated-only`` runs it
-without touching the queue.
 """
 
 from __future__ import annotations
@@ -33,18 +28,9 @@ from ddcs.datadonation.services import (
     get_watch_history,
     participants_with_watch_history,
 )
-from ddcs.metadata.donations.service import (
-    DonatedVideosResult,
-    WatchHistoryScan,
-    record_donated_videos,
-    scan_watch_history,
-)
+from ddcs.metadata.donations.service import scan_watch_history
 from ddcs.metadata.scraper.config import WATCH_WINDOW_END, WATCH_WINDOW_START
-from ddcs.metadata.scraper.service import (
-    EnqueueResult,
-    enqueue_watched_videos,
-    reset_watch_ranking,
-)
+from ddcs.metadata.scraper.service import enqueue_watched_videos, reset_watch_ranking
 
 logger = logging.getLogger(__name__)
 
@@ -79,33 +65,10 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
-            "--donated-only",
-            action="store_true",
-            help=(
-                "Only record the watched videos as donated; leave the scrape "
-                "queue and its counts alone."
-            ),
-        )
-        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Only read the watch histories and report; change nothing.",
         )
-
-    @staticmethod
-    def _store(
-        scan: WatchHistoryScan, *, donated_only: bool
-    ) -> tuple[DonatedVideosResult, EnqueueResult]:
-        donated = record_donated_videos(scan.last_seen, scan.last_watched)
-        if donated_only:
-            return donated, EnqueueResult(0, 0, 0)
-        queued = enqueue_watched_videos(
-            {
-                video_id: (1, watched_at)
-                for video_id, watched_at in scan.last_watched.items()
-            }
-        )
-        return donated, queued
 
     def handle(self, *args: Any, **options: Any) -> None:  # noqa: ANN401
         start, end, dry_run = options["start"], options["end"], options["dry_run"]
@@ -113,16 +76,13 @@ class Command(BaseCommand):
             msg = f"--start ({start}) must not be after --end ({end})."
             raise CommandError(msg)
 
-        donated_only = options["donated_only"]
-
         targets_reset = None
-        if not dry_run and not donated_only and not options["keep_counts"]:
+        if not dry_run and not options["keep_counts"]:
             targets_reset = reset_watch_ranking()
 
         donations_read = donations_unreadable = 0
         views_in_window = skipped_records = watched_videos = 0
         created = updated = covered_by_api = 0
-        donated_videos = donated_created = donated_updated = 0
 
         for participant in participants_with_watch_history().iterator():
             try:
@@ -139,12 +99,14 @@ class Command(BaseCommand):
             views_in_window += scan.views_in_window
             skipped_records += scan.skipped_records
             watched_videos += len(scan.last_watched)
-            donated_videos += len(scan.last_seen)
 
             if not dry_run:
-                donated, result = self._store(scan, donated_only=donated_only)
-                donated_created += donated.created
-                donated_updated += donated.updated
+                result = enqueue_watched_videos(
+                    {
+                        video_id: (1, watched_at)
+                        for video_id, watched_at in scan.last_watched.items()
+                    }
+                )
                 created += result.created
                 updated += result.updated
                 covered_by_api += result.covered_by_api
@@ -158,22 +120,13 @@ class Command(BaseCommand):
             f"Donations that could not be read: {donations_unreadable}\n"
             f"Views in the window: {views_in_window}\n"
             f"Records skipped (no date or no video ID): {skipped_records}\n"
-            f"Videos watched in the window, summed over donations: {watched_videos}\n"
-            f"Videos watched at any time, summed over donations: {donated_videos}"
+            f"Videos watched in the window, summed over donations: {watched_videos}"
         )
         if dry_run:
             self.stdout.write(
                 "Dry run: nothing was changed. The number of distinct videos, and "
                 "so of targets, is at most the sum above."
             )
-            return
-
-        self.stdout.write(
-            f"Donated videos recorded: {donated_created}\n"
-            f"Donated videos with a later view: {donated_updated}"
-        )
-        if donated_only:
-            self.stdout.write(self.style.SUCCESS("Donated videos recorded."))
             return
 
         if targets_reset is not None:

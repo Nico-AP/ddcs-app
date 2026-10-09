@@ -11,7 +11,6 @@ from django.core.management import CommandError, call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.models import (
     DataOrigins,
     TikTokHashtag,
@@ -1229,56 +1228,6 @@ class EnqueueWatchedVideosCommandTests(TestCase):
         self.assertIn("Donations read: 2", out)
         self.assertIn("Donations that could not be read: 1", out)
         self.assertEqual(_ranking(1), (2, self.late))
-
-    def _donated(self) -> dict[int, tuple]:
-        infos = DonationVideoInfos.objects.values_list(
-            "video__id_tiktok", "last_seen_at", "last_seen_in_window_at"
-        )
-        return {
-            id_tiktok: (seen, seen_in_window)
-            for id_tiktok, seen, seen_in_window in infos
-        }
-
-    def test_records_every_watched_video_as_donated(self):
-        out = self._call()
-
-        self.assertEqual(
-            self._donated(),
-            {
-                1: (self.late, self.late),
-                2: (self.outside, None),
-                3: (self.early, self.early),
-            },
-        )
-        self.assertIn("Videos watched at any time, summed over donations: 4", out)
-        self.assertIn("Donated videos recorded: 3", out)
-
-    def test_rerun_leaves_donated_videos_unchanged(self):
-        self._call()
-        before = set(DonationVideoInfos.objects.values_list("pk", "updated_at"))
-
-        out = self._call()
-
-        self.assertEqual(
-            set(DonationVideoInfos.objects.values_list("pk", "updated_at")), before
-        )
-        self.assertIn("Donated videos recorded: 0", out)
-        self.assertIn("Donated videos with a later view: 0", out)
-
-    def test_donated_only_leaves_the_queue_alone(self):
-        _target(_video(1), occurrence_count=7)
-
-        out = self._call("--donated-only")
-
-        self.assertEqual(set(self._donated()), {1, 2, 3})
-        self.assertEqual(_ranking(1)[0], 7)
-        self.assertEqual(ScrapeTarget.objects.count(), 1)
-        self.assertNotIn("Targets created", out)
-
-    def test_dry_run_records_no_donated_videos(self):
-        self._call("--dry-run")
-
-        self.assertFalse(DonationVideoInfos.objects.exists())
 
     def test_custom_window(self):
         self._call("--start", "2026-10-01", "--end", "2026-10-31")

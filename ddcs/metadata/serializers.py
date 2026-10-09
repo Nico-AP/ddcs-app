@@ -128,8 +128,8 @@ class PrioritisedTikTokVideoSerializer(serializers.ModelSerializer):
 
     priority = serializers.IntegerField(read_only=True)
     metadata_source = serializers.SerializerMethodField()
-    last_seen_at = serializers.DateTimeField(
-        source="donation_infos.last_seen_at",
+    last_interaction_at = serializers.DateTimeField(
+        source="donation_infos.last_interaction_at",
         read_only=True,
         default=None,
         default_timezone=UTC,
@@ -163,7 +163,7 @@ class PrioritisedTikTokVideoSerializer(serializers.ModelSerializer):
             "id_tiktok",
             "priority",
             "metadata_source",
-            "last_seen_at",
+            "last_interaction_at",
             "user",
             "description",
             "create_time",

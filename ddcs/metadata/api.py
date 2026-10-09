@@ -69,8 +69,10 @@ class PrioritisedTikTokVideoList(generics.ListAPIView):
 
     * Requires token authentication.
     * `priority` (higher = more important):
-      4 = watched by a donor (at any time) and delivered by the Research API;
-      3 = watched by a donor within the study period, no Research API data;
+      4 = watched, liked or bookmarked by a donor (at any time) and delivered
+      by the Research API;
+      3 = watched, liked or bookmarked by a donor within the study period, no
+      Research API data;
       2 = delivered by the Research API, in no donation;
       1 = everything else.
     * `metadata_source` says where the metadata fields come from:
@@ -78,12 +80,12 @@ class PrioritisedTikTokVideoList(generics.ListAPIView):
       (the metadata fields are then null or empty). Research API data takes
       precedence; `region_code`, `is_stem_verified` and `video_label` are
       null for scraped videos.
-    * `last_seen_at` is the most recent view of the video in any donation
-      (null if it is in none).
+    * `last_interaction_at` is the most recent view, like or bookmark of the
+      video in any donation (null if it is in none).
     * Takes the filters of the video list, plus: priority (one or several,
       comma-separated), metadata_source, has_metadata (bool). `updated_since`
-      reports every video whose priority, `last_seen_at` or metadata changed
-      since then.
+      reports every video whose priority, `last_interaction_at` or metadata
+      changed since then.
     """
 
     authentication_classes = [authentication.TokenAuthentication]

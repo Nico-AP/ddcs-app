@@ -10,8 +10,13 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+from ddcs.core.types import TikTokUserData
 from ddcs.metadata.donations.models import DonationVideoInfos
-from ddcs.metadata.donations.service import record_donated_videos
+from ddcs.metadata.donations.service import (
+    VideoInteractions,
+    record_donated_videos,
+    scan_donated_videos,
+)
 from ddcs.metadata.models import (
     Keyword,
     TikTokHashtag,
@@ -394,8 +399,8 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         if donated or seen or seen_in_window:
             DonationVideoInfos.objects.create(
                 video=video,
-                last_seen_at=seen or seen_in_window,
-                last_seen_in_window_at=seen_in_window,
+                last_interaction_at=seen or seen_in_window,
+                last_interaction_in_window_at=seen_in_window,
             )
         return video
 
@@ -461,6 +466,30 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
 
         self.assertEqual(self._get()[0]["priority"], 4)
 
+    def test_liked_and_bookmarked_videos_count_as_donated(self):
+        self._video(1)
+        self._video(2, api=True)
+        self._video(3)
+        self._video(4, api=True)
+        donation = TikTokUserData(
+            liked_videos=[{"video_id": 1, "date": self.in_window}],
+            video_bookmarks=[
+                {"video_id": 2, "date": self.outside},
+                {"video_id": 3, "date": self.outside},
+            ],
+        )
+
+        record_donated_videos(scan_donated_videos(donation))
+
+        results = {video["id_tiktok"]: video for video in self._get()}
+        self.assertEqual(
+            {id_tiktok: video["priority"] for id_tiktok, video in results.items()},
+            # Liked in the window; bookmarked (any time) with Research API
+            # data; bookmarked outside the window; in no donation.
+            {1: 3, 2: 4, 3: 1, 4: 2},
+        )
+        self.assertEqual(results[1]["last_interaction_at"], "2026-08-05T10:00:00Z")
+
     # --- Metadata and its source ---
 
     def test_research_api_metadata(self):
@@ -482,7 +511,7 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         self.assertEqual(result["music"], 77)
         self.assertEqual(result["hashtags"], ["wahl"])
         self.assertEqual(result["keywords"], ["abstimmung"])
-        self.assertEqual(result["last_seen_at"], "2026-08-05T10:00:00Z")
+        self.assertEqual(result["last_interaction_at"], "2026-08-05T10:00:00Z")
 
     def test_scraped_metadata_is_served_when_there_is_no_research_api_data(self):
         video = self._video(1, seen_in_window=self.in_window)
@@ -526,7 +555,7 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         self.assertEqual(result["priority"], 1)
         self.assertIsNone(result["metadata_source"])
         self.assertIsNone(result["description"])
-        self.assertIsNone(result["last_seen_at"])
+        self.assertIsNone(result["last_interaction_at"])
         self.assertIsNone(result["user"])
         self.assertEqual(result["hashtags"], [])
 
@@ -557,7 +586,9 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         # Each through the code that does it in production: a donor saw
         # video 12 again, the Research API delivered video 31, and video 11
         # was scraped.
-        record_donated_videos({12: timezone.now()}, {})
+        record_donated_videos(
+            {12: VideoInteractions(True, False, False, timezone.now(), None)}
+        )
         api_service = ResearchAPIService.__new__(ResearchAPIService)
         api_service.sync_stats = defaultdict(int)
         api_service._sync_video({"id": 31}, None, None)

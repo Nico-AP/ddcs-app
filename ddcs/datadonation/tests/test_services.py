@@ -9,6 +9,7 @@ from ddcs.datadonation import services
 from ddcs.datadonation.config import (
     FOLLOWED_BP_NAME,
     LIKED_VIDEOS_BP_NAME,
+    VIDEO_BOOKMARKS_BP_NAME,
     WATCH_HISTORY_BP_NAME,
 )
 from ddcs.datadonation.services import (
@@ -25,6 +26,7 @@ from ddcs.datadonation.services import (
     _normalise_value,
     _parse_date,
     get_user_data,
+    get_video_donations,
     get_watch_history,
     post_process_donation,
 )
@@ -432,6 +434,62 @@ class GetWatchHistoryTests(TestCase):
     @patch("ddcs.datadonation.services._decrypted_donations", return_value={})
     def test_no_watch_history_donation(self, mock_decrypted):
         self.assertIsNone(get_watch_history(MagicMock()))
+
+
+class GetVideoDonationsTests(TestCase):
+    @patch("ddcs.datadonation.services._decrypted_donations")
+    def test_reads_only_the_video_blueprints_and_cleans_them(self, mock_decrypted):
+        mock_decrypted.return_value = {
+            WATCH_HISTORY_BP_NAME: [
+                {"Date": "2026-07-08 13:15:38", "Link": "https://x/video/7"}
+            ],
+            f"{LIKED_VIDEOS_BP_NAME}_old": [
+                {"date": "2026-07-09 10:00:00", "link": "https://x/video/8"}
+            ],
+            f"{VIDEO_BOOKMARKS_BP_NAME}_txt": [
+                {"date": "2026-07-10 10:00:00", "link": "https://x/video/9"}
+            ],
+        }
+
+        result = get_video_donations(MagicMock())
+
+        requested_blueprints = mock_decrypted.call_args.args[1]
+        self.assertEqual(
+            {
+                name.removesuffix("_old_api").removesuffix("_old").removesuffix("_txt")
+                for name in requested_blueprints
+            },
+            {WATCH_HISTORY_BP_NAME, LIKED_VIDEOS_BP_NAME, VIDEO_BOOKMARKS_BP_NAME},
+        )
+        for variant in (
+            "liked_videos_old",
+            "liked_videos_txt",
+            "video_bookmarks_old",
+            "video_bookmarks_txt",
+        ):
+            self.assertIn(variant, requested_blueprints)
+        self.assertEqual(
+            result.watch_history,
+            [
+                {
+                    "date": datetime(2026, 7, 8, 13, 15, 38, tzinfo=UTC),
+                    "link": "https://x/video/7",
+                    "video_id": 7,
+                }
+            ],
+        )
+        self.assertEqual([r["video_id"] for r in result.liked_videos], [8])
+        self.assertEqual([r["video_id"] for r in result.video_bookmarks], [9])
+        self.assertIsNone(result.followed_accounts)
+        self.assertIsNone(result.shared_videos)
+
+    @patch("ddcs.datadonation.services._decrypted_donations", return_value={})
+    def test_no_video_donations(self, mock_decrypted):
+        result = get_video_donations(MagicMock())
+
+        self.assertIsNone(result.watch_history)
+        self.assertIsNone(result.liked_videos)
+        self.assertIsNone(result.video_bookmarks)
 
 
 class GetUserDataTests(TestCase):
