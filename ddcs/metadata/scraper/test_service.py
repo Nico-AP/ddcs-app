@@ -815,6 +815,68 @@ class ScraperServiceQueueTests(TestCase):
 
         scraper.scrape_video_list.assert_called_once_with(["3", "2"])
 
+    def test_failed_targets_due_for_retry_keep_their_place_in_the_queue(self):
+        long_ago = timezone.now() - ScraperService.FAILED_RETRY_BACKOFF * 2
+        retry = {"status": Status.FAILED, "attempts": 1, "last_attempted_at": long_ago}
+        day = timedelta(days=1)
+        _target(_video(1), occurrence_count=1, last_watched_at=None)
+        _target(_video(2), occurrence_count=1, last_watched_at=None, **retry)
+        _target(_video(3), occurrence_count=1, last_watched_at=_WATCHED_AT)
+        _target(_video(4), occurrence_count=1, last_watched_at=_WATCHED_AT + day)
+        _target(_video(5), last_watched_at=_WATCHED_AT + 2 * day, **retry)
+        _target(_video(6), occurrence_count=_MIN, last_watched_at=_WATCHED_AT)
+        _target(
+            _video(7), occurrence_count=_MIN + 5, last_watched_at=_WATCHED_AT, **retry
+        )
+        _target(_video(8), occurrence_count=_MIN + 9, last_watched_at=_WATCHED_AT)
+        # Failed too recently, and out of attempts: not due.
+        _target(
+            _video(9),
+            occurrence_count=_MIN + 20,
+            last_watched_at=_WATCHED_AT,
+            status=Status.FAILED,
+            attempts=1,
+            last_attempted_at=timezone.now(),
+        )
+        _target(
+            _video(10),
+            occurrence_count=1,
+            last_watched_at=_WATCHED_AT + 5 * day,
+            status=Status.FAILED,
+            attempts=ScraperService().max_attempts,
+            last_attempted_at=long_ago,
+        )
+        service, scraper = _service(*[_success()] * 8)
+
+        service.scrape_batch(limit=10)
+
+        scraper.scrape_video_list.assert_called_once_with(
+            ["8", "7", "6", "5", "4", "3", "1", "2"]
+        )
+
+    def test_limit_cuts_across_pending_and_failed_targets(self):
+        long_ago = timezone.now() - ScraperService.FAILED_RETRY_BACKOFF * 2
+        for i in range(1, 7):
+            _target(
+                _video(i),
+                occurrence_count=1,
+                last_watched_at=_WATCHED_AT - timedelta(days=i),
+                **(
+                    {
+                        "status": Status.FAILED,
+                        "attempts": 1,
+                        "last_attempted_at": long_ago,
+                    }
+                    if i % 2
+                    else {}
+                ),
+            )
+        service, scraper = _service(*[_success()] * 3)
+
+        service.scrape_batch(limit=3)
+
+        scraper.scrape_video_list.assert_called_once_with(["1", "2", "3"])
+
     def test_limit_takes_the_top_of_the_queue(self):
         _target(_video(1), occurrence_count=_MIN, last_watched_at=_WATCHED_AT)
         _target(_video(2), occurrence_count=_MIN + 10, last_watched_at=_WATCHED_AT)
