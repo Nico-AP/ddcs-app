@@ -74,7 +74,7 @@ arithmetic. A summary count of un-parseable dates is logged once per donation.
 
 ### 4. `register_donation_metadata` — populate the registry
 
-Lives in [`ddcs.metadata.services`](../ddcs/metadata/services.py). For every
+Lives in [`ddcs.metadata.donations.service`](../ddcs/metadata/donations/service.py). For every
 video and user discovered in the donation, an entry is upserted into the
 `TikTokVideo` / `TikTokUser` registry with `added_by=DataOrigins.DONATION`.
 

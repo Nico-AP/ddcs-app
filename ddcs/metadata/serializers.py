@@ -1,7 +1,12 @@
+from datetime import UTC
+from typing import Any
+
 from rest_framework import serializers
 
 from ddcs.metadata.models import Keyword, TikTokHashtag, TikTokVideo
+from ddcs.metadata.priority import MetadataSource
 from ddcs.metadata.research_api.models import APIVideoInfos
+from ddcs.metadata.scraper.models import VideoInfosScraped
 
 
 class TikTokVideoSerializer(serializers.HyperlinkedModelSerializer):
@@ -109,3 +114,120 @@ class TikTokVideoSerializer(serializers.HyperlinkedModelSerializer):
     def get_effect_list(self, obj: TikTokVideo) -> list | None:
         api_info = self._get_latest_api_info(obj)
         return api_info.effect_list if api_info else None
+
+
+class PrioritisedTikTokVideoSerializer(serializers.ModelSerializer):
+    """A video with its priority and the metadata of whichever source has it.
+
+    The metadata fields are read from the latest Research API infos, or
+    from the latest scraped infos if the video has none; both models name
+    and format the shared fields alike. Expects the queryset of
+    ``PrioritisedTikTokVideoList`` (``priority`` annotation, prefetched
+    infos).
+    """
+
+    priority = serializers.IntegerField(read_only=True)
+    metadata_source = serializers.SerializerMethodField()
+    last_seen_at = serializers.DateTimeField(
+        source="donation_infos.last_seen_at",
+        read_only=True,
+        default=None,
+        default_timezone=UTC,
+    )
+
+    user = serializers.CharField(source="user.name", read_only=True, default=None)
+    description = serializers.SerializerMethodField()
+    create_time = serializers.SerializerMethodField()
+    created_at = serializers.SerializerMethodField()
+    region_code = serializers.SerializerMethodField()
+    duration = serializers.SerializerMethodField()
+    voice_to_text = serializers.SerializerMethodField()
+    is_stem_verified = serializers.SerializerMethodField()
+    video_mention_list = serializers.SerializerMethodField()
+    effect_list = serializers.SerializerMethodField()
+    video_label = serializers.SerializerMethodField()
+
+    music = serializers.BigIntegerField(
+        source="music.id_tiktok", read_only=True, default=None
+    )
+    hashtags = serializers.SlugRelatedField(
+        many=True, slug_field="name", read_only=True
+    )
+    keywords = serializers.SlugRelatedField(
+        many=True, slug_field="name", read_only=True
+    )
+
+    class Meta:
+        model = TikTokVideo
+        fields = [
+            "id_tiktok",
+            "priority",
+            "metadata_source",
+            "last_seen_at",
+            "user",
+            "description",
+            "create_time",
+            "created_at",
+            "region_code",
+            "duration",
+            "voice_to_text",
+            "is_stem_verified",
+            "video_mention_list",
+            "effect_list",
+            "video_label",
+            "music",
+            "hashtags",
+            "keywords",
+        ]
+
+    @staticmethod
+    def _get_infos(obj: TikTokVideo) -> APIVideoInfos | VideoInfosScraped | None:
+        if obj.latest_api_info_list:
+            return obj.latest_api_info_list[0]
+        if obj.latest_scraped_info_list:
+            return obj.latest_scraped_info_list[0]
+        return None
+
+    def _get_value(self, obj: TikTokVideo, field: str) -> Any:  # noqa: ANN401
+        # Fields only the Research API provides are missing on scraped infos.
+        return getattr(self._get_infos(obj), field, None)
+
+    def get_metadata_source(self, obj: TikTokVideo) -> str | None:
+        infos = self._get_infos(obj)
+        if infos is None:
+            return None
+        if isinstance(infos, APIVideoInfos):
+            return MetadataSource.RESEARCH_API.value
+        return MetadataSource.SCRAPED.value
+
+    def get_description(self, obj: TikTokVideo) -> str | None:
+        return self._get_value(obj, "description")
+
+    def get_create_time(self, obj: TikTokVideo) -> str | None:
+        create_time = self._get_value(obj, "create_time")
+        return create_time.isoformat() if create_time else None
+
+    def get_created_at(self, obj: TikTokVideo) -> str | None:
+        created_at = self._get_value(obj, "created_at")
+        return created_at.isoformat() if created_at else None
+
+    def get_region_code(self, obj: TikTokVideo) -> str | None:
+        return self._get_value(obj, "region_code")
+
+    def get_duration(self, obj: TikTokVideo) -> int | None:
+        return self._get_value(obj, "duration")
+
+    def get_voice_to_text(self, obj: TikTokVideo) -> str | None:
+        return self._get_value(obj, "voice_to_text")
+
+    def get_is_stem_verified(self, obj: TikTokVideo) -> bool | None:
+        return self._get_value(obj, "is_stem_verified")
+
+    def get_video_mention_list(self, obj: TikTokVideo) -> list | None:
+        return self._get_value(obj, "video_mention_list")
+
+    def get_effect_list(self, obj: TikTokVideo) -> list | None:
+        return self._get_value(obj, "effect_list")
+
+    def get_video_label(self, obj: TikTokVideo) -> dict | None:
+        return self._get_value(obj, "video_label")

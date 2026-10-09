@@ -72,7 +72,7 @@ do not. Videos that already have Research API infos are never queued.
 - **The retrospective command** goes through all donated watch histories:
 
   ```
-  python manage.py enqueue_watched_videos [--start 2026-07-01] [--end 2026-09-20] [--keep-counts] [--dry-run]
+  python manage.py enqueue_watched_videos [--start 2026-07-01] [--end 2026-09-20] [--keep-counts] [--donated-only] [--dry-run]
   ```
 
   It takes the participants that have a successfully extracted watch-history
@@ -95,6 +95,7 @@ do not. Videos that already have Research API infos are never queued.
   |--------------------|------------------------------------------------------------------------------------------------|
   | `--start`, `--end` | Use a different watch window for this run                                                      |
   | `--keep-counts`    | Skip the reset and add to the stored counts. Every donation read is then counted again on top. |
+  | `--donated-only`   | Leave the queue and its counts alone; only record the watched videos as donated (see below)    |
   | `--dry-run`        | Only read the watch histories and print the summary; nothing is reset or written               |
 
   It ends with a summary:
@@ -106,6 +107,9 @@ do not. Videos that already have Research API infos are never queued.
   Views in the window: 2164
   Records skipped (no date or no video ID): 0
   Videos watched in the window, summed over donations: 2097
+  Videos watched at any time, summed over donations: 5310
+  Donated videos recorded: 4876
+  Donated videos with a later view: 0
   Counts reset on existing targets: 0
   Targets created: 652
   Counts raised on existing targets: 1445
@@ -114,7 +118,14 @@ do not. Videos that already have Research API infos are never queued.
 
   "Summed over donations" counts a video once per donor who watched it, so it
   is an upper bound on the number of distinct videos, which the command does
-  not track. A dry run stops after that line.
+  not track. A dry run stops after the "at any time" line. (The three lines on
+  donated videos were added later; their figures here are illustrative.)
+
+  The same pass records every video of a watch history, watched within the
+  window or not, as donated. That is what the prioritised video API derives
+  its priorities from; see
+  [4_metadata.md → Donation Information Models](4_metadata.md#donation-information-models-ddcsmetadatadonationsmodels).
+  The summary reports it as "Donated videos recorded".
 
   If the command is interrupted, the counts are partial. Run it again; the
   reset makes it start over. The scraper can keep running in the meantime: it

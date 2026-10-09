@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from io import StringIO
 from unittest import skipUnless
 from unittest.mock import Mock, patch
@@ -11,6 +11,7 @@ from django.core.management import CommandError, call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
+from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.models import (
     DataOrigins,
     TikTokHashtag,
@@ -41,8 +42,6 @@ from ddcs.metadata.scraper.service import (
     get_last_run,
     register_abort,
     reset_watch_ranking,
-    scan_watch_history,
-    watched_videos_in_window,
 )
 from ddcs.metadata.scraper.tasks import scrape_pending_videos
 
@@ -157,67 +156,6 @@ def _service(
 
 def _view(video_id: object, watched_at: object) -> dict:
     return {"video_id": video_id, "date": watched_at, "link": "https://example"}
-
-
-class ScanWatchHistoryTests(TestCase):
-    def test_window_includes_both_days_in_utc(self):
-        history = [
-            _view(1, datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)),  # day before
-            _view(2, datetime(2026, 7, 1, 0, 0, 0, tzinfo=UTC)),  # first moment
-            _view(3, datetime(2026, 9, 20, 23, 59, 59, tzinfo=UTC)),  # last moment
-            _view(4, datetime(2026, 9, 21, 0, 0, 0, tzinfo=UTC)),  # day after
-        ]
-
-        scan = scan_watch_history(history)
-
-        self.assertEqual(set(scan.last_watched), {2, 3})
-        self.assertEqual(scan.views_in_window, 2)
-        self.assertEqual(scan.skipped_records, 0)
-
-    def test_repeat_views_collapse_to_the_latest(self):
-        early = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        late = datetime(2026, 8, 5, 10, tzinfo=UTC)
-
-        scan = scan_watch_history([_view(1, late), _view(1, early), _view(1, late)])
-
-        self.assertEqual(scan.last_watched, {1: late})
-        self.assertEqual(scan.views_in_window, 3)
-
-    def test_views_outside_the_window_do_not_set_the_last_view(self):
-        inside = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        after = datetime(2026, 10, 1, 10, tzinfo=UTC)
-
-        scan = scan_watch_history([_view(1, inside), _view(1, after)])
-
-        self.assertEqual(scan.last_watched, {1: inside})
-
-    def test_records_without_usable_date_or_video_id_are_skipped(self):
-        inside = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        history = [
-            _view(1, "05.07.2026 10:00"),  # date that could not be parsed
-            _view(None, inside),  # link without an ID
-            {"link": "https://example"},  # neither
-            _view(2, inside),
-        ]
-
-        scan = scan_watch_history(history)
-
-        self.assertEqual(scan.last_watched, {2: inside})
-        self.assertEqual(scan.skipped_records, 3)
-
-    def test_naive_dates_are_taken_as_utc(self):
-        scan = scan_watch_history([_view(1, datetime(2026, 7, 1, 0, 0, 0))])  # noqa: DTZ001
-
-        self.assertEqual(scan.last_watched, {1: datetime(2026, 7, 1, tzinfo=UTC)})
-
-    def test_custom_window_and_empty_history(self):
-        view = _view(1, datetime(2026, 1, 15, tzinfo=UTC))
-
-        self.assertEqual(scan_watch_history([view]).last_watched, {})
-        scan = scan_watch_history([view], start=date(2026, 1, 1), end=date(2026, 1, 31))
-        self.assertEqual(set(scan.last_watched), {1})
-        self.assertEqual(scan_watch_history(None).last_watched, {})
-        self.assertEqual(watched_videos_in_window(None), {})
 
 
 class EnqueueWatchedVideosTests(TestCase):
@@ -1291,6 +1229,56 @@ class EnqueueWatchedVideosCommandTests(TestCase):
         self.assertIn("Donations read: 2", out)
         self.assertIn("Donations that could not be read: 1", out)
         self.assertEqual(_ranking(1), (2, self.late))
+
+    def _donated(self) -> dict[int, tuple]:
+        infos = DonationVideoInfos.objects.values_list(
+            "video__id_tiktok", "last_seen_at", "last_seen_in_window_at"
+        )
+        return {
+            id_tiktok: (seen, seen_in_window)
+            for id_tiktok, seen, seen_in_window in infos
+        }
+
+    def test_records_every_watched_video_as_donated(self):
+        out = self._call()
+
+        self.assertEqual(
+            self._donated(),
+            {
+                1: (self.late, self.late),
+                2: (self.outside, None),
+                3: (self.early, self.early),
+            },
+        )
+        self.assertIn("Videos watched at any time, summed over donations: 4", out)
+        self.assertIn("Donated videos recorded: 3", out)
+
+    def test_rerun_leaves_donated_videos_unchanged(self):
+        self._call()
+        before = set(DonationVideoInfos.objects.values_list("pk", "updated_at"))
+
+        out = self._call()
+
+        self.assertEqual(
+            set(DonationVideoInfos.objects.values_list("pk", "updated_at")), before
+        )
+        self.assertIn("Donated videos recorded: 0", out)
+        self.assertIn("Donated videos with a later view: 0", out)
+
+    def test_donated_only_leaves_the_queue_alone(self):
+        _target(_video(1), occurrence_count=7)
+
+        out = self._call("--donated-only")
+
+        self.assertEqual(set(self._donated()), {1, 2, 3})
+        self.assertEqual(_ranking(1)[0], 7)
+        self.assertEqual(ScrapeTarget.objects.count(), 1)
+        self.assertNotIn("Targets created", out)
+
+    def test_dry_run_records_no_donated_videos(self):
+        self._call("--dry-run")
+
+        self.assertFalse(DonationVideoInfos.objects.exists())
 
     def test_custom_window(self):
         self._call("--start", "2026-10-01", "--end", "2026-10-31")

@@ -110,6 +110,7 @@ LOCAL_APPS = [
     "ddcs.datadonation.portability",
     "ddcs.metadata",
     "ddcs.metadata.research_api",
+    "ddcs.metadata.donations",
     "ddcs.metadata.scraper",
     "ddcs.reports",
 ]

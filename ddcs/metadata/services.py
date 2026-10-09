@@ -5,17 +5,7 @@ import httpx
 from django.conf import settings
 from django.db import models, transaction
 
-from ddcs.core.types import TikTokUserData
-from ddcs.metadata.models import (
-    DataOrigins,
-    TikTokUser,
-    TikTokVideo,
-    TikTokVideoClassification,
-)
-from ddcs.metadata.scraper.service import (
-    enqueue_watched_videos,
-    watched_videos_in_window,
-)
+from ddcs.metadata.models import TikTokVideo, TikTokVideoClassification
 
 logger = logging.getLogger(__name__)
 
@@ -25,49 +15,6 @@ _CLASSIFICATION_CHAR_FIELDS = [
     for field in TikTokVideoClassification._meta.concrete_fields  # noqa: SLF001
     if isinstance(field, models.CharField) and field.max_length
 ]
-
-
-# TODO: Make this task async/convert to celery task.
-def register_donation_metadata(data: TikTokUserData) -> None:
-    """Creates DB entries based on donation data.
-
-    Handles watch history, followed accounts, and liked videos. If the
-    scraper is enabled, the donated videos are queued for scraping (those
-    the Research API already covers are skipped).
-    """
-    # Watch history
-    if data.watch_history:
-        videos_to_add = [
-            TikTokVideo(id_tiktok=record["video_id"], added_by=DataOrigins.DONATION)
-            for record in data.watch_history
-        ]
-        TikTokVideo.objects.bulk_create(videos_to_add, ignore_conflicts=True)
-
-    # Liked videos
-    if data.liked_videos:
-        videos_to_add = [
-            TikTokVideo(id_tiktok=record["video_id"], added_by=DataOrigins.DONATION)
-            for record in data.liked_videos
-        ]
-        TikTokVideo.objects.bulk_create(videos_to_add, ignore_conflicts=True)
-
-    # Followed accounts
-    if data.followed_accounts:
-        user_names = {record.get("username") for record in data.followed_accounts} - {
-            None
-        }
-        users_to_add = [
-            TikTokUser(name=user_name, added_by=DataOrigins.DONATION)
-            for user_name in user_names
-        ]
-        TikTokUser.objects.bulk_create(users_to_add, ignore_conflicts=True)
-
-    if settings.TIKTOK_SCRAPER_ENABLED:
-        # One more donation for every video it shows as watched in the window.
-        watched = watched_videos_in_window(data.watch_history)
-        enqueue_watched_videos(
-            {video_id: (1, last_view) for video_id, last_view in watched.items()}
-        )
 
 
 # Service to sync with Zuse

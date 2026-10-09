@@ -308,6 +308,10 @@ class ResearchAPIService:
         if not video.api_infos.exists():
             video_infos = self._clean_video(video_data)
             APIVideoInfos.objects.create(video=video, **video_infos)
+            if not created:
+                # A video another source registered: mark it as changed, the
+                # prioritised video API reports changes by ``updated_at``.
+                video.save(update_fields=["updated_at"])
         return video
 
     def _sync_video_statistics(self, data: dict[str, Any], video: TikTokVideo) -> None:

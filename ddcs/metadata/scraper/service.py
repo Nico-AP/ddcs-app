@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from datetime import time as dt_time
 from itertools import batched
 from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
@@ -32,8 +32,6 @@ from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.config import (
     PRIORITY_MIN_OCCURRENCES,
     PRIORITY_WATCHED_SINCE,
-    WATCH_WINDOW_END,
-    WATCH_WINDOW_START,
 )
 from ddcs.metadata.scraper.exceptions import (
     TikTokBlockedError,
@@ -48,7 +46,7 @@ from ddcs.metadata.scraper.models import (
 from ddcs.metadata.scraper.parsers import TikTokParser
 from ddcs.metadata.scraper.scraper import TikTokScraper
 from ddcs.metadata.scraper.utils import int_or_none
-from ddcs.metadata.utils import infer_publication_date_from_id
+from ddcs.metadata.utils import infer_publication_date_from_id, video_pks
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
@@ -73,53 +71,6 @@ def _without_api_infos(video_pks: Iterable[int]) -> dict[int, int]:
         .exclude(Exists(APIVideoInfos.objects.filter(video=OuterRef("pk"))))
         .values_list("pk", "id_tiktok")
     )
-
-
-class WatchHistoryScan(NamedTuple):
-    # TikTok ID -> the donor's most recent view of that video in the window.
-    last_watched: dict[int, datetime]
-    views_in_window: int
-    # Records that could not be used: no parsed date or no video ID.
-    skipped_records: int
-
-
-def scan_watch_history(
-    watch_history: Iterable[Mapping[str, Any]] | None,
-    start: date = WATCH_WINDOW_START,
-    end: date = WATCH_WINDOW_END,
-) -> WatchHistoryScan:
-    """Find the videos one donor watched between ``start`` and ``end``.
-
-    Both days are inclusive and taken in UTC, which is what donated
-    timestamps are parsed as.
-    """
-    window_start = datetime.combine(start, dt_time.min, tzinfo=UTC)
-    window_end = datetime.combine(end + timedelta(days=1), dt_time.min, tzinfo=UTC)
-
-    last_watched: dict[int, datetime] = {}
-    views_in_window = skipped_records = 0
-    for record in watch_history or []:
-        video_id = record.get("video_id")
-        watched_at = record.get("date")
-        if not isinstance(video_id, int) or not isinstance(watched_at, datetime):
-            skipped_records += 1
-            continue
-        if watched_at.tzinfo is None:
-            watched_at = watched_at.replace(tzinfo=UTC)
-        if not window_start <= watched_at < window_end:
-            continue
-        views_in_window += 1
-        previous = last_watched.get(video_id)
-        if previous is None or watched_at > previous:
-            last_watched[video_id] = watched_at
-    return WatchHistoryScan(last_watched, views_in_window, skipped_records)
-
-
-def watched_videos_in_window(
-    watch_history: Iterable[Mapping[str, Any]] | None,
-) -> dict[int, datetime]:
-    """TikTok ID -> last view, for the videos one donor watched in the window."""
-    return scan_watch_history(watch_history).last_watched
 
 
 class EnqueueResult(NamedTuple):
@@ -152,7 +103,7 @@ def enqueue_watched_videos(
     created = updated = covered_by_api = 0
 
     for chunk in batched(videos, _ENQUEUE_CHUNK_SIZE):
-        pk_by_id = _video_pks(chunk)
+        pk_by_id = video_pks(chunk)
         uncovered = _without_api_infos(pk_by_id.values())
         covered_by_api += len(pk_by_id) - len(uncovered)
         existing = {
@@ -188,28 +139,6 @@ def enqueue_watched_videos(
         updated += len(changed)
 
     return EnqueueResult(created, updated, covered_by_api)
-
-
-def _video_pks(id_tiktoks: Iterable[int]) -> dict[int, int]:
-    """TikTok ID -> primary key of the videos, creating rows that are missing."""
-
-    def lookup(ids: Iterable[int]) -> dict[int, int]:
-        return dict(
-            TikTokVideo.objects.filter(id_tiktok__in=ids).values_list("id_tiktok", "pk")
-        )
-
-    pk_by_id = lookup(id_tiktoks)
-    missing = [id_tiktok for id_tiktok in id_tiktoks if id_tiktok not in pk_by_id]
-    if missing:
-        TikTokVideo.objects.bulk_create(
-            [
-                TikTokVideo(id_tiktok=id_tiktok, added_by=DataOrigins.DONATION)
-                for id_tiktok in missing
-            ],
-            ignore_conflicts=True,
-        )
-        pk_by_id.update(lookup(missing))
-    return pk_by_id
 
 
 def reset_watch_ranking() -> int:

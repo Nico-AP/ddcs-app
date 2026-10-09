@@ -12,7 +12,8 @@ We use two sources to enrich metadata:
 
 To honor that information may come from different sources and make it retraceable,
 we use a database design that distinguishes between *Base/Registry Models*,
-models capturing *Research API information* and models capturing *scraped information*.
+models capturing *Research API information*, models capturing *scraped information*
+and models capturing *donation information*.
 
 ### Base/Registry Models (`ddcs.metadata.models`)
 
@@ -103,6 +104,46 @@ stored through the same service. See
 [8_scraper.md → External scrapers](8_scraper.md#external-scrapers).
 
 
+### Donation Information Models (`ddcs.metadata.donations.models`)
+
+Donations are stored encrypted, so the database cannot be asked which videos
+donors watched. The companion model for what donations tell about a video
+keeps that fact:
+
+- `DonationVideoInfos` → `TikTokVideo` (one-to-one): one row per video that
+  occurs in the **watch history** of at least one donation (likes, shares and
+  comments do not count).
+
+| Field                    | Meaning                                                                                    |
+|--------------------------|--------------------------------------------------------------------------------------------|
+| `last_seen_at`           | Most recent view of the video across all donations; empty if no view has a readable date   |
+| `last_seen_in_window_at` | Most recent view within the study period (2026-07-01 to 2026-09-20, UTC); empty if none    |
+
+Unlike `added_by`, a row exists for every watched video, whichever source
+registered the video first. Unlike `ScrapeTarget`, it also covers videos the
+Research API delivered and videos watched outside the study period.
+
+All writes go through
+[`ddcs.metadata.donations.service`](../ddcs/metadata/donations/service.py)
+(`record_donated_videos`), which also holds `register_donation_metadata` and
+the reading of watch histories (`scan_watch_history`):
+
+- **New donations**: `register_donation_metadata` records every watched video,
+  whether or not the scraper is enabled.
+- **Existing donations**: `enqueue_watched_videos` records them in the same
+  pass that fills the scrape queue. To record them without touching the queue:
+
+  ```bash
+  python manage.py enqueue_watched_videos --donated-only
+  ```
+
+Recording only ever keeps the later view, so both paths can be repeated
+without a reset. Whenever a row is created or a view moves, the video's
+`TikTokVideo.updated_at` is moved too (see
+[`updated_since`](#filters)). A row is never removed, and narrowing the watch
+window later does not clear `last_seen_in_window_at`.
+
+
 ### Data origins
 
 Every base/registry model carries an `added_by` field (a `DataOrigins` value)
@@ -130,6 +171,122 @@ computation lives in
 `bulk_create`, `loaddata`, and direct ORM construction will leave the field
 `NULL`. Any new ingestion path (donation pipeline, scraper, importer) must
 compute and pass `inferred_create_time` explicitly.
+
+
+## Prioritised video API
+
+```
+GET /metadata/api/v1/tiktok/videos/prioritised/
+```
+
+Lists every `TikTokVideo` with a priority and its metadata, for the external
+system that classifies the videos and scrapes their media. It is built like
+the video list (`/metadata/api/v1/tiktok/videos/`): token authentication,
+cursor pagination (`page_size` up to 500, newest registry entry first) and the
+same filters. The video list itself is unchanged and still serves Research API
+data only. Both are listed in the API docs (`/api/docs/`).
+
+### Priorities
+
+Higher means more important.
+
+| Priority | Videos                                                                                         |
+|----------|------------------------------------------------------------------------------------------------|
+| 4        | Watched by a donor (at any time) **and** delivered by the Research API                         |
+| 3        | Watched by a donor within the study period (2026-07-01 to 2026-09-20), no Research API infos   |
+| 2        | Delivered by the Research API, in no donation                                                  |
+| 1        | Everything else, e.g. donated videos only watched outside the study period                     |
+
+The priority is **not stored**. It is derived for each request from
+`DonationVideoInfos` and from whether the video has `APIVideoInfos`
+([`ddcs/metadata/priority.py`](../ddcs/metadata/priority.py)), so it is always
+current: a priority-3 video becomes priority 4 once the Research API delivers
+it, a priority-2 video once a donor who watched it donates.
+
+Priorities are only as complete as `DonationVideoInfos`. After deploying, run
+`enqueue_watched_videos --donated-only` once (see
+[Donation Information Models](#donation-information-models-ddcsmetadatadonationsmodels)); until then every video
+donated before the deployment counts as not donated.
+
+### Fields
+
+| Field             | Content                                                                                           |
+|-------------------|---------------------------------------------------------------------------------------------------|
+| `id_tiktok`       | The video ID                                                                                      |
+| `priority`        | 4 to 1, see above                                                                                 |
+| `metadata_source` | `research_api`, `scraped`, or `null` if the video has no metadata yet                             |
+| `last_seen_at`    | Most recent view of the video in any donation (UTC); `null` if it is in none or the date is unknown |
+| metadata          | The fields of the video list: `description`, `create_time`, `created_at`, `region_code`, `duration`, `voice_to_text`, `is_stem_verified`, `video_mention_list`, `effect_list`, `video_label` |
+| `user`, `music`, `hashtags`, `keywords` | From the registry, as in the video list                                     |
+
+The metadata fields come from the Research API infos if the video has any,
+otherwise from the most recent scrape. `region_code`, `is_stem_verified` and
+`video_label` exist only in Research API data and are `null` for scraped
+videos. `created_at` is when the served infos were stored here. Videos with
+neither source are listed too, with empty metadata, because their media can
+still be scraped by ID.
+
+### Filters
+
+All filters of the video list, plus:
+
+| Filter            | Effect                                                                    |
+|-------------------|---------------------------------------------------------------------------|
+| `priority`        | One or several priorities, comma-separated (`?priority=4,3`)              |
+| `metadata_source` | `research_api` or `scraped`                                               |
+| `has_metadata`    | `true`: videos with metadata from either source; `false`: those without   |
+
+`updated_since` reports every video whose priority, `last_seen_at` or
+metadata may have changed since then. It is a single condition on
+`TikTokVideo.updated_at`, which every such change moves:
+
+| Change                                   | Where `updated_at` is moved                 |
+|------------------------------------------|---------------------------------------------|
+| A donation shows the video (again, later) | `donations.service.record_donated_videos`   |
+| The Research API delivers the video      | `ResearchAPIService._sync_video`            |
+| The video is scraped                     | `ScraperService._store`                     |
+
+Any new code that changes what this endpoint serves has to move `updated_at`
+as well. This differs from the video list, whose `updated_since` also looks
+for newer Research API infos directly; changes from before this endpoint was
+deployed are therefore only found there.
+
+The filters inherited from the video list (`create_date*`, `region_codes`,
+`has_api_infos`) look at Research API data only; they do not match scraped
+videos.
+
+### Performance
+
+Not measured on production data; what follows is how the query is built.
+
+- **One page costs five queries**, whatever the page size: the videos (with
+  donation infos, user and music joined), then hashtags, keywords, Research
+  API infos and scraped infos for those videos. Cursor pagination makes a
+  late page as cheap as the first.
+- **`updated_since`** is a range condition on the indexed
+  `TikTokVideo.updated_at`.
+- **The Research API subqueries behind `create_date*` and `region_codes`**
+  only run when one of those filters is used.
+- **A `priority` filter is not index-driven.** The database walks the videos
+  newest first and keeps those that match, so a page is slow where matches
+  are rare, and the last page of a filter scans to the end of the table. If
+  that shows in practice, the remedy is to store the priority in an indexed
+  column, at the cost of maintaining it wherever Research API infos or
+  donation infos are written.
+
+Before the external system starts paging through all videos, run
+`EXPLAIN (ANALYZE, BUFFERS)` on the page query for `?priority=4`,
+`?priority=2` and `?updated_since=<yesterday>`.
+
+### Things to know
+
+- **Classifications are only pulled back for Research API videos.**
+  `sync_tiktok_video_classifications` selects videos by the day their
+  Research API infos arrived. Classifications the external system produces
+  for scraped videos are not fetched until that task is extended.
+- **`last_seen_at` is a full timestamp.** For a video only one donor watched
+  it is that donor's viewing time. The claim endpoint for external scrapers
+  already exposes the same kind of value (`last_watched_at`).
 
 
 ## Access Records through the Admin
