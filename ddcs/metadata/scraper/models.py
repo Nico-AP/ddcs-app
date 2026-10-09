@@ -85,6 +85,19 @@ class ScrapeTarget(models.Model):
                 fields=["status", "-occurrence_count", "-last_watched_at"],
                 name="scrapetarget_queue_idx",
             ),
+            # The queue beyond the priority group, in the order it is
+            # claimed in (see ``service._claim_due_targets``). One index per
+            # status that can be due, so that finished targets drop out.
+            models.Index(
+                fields=["-last_watched_at", "id"],
+                name="scrapetarget_pending_idx",
+                condition=models.Q(status="pending", last_watched_at__isnull=False),
+            ),
+            models.Index(
+                fields=["-last_watched_at", "id"],
+                name="scrapetarget_failed_idx",
+                condition=models.Q(status="failed", last_watched_at__isnull=False),
+            ),
         ]
         permissions = [
             (
