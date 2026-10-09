@@ -18,7 +18,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Exists, F, OuterRef, Q, TextChoices
+from django.db.models import Exists, OuterRef, Q, TextChoices
 from django.utils import timezone
 
 from ddcs.metadata.models import (
@@ -51,9 +51,10 @@ from ddcs.metadata.scraper.utils import int_or_none
 from ddcs.metadata.utils import infer_publication_date_from_id
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
     from django.contrib.auth.models import AbstractBaseUser
+    from django.db.models import QuerySet
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,19 @@ INTERNAL_LEASE = timedelta(hours=1)
 FAILED_RETRY_BACKOFF = timedelta(hours=6)
 
 
+def _first_of(
+    querysets: Iterable[QuerySet[ScrapeTarget]],
+    limit: int,
+    key: Callable[[ScrapeTarget], Any],
+) -> list[ScrapeTarget]:
+    """The first ``limit`` targets of several equally ordered querysets.
+
+    ``key`` has to sort targets the way the querysets are ordered.
+    """
+    candidates = [target for queryset in querysets for target in queryset[:limit]]
+    return sorted(candidates, key=key)[:limit]
+
+
 @transaction.atomic
 def _claim_due_targets(  # noqa: PLR0913
     limit: int,
@@ -356,39 +370,72 @@ def _claim_due_targets(  # noqa: PLR0913
     runs out.
     """
     now = timezone.now()
-    due = (
-        ScrapeTarget.objects.filter(
-            Q(status=ScrapeTarget.Status.PENDING)
-            | Q(
-                status=ScrapeTarget.Status.FAILED,
-                attempts__lt=max_attempts,
-                last_attempted_at__lt=now - retry_backoff,
-            )
-        )
+    # Pending targets and failed ones due for a retry are read separately:
+    # each read then follows one of the queue indexes
+    # (``ScrapeTarget.Meta.indexes``) and stops after ``limit`` rows. Asked
+    # for in one query, the whole queue is sorted on every claim.
+    due = [
+        ScrapeTarget.objects.filter(status_filter)
         .filter(Q(claimed_until__isnull=True) | Q(claimed_until__lt=now))
         .select_related("video")
         # Two scrapers asking at the same moment get different targets
         # instead of waiting for each other.
         .select_for_update(skip_locked=True, of=("self",))
-    )
+        for status_filter in (
+            Q(status=ScrapeTarget.Status.PENDING),
+            Q(
+                status=ScrapeTarget.Status.FAILED,
+                attempts__lt=max_attempts,
+                last_attempted_at__lt=now - retry_backoff,
+            ),
+        )
+    ]
 
     # First the videos many donors saw recently, most donors first.
-    targets = list(
-        due.filter(
-            occurrence_count__gte=PRIORITY_MIN_OCCURRENCES,
-            last_watched_at__gte=datetime.combine(
-                PRIORITY_WATCHED_SINCE, dt_time.min, tzinfo=UTC
-            ),
-        ).order_by("-occurrence_count", "-last_watched_at", "id")[:limit]
+    priority = Q(
+        occurrence_count__gte=PRIORITY_MIN_OCCURRENCES,
+        last_watched_at__gte=datetime.combine(
+            PRIORITY_WATCHED_SINCE, dt_time.min, tzinfo=UTC
+        ),
+    )
+    targets = _first_of(
+        [
+            queryset.filter(priority).order_by(
+                "-occurrence_count", "-last_watched_at", "id"
+            )
+            for queryset in due
+        ],
+        limit,
+        key=lambda t: (-t.occurrence_count, -t.last_watched_at.timestamp(), t.pk),
     )
     # Once those run out, everything else by most recent view. Only
     # reached when the priority group fits the batch, so excluding the
     # targets picked above excludes the whole group.
     if len(targets) < limit:
-        targets += list(
-            due.exclude(pk__in=[t.pk for t in targets]).order_by(
-                F("last_watched_at").desc(nulls_last=True), "id"
-            )[: limit - len(targets)]
+        picked = [t.pk for t in targets]
+        targets += _first_of(
+            [
+                queryset.exclude(pk__in=picked)
+                .filter(last_watched_at__isnull=False)
+                .order_by("-last_watched_at", "id")
+                for queryset in due
+            ],
+            limit - len(targets),
+            key=lambda t: (-t.last_watched_at.timestamp(), t.pk),
+        )
+    # Targets without a watch date come last. Read on their own because the
+    # queue indexes leave them out.
+    if len(targets) < limit:
+        picked = [t.pk for t in targets]
+        targets += _first_of(
+            [
+                queryset.exclude(pk__in=picked)
+                .filter(last_watched_at__isnull=True)
+                .order_by("id")
+                for queryset in due
+            ],
+            limit - len(targets),
+            key=lambda t: t.pk,
         )
 
     # The Research API may have delivered some of them since they were
