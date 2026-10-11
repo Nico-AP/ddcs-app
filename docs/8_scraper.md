@@ -74,7 +74,7 @@ already have Research API infos are never queued.
 - **The retrospective command** goes through all stored donations:
 
   ```
-  python manage.py record_donated_videos [--start 2026-07-01] [--end 2026-09-20] [--dry-run]
+  python manage.py record_donated_videos [--dry-run]
   ```
 
   It takes the participants that have a successfully extracted donation of
@@ -97,14 +97,15 @@ already have Research API infos are never queued.
   Because the command **adds** to the counts, it first **resets all counts
   to zero**. A run therefore always counts from scratch and can be repeated;
   a target that no interaction backs any more (for example one only test
-  participants contributed, or after the window was narrowed) stays at 0 and
-  at the end of the queue. The status of a target is never changed, so
+  participants contributed) stays at 0 and at the end of the queue. The status of a target is never changed, so
   nothing that was already scraped is queued again.
 
-  | Option             | Effect                                                                 |
-  |--------------------|------------------------------------------------------------------------|
-  | `--start`, `--end` | Use a different watch window for this run                              |
-  | `--dry-run`        | Only read the donations and print the summary; nothing is reset or written |
+  | Option      | Effect                                                                      |
+  |-------------|-----------------------------------------------------------------------------|
+  | `--dry-run` | Only read the donations and print the summary; nothing is reset or written  |
+
+  The watch window cannot be changed per run; it is the constant in
+  `scraper/config.py`.
 
   It ends with a summary (figures are illustrative):
 
@@ -122,6 +123,7 @@ already have Research API infos are never queued.
     Rows with counts reset: 0
     Rows created: 5120
     Counts raised on existing rows: 689
+    Rows no donation backs any more, deleted: 12
   Scrape queue:
     Targets with ranking reset: 0
     Targets created: 680

@@ -10,6 +10,7 @@ from ddcs.metadata.donations.config import EXCLUDED_PARTICIPANT_IDS
 from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.donations.service import (
     VideoInteractions,
+    purge_unbacked_donation_infos,
     queue_entries,
     record_donated_videos,
     register_donation_metadata,
@@ -334,6 +335,29 @@ class RecordDonatedVideosTests(TestCase):
         self.assertEqual((result.created, reset), (5, 5))
         self.assertEqual(set(_counts().values()), {(0, 0, 0)})
 
+    def test_purge_deletes_rows_without_counts_and_marks_their_videos(self):
+        record_donated_videos(
+            {1: _seen("w", EARLY, EARLY), 2: _seen("l", LATE, LATE), 3: _seen("b")}
+        )
+        enqueue_donated_videos({1: (1, EARLY)})
+        DonationVideoInfos.objects.filter(video__id_tiktok__in=[1, 3]).update(
+            watched_count=0, liked_count=0, bookmarked_count=0
+        )
+        past = datetime(2026, 1, 1, tzinfo=UTC)
+        TikTokVideo.objects.update(updated_at=past)
+
+        with patch("ddcs.metadata.donations.service._RECORD_CHUNK_SIZE", 1):
+            purged = purge_unbacked_donation_infos()
+
+        self.assertEqual(purged, 2)
+        self.assertEqual(_counts(), {2: (0, 1, 0)})
+        # The videos themselves stay, and are reported as changed.
+        self.assertEqual(TikTokVideo.objects.count(), 3)
+        self.assertEqual(_changed_since(TikTokVideo, "id_tiktok", past), {1, 3})
+        # The scrape queue is not touched.
+        self.assertEqual(_ranking(), {1: (1, EARLY)})
+        self.assertEqual(purge_unbacked_donation_infos(), 0)
+
     def test_reset_clears_counts_only(self):
         record_donated_videos({1: _seen("wlb", LATE, EARLY), 2: _seen("l", EARLY)})
         past = datetime(2026, 1, 1, tzinfo=UTC)
@@ -556,13 +580,38 @@ class RecordDonatedVideosCommandTests(TestCase):
 
         self.assertEqual(_counts()[1], (1, 2, 0))
 
-    def test_videos_no_donation_backs_any_more_keep_their_row(self):
+    def test_videos_no_donation_backs_any_more_are_purged(self):
         self._call()
         del self.donations["ben"]
+        past = datetime(2026, 1, 1, tzinfo=UTC)
+        TikTokVideo.objects.update(updated_at=past)
+
+        out = self._call()
+
+        # Video 3 was only bookmarked by Ben.
+        self.assertEqual(_counts(), {1: (1, 1, 0), 2: (1, 0, 0)})
+        self.assertEqual(_changed_since(TikTokVideo, "id_tiktok", past), {3})
+        self.assertIn("Rows no donation backs any more, deleted: 1", out)
+
+    def test_videos_only_test_participants_backed_are_purged(self):
+        # Recorded before the participant was known to be a test case.
+        record_donated_videos({99: _seen("w", EARLY, EARLY)})
+        self.donations[_TEST_PARTICIPANT] = TikTokUserData(
+            watch_history=[_view(99, EARLY)]
+        )
 
         self._call()
 
-        self.assertEqual(_counts(), {1: (1, 1, 0), 2: (1, 0, 0), 3: (0, 0, 0)})
+        self.assertEqual(set(_counts()), {1, 2, 3})
+
+    def test_nothing_is_purged_when_no_donation_was_read(self):
+        record_donated_videos({7: _seen("w", EARLY)})
+        self.donations = {}
+
+        out = self._call()
+
+        self.assertEqual(_counts(), {7: (0, 0, 0)})
+        self.assertIn("deleted: skipped, no donation was read", out)
 
     def test_test_participants_are_left_out(self):
         self.donations[_TEST_PARTICIPANT] = TikTokUserData(
@@ -587,6 +636,17 @@ class RecordDonatedVideosCommandTests(TestCase):
         self.assertIn("Donations that could not be read: 1", out)
         self.assertEqual(set(_counts()), {1, 2, 3})
 
+    def test_nothing_is_purged_when_a_donation_could_not_be_read(self):
+        # Carl's videos: his donation cannot be read this time.
+        record_donated_videos({50: _seen("w", EARLY)})
+        self.donations["carl"] = ValueError("cannot decrypt")
+
+        with self.assertLogs(_COMMAND, level="ERROR"):
+            out = self._call()
+
+        self.assertEqual(_counts()[50], (0, 0, 0))
+        self.assertIn("deleted: skipped, not every donation could be read", out)
+
     def test_dry_run_changes_nothing(self):
         record_donated_videos({7: _seen("w", EARLY)})
         enqueue_donated_videos({7: (5, LATE)})
@@ -595,18 +655,11 @@ class RecordDonatedVideosCommandTests(TestCase):
 
         self.assertEqual(_counts(), {7: (1, 0, 0)})
         self.assertEqual(_ranking(), {7: (5, LATE)})
+        self.assertNotIn("deleted", out)
         self.assertIn("Videos liked: 2", out)
         self.assertIn("Dry run", out)
 
-    def test_custom_window(self):
-        self._call("--start", "2026-10-01", "--end", "2026-10-31")
-
-        self.assertEqual(
-            _interactions(),
-            {1: (LATE, None), 2: (OUTSIDE, OUTSIDE), 3: (EARLY, None)},
-        )
-        self.assertEqual(_ranking(), {2: (1, OUTSIDE)})
-
-    def test_start_after_end_is_rejected(self):
+    def test_window_cannot_be_changed(self):
         with self.assertRaises(CommandError):
-            self._call("--start", "2026-09-01", "--end", "2026-08-01")
+            self._call("--start", "2026-10-01", "--end", "2026-10-31")
+        self.assertFalse(DonationVideoInfos.objects.exists())

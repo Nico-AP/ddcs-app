@@ -448,6 +448,14 @@ TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES: int = env.int(
 )
 
 
+# Metadata API
+# ------------------------------------------------------------------------------
+# Longest a single database statement of the video list endpoints may run
+# (milliseconds, PostgreSQL only) before it is cancelled and the request
+# answered with 503. 0 switches the limit off.
+METADATA_API_STATEMENT_TIMEOUT_MS = env.int("METADATA_API_STATEMENT_TIMEOUT_MS", 20000)
+
+
 # Zuse Classification API
 # ------------------------------------------------------------------------------
 ZUSE_API_TOKEN = env.str("ZUSE_API_TOKEN", "")

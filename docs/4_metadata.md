@@ -153,7 +153,7 @@ it):
   all stored donations, one at a time:
 
   ```bash
-  python manage.py record_donated_videos [--start 2026-07-01] [--end 2026-09-20] [--dry-run]
+  python manage.py record_donated_videos [--dry-run]
   ```
 
   The same pass rebuilds the scrape queue from the same donations. Options,
@@ -168,11 +168,26 @@ therefore sets all counts to zero before it starts, counts from scratch, and
 can be repeated at any time to bring the counts back in line. If it is
 interrupted, the counts are partial: run it again.
 
-Rows and interaction times are never reset or removed, only moved to a later
-time. Priorities, which depend on those, therefore stay as they are while the
-command runs. A video no donation backs any more keeps its row with counts of
-zero, and narrowing the window later does not clear
-`last_interaction_in_window_at`.
+While the command runs, rows and interaction times are kept (times only ever
+move to a later one), so the priorities derived from them stay as they are.
+
+**Rows no donation backs any more are deleted at the end.** After the recount,
+a row whose three counts are still zero belongs to a video no remaining
+donation contains: its donors' data was deleted, or they are test
+participants. Those rows are removed, the video stops counting as donated
+(its priority drops), and its `TikTokVideo.updated_at` is moved so that the
+change is reported. This only happens after a run that read at least one
+donation and could read all of them; otherwise a zero count does not mean "no
+donor", the step is skipped and the summary says so. A dry run or an
+interrupted run deletes nothing. The video's scrape target, if any, is kept
+(at the end of the queue), and so is anything already scraped.
+
+Interaction times of rows that remain are not recomputed: if the donor of the
+most recent interaction is gone but others remain, the stored time stays. The
+watch window is the project constant in
+[`scraper/config.py`](../ddcs/metadata/scraper/config.py); the command cannot
+be run with another one, because "in window" times, once written, are never
+cleared.
 
 Whenever a row is created or an interaction time moves, the video's
 `TikTokVideo.updated_at` is moved too (see [`updated_since`](#filters)). A
@@ -321,6 +336,15 @@ Not measured on production data; what follows is how the query is built.
   that shows in practice, the remedy is to store the priority in an indexed
   column, at the cost of maintaining it wherever Research API infos or
   donation infos are written.
+
+- **Statements are cancelled after a time limit.** Both video list endpoints
+  limit each database statement of a request to
+  `METADATA_API_STATEMENT_TIMEOUT_MS` (default 20000, `0` switches it off;
+  PostgreSQL only). A request whose statement is cancelled is answered with
+  `503` and a hint to narrow it down or fetch unfiltered. Without the limit
+  such a statement keeps running in the database after the web server gave
+  up, and retries pile up. Not yet observed against a real cancel: check
+  once on staging with a very low value.
 
 Before the external system starts paging through all videos, run
 `EXPLAIN (ANALYZE, BUFFERS)` on the page query for `?priority=4`,

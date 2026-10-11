@@ -1,7 +1,14 @@
+from typing import Any
+
+from django.conf import settings
+from django.db import OperationalError, connection
 from django.db.models import OuterRef, Prefetch, QuerySet, Subquery
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import authentication, generics, permissions
+from rest_framework import authentication, generics, permissions, status
+from rest_framework.exceptions import APIException
 from rest_framework.pagination import CursorPagination
+from rest_framework.request import Request
+from rest_framework.response import Response
 
 from ddcs.metadata.filters import PrioritisedTikTokVideoFilter, TikTokVideoFilter
 from ddcs.metadata.models import TikTokVideo
@@ -21,7 +28,57 @@ class TikTokVideoCursorPagination(CursorPagination):
     ordering = "-pk"
 
 
-class TikTokVideoList(generics.ListAPIView):
+# SQLSTATE PostgreSQL reports for a statement cancelled by statement_timeout.
+_QUERY_CANCELED = "57014"
+
+
+class QueryTimedOut(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = (
+        "The request took too long to answer and was cancelled. Narrow it down "
+        "(e.g. by id_tiktok), or fetch the list without filters and filter "
+        "the results yourself."
+    )
+    default_code = "query_timed_out"
+
+
+class StatementTimeoutMixin:
+    """Cancels database statements of a list request that run too long.
+
+    A filter that matches few videos can make a page scan a large part of
+    the table. Without a limit such a statement keeps running in the
+    database after the web server has given up on the request, and retries
+    pile up. The limit (``METADATA_API_STATEMENT_TIMEOUT_MS``) applies to
+    each statement of the request; a cancelled one is answered with 503.
+    PostgreSQL only.
+    """
+
+    def list(self, request: Request, *args: Any, **kwargs: Any) -> Response:  # noqa: ANN401
+        self._limit_statement_time()
+        try:
+            return super().list(request, *args, **kwargs)
+        except OperationalError as e:
+            if getattr(e.__cause__, "sqlstate", None) == _QUERY_CANCELED:
+                raise QueryTimedOut from e
+            raise
+
+    @staticmethod
+    def _limit_statement_time() -> None:
+        timeout_ms = settings.METADATA_API_STATEMENT_TIMEOUT_MS
+        if not timeout_ms or connection.vendor != "postgresql":
+            return
+        # Local (third argument): until the end of the transaction, which is
+        # the request (ATOMIC_REQUESTS). Without one it would have no effect.
+        # set_config() rather than SET, which takes no bound parameters and
+        # so fails when the driver binds them on the server.
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                [str(int(timeout_ms))],
+            )
+
+
+class TikTokVideoList(StatementTimeoutMixin, generics.ListAPIView):
     """
     List all TikTok videos with metadata.
 
@@ -62,7 +119,7 @@ class TikTokVideoList(generics.ListAPIView):
         )
 
 
-class PrioritisedTikTokVideoList(generics.ListAPIView):
+class PrioritisedTikTokVideoList(StatementTimeoutMixin, generics.ListAPIView):
     """
     List all TikTok videos with a priority and their metadata, whichever
     source it comes from.

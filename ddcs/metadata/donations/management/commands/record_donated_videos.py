@@ -19,17 +19,19 @@ while it runs. The counts are still not exact: donations processed while it
 runs, or retried later, may be counted twice. Nothing already scraped is
 queued again.
 
-Known test participants (``EXCLUDED_PARTICIPANT_IDS``) are left out. See
+Known test participants (``EXCLUDED_PARTICIPANT_IDS``) are left out.
+
+At the end, donation infos that no donation backs any more (all counts still
+zero) are deleted, provided every donation could be read. See
 docs/4_metadata.md and docs/8_scraper.md.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date
 from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.core.management.base import BaseCommand, CommandParser
 
 from ddcs.datadonation.services import (
     get_video_donations,
@@ -37,6 +39,7 @@ from ddcs.datadonation.services import (
 )
 from ddcs.metadata.donations.config import EXCLUDED_PARTICIPANT_IDS
 from ddcs.metadata.donations.service import (
+    purge_unbacked_donation_infos,
     queue_entries,
     record_donated_videos,
     reset_donation_counts,
@@ -59,28 +62,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
-            "--start",
-            type=date.fromisoformat,
-            default=WATCH_WINDOW_START,
-            help=f"First day of the watch window (default: {WATCH_WINDOW_START}).",
-        )
-        parser.add_argument(
-            "--end",
-            type=date.fromisoformat,
-            default=WATCH_WINDOW_END,
-            help=f"Last day of the watch window (default: {WATCH_WINDOW_END}).",
-        )
-        parser.add_argument(
             "--dry-run",
             action="store_true",
             help="Only read the donations and report; change nothing.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:  # noqa: ANN401
-        start, end, dry_run = options["start"], options["end"], options["dry_run"]
-        if start > end:
-            msg = f"--start ({start}) must not be after --end ({end})."
-            raise CommandError(msg)
+        dry_run = options["dry_run"]
 
         counts_reset = None if dry_run else reset_donation_counts()
         targets_reset = None if dry_run else reset_queue_ranking()
@@ -96,9 +84,7 @@ class Command(BaseCommand):
                 continue
 
             try:
-                videos = scan_donated_videos(
-                    get_video_donations(participant), start, end
-                )
+                videos = scan_donated_videos(get_video_donations(participant))
             except Exception:
                 logger.exception(
                     "Could not read the donated videos of participant %s.",
@@ -127,7 +113,8 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {donations_read} donations read ...")
 
         self.stdout.write(
-            f"Watch window: {start} to {end} (UTC, both days included)\n"
+            f"Watch window: {WATCH_WINDOW_START} to {WATCH_WINDOW_END} "
+            "(UTC, both days included)\n"
             f"Donations read: {donations_read}\n"
             f"Donations that could not be read: {donations_unreadable}\n"
             f"Test participants left out: {participants_excluded}\n"
@@ -141,11 +128,20 @@ class Command(BaseCommand):
             self.stdout.write("Dry run: nothing was changed.")
             return
 
+        # Zero counts only mean "no donor" if every donation was counted.
+        if donations_unreadable:
+            purged = "skipped, not every donation could be read"
+        elif not donations_read:
+            purged = "skipped, no donation was read"
+        else:
+            purged = purge_unbacked_donation_infos()
+
         self.stdout.write(
             "Donation infos:\n"
             f"  Rows with counts reset: {counts_reset}\n"
             f"  Rows created: {created}\n"
             f"  Counts raised on existing rows: {updated}\n"
+            f"  Rows no donation backs any more, deleted: {purged}\n"
             "Scrape queue:\n"
             f"  Targets with ranking reset: {targets_reset}\n"
             f"  Targets created: {targets_created}\n"

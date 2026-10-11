@@ -1,8 +1,10 @@
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.db import connection
+from django.db import OperationalError, connection
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
@@ -11,6 +13,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from ddcs.core.types import TikTokUserData
+from ddcs.metadata.api import StatementTimeoutMixin, TikTokVideoCursorPagination
 from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.donations.service import (
     VideoInteractions,
@@ -657,3 +660,79 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
             self.assertEqual(len(self._get()), 6)
 
         self.assertEqual(len(many), len(few))
+
+
+class _QueryCanceledError(Exception):
+    """Stands in for the database driver's error of a cancelled statement."""
+
+    sqlstate = "57014"
+
+
+class StatementTimeoutTestCase(APITestCase):
+    def setUp(self):
+        account = get_user_model().objects.create_user(username="zuse", password="x")
+        token = Token.objects.create(user=account)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self.urls = [
+            reverse("metadata:tiktokvideo-list"),
+            reverse("metadata:tiktokvideo-prioritised-list"),
+        ]
+
+    def test_cancelled_statement_is_answered_with_503(self):
+        error = OperationalError("canceling statement due to statement timeout")
+        error.__cause__ = _QueryCanceledError()
+
+        for url in self.urls:
+            with (
+                self.subTest(url=url),
+                patch.object(TikTokVideoCursorPagination, "paginate_queryset") as page,
+            ):
+                page.side_effect = error
+                response = self.client.get(url)
+
+                self.assertEqual(
+                    response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+                self.assertIn("took too long", response.data["detail"])
+
+    def test_other_database_errors_are_not_swallowed(self):
+        with (
+            patch.object(TikTokVideoCursorPagination, "paginate_queryset") as page,
+            self.assertRaises(OperationalError),
+        ):
+            page.side_effect = OperationalError("connection lost")
+            self.client.get(self.urls[1])
+
+    def test_every_list_request_limits_its_statements(self):
+        for url in self.urls:
+            with (
+                self.subTest(url=url),
+                patch.object(StatementTimeoutMixin, "_limit_statement_time") as limit,
+            ):
+                self.client.get(url)
+
+                limit.assert_called_once_with()
+
+    @staticmethod
+    def _statements(vendor: str) -> list[tuple]:
+        """What ``_limit_statement_time`` sends to a database of that vendor."""
+        with patch("ddcs.metadata.api.connection") as database:
+            database.vendor = vendor
+            StatementTimeoutMixin._limit_statement_time()
+        execute = database.cursor.return_value.__enter__.return_value.execute
+        return [call.args for call in execute.call_args_list]
+
+    @override_settings(METADATA_API_STATEMENT_TIMEOUT_MS=1500)
+    def test_limit_is_set_for_the_transaction_on_postgresql(self):
+        self.assertEqual(
+            self._statements("postgresql"),
+            [("SELECT set_config('statement_timeout', %s, true)", ["1500"])],
+        )
+
+    @override_settings(METADATA_API_STATEMENT_TIMEOUT_MS=1500)
+    def test_limit_is_not_set_on_other_databases(self):
+        self.assertEqual(self._statements("sqlite"), [])
+
+    @override_settings(METADATA_API_STATEMENT_TIMEOUT_MS=0)
+    def test_limit_can_be_switched_off(self):
+        self.assertEqual(self._statements("postgresql"), [])

@@ -272,6 +272,37 @@ def record_donated_videos(
     return DonatedVideosResult(created, updated)
 
 
+def purge_unbacked_donation_infos() -> int:
+    """Delete the rows no donation backs any more.
+
+    These are the rows whose counts are all zero after the donations were
+    counted from scratch: their donors' donations are gone, or belong to
+    participants that are left out. Only meaningful right after a complete
+    recount; while counts are being rebuilt, zero does not mean "no donor".
+
+    The videos stop counting as donated, so ``updated_at`` of their
+    ``TikTokVideo`` is moved for the change to be reported. Scrape targets
+    are not touched. Works in small steps. Returns the number of rows
+    deleted.
+    """
+    unbacked = DonationVideoInfos.objects.filter(
+        watched_count=0, liked_count=0, bookmarked_count=0
+    )
+    purged = 0
+    while True:
+        rows = list(unbacked.values_list("pk", "video_id")[:_RECORD_CHUNK_SIZE])
+        if not rows:
+            return purged
+        with transaction.atomic():
+            deleted, _ = DonationVideoInfos.objects.filter(
+                pk__in=[pk for pk, _ in rows]
+            ).delete()
+            TikTokVideo.objects.filter(
+                pk__in=[video_pk for _, video_pk in rows]
+            ).update(updated_at=timezone.now())
+        purged += deleted
+
+
 def reset_donation_counts() -> int:
     """Set the counts of every row back to zero.
 
