@@ -1,8 +1,9 @@
 """Query functions backing the internal metadata dashboard.
 
 The sync-coverage, sync-video-count and monitored-count queries are cheap
-and run live on every request. The video-level aggregates (origin counts, classification
-coverage) scan millions of rows, so they are never computed in a request:
+and run live on every request. The video-level aggregates (origin counts,
+priority counts, classification coverage) scan millions of rows, so they are
+never computed in a request:
 ``refresh_dashboard_snapshot`` computes them (from a Celery task, see
 ``ddcs.metadata.tasks.refresh_metadata_dashboard``) and stores the result in
 the cache; the view only reads ``get_dashboard_snapshot``.
@@ -14,7 +15,17 @@ from datetime import date, datetime, time, timedelta
 from typing import TypedDict
 
 from django.core.cache import cache
-from django.db.models import Count, Exists, Max, OuterRef, Q, QuerySet
+from django.db.models import (
+    Case,
+    Count,
+    Exists,
+    Max,
+    OuterRef,
+    Q,
+    QuerySet,
+    SmallIntegerField,
+    When,
+)
 from django.db.models.functions import TruncDate
 from django.utils import timezone
 
@@ -26,6 +37,7 @@ from ddcs.metadata.models import (
     TikTokVideo,
     TikTokVideoClassification,
 )
+from ddcs.metadata.priority import HAS_API_INFOS, HAS_SCRAPED_INFOS, VideoPriority
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.models import ScrapeTarget
 from ddcs.metadata.scraper.service import (
@@ -92,6 +104,123 @@ def get_video_counts_by_origin() -> list[OriginCount]:
             "without_api_info": total - with_api_info.get(origin, 0),
         }
         for origin, total in sorted(totals.items())
+    ]
+
+
+class PriorityCount(TypedDict):
+    priority: int
+    label: str
+    total: int
+    # The three states a video of this priority can be in; they add up to
+    # ``total`` (together with ``classified_without_metadata``).
+    classified: int  # has metadata and a classification
+    metadata_only: int  # has metadata, no classification yet
+    waiting: int  # has neither
+    # Has a classification but no metadata. Not expected: classifications
+    # are only pulled for videos with metadata.
+    classified_without_metadata: int
+
+
+_PRIORITY_LABELS = {
+    VideoPriority.DONATED_AND_RESEARCH_API: "Donated and Research API",
+    VideoPriority.DONATED_IN_WINDOW: "Donated in study period",
+    VideoPriority.RESEARCH_API_ONLY: "Research API only",
+    VideoPriority.OTHER: "Everything else",
+}
+
+# What the donations say about a video, read off its (joined) donation infos.
+_NOT_DONATED, _DONATED_OUTSIDE_WINDOW, _DONATED_IN_WINDOW = 0, 1, 2
+_DONATION_STATE = Case(
+    When(donation_infos__isnull=True, then=_NOT_DONATED),
+    When(
+        donation_infos__last_interaction_in_window_at__isnull=True,
+        then=_DONATED_OUTSIDE_WINDOW,
+    ),
+    default=_DONATED_IN_WINDOW,
+    output_field=SmallIntegerField(),
+)
+_HAS_CLASSIFICATION = Exists(
+    TikTokVideoClassification.objects.filter(video=OuterRef("pk"))
+)
+
+
+def _video_counts_by_donation_state(*conditions: Exists) -> dict[int, int]:
+    """Number of videos meeting ``conditions``, per donation state."""
+    rows = (
+        TikTokVideo.objects.filter(*conditions)
+        .annotate(donation_state=_DONATION_STATE)
+        .values("donation_state")
+        .annotate(n=Count("pk"))
+        .order_by()
+    )
+    return {row["donation_state"]: row["n"] for row in rows}
+
+
+def get_priority_counts() -> list[PriorityCount]:
+    """Videos per priority of the prioritised video API, split by how far
+    along they are: classified, only metadata so far, or still waiting.
+
+    "Metadata" is Research API infos or scraped infos, as on that API.
+
+    Built from a handful of plain aggregates instead of one grouped by
+    priority, for the same reason as in ``get_video_counts_by_origin``: the
+    priority and each state depend on ``EXISTS`` subqueries, which inside an
+    aggregate (or a ``GROUP BY``) run once per video. Here every ``EXISTS``
+    sits in ``WHERE``, and the only grouping is by the donation state, which
+    comes from a join. The priorities are sums and differences of these
+    counts; the rules are those of ``ddcs.metadata.priority``.
+    """
+    everything = _video_counts_by_donation_state()
+    api = _video_counts_by_donation_state(HAS_API_INFOS)
+    api_classified = _video_counts_by_donation_state(HAS_API_INFOS, _HAS_CLASSIFICATION)
+    scraped = _video_counts_by_donation_state(~HAS_API_INFOS, HAS_SCRAPED_INFOS)
+    scraped_classified = _video_counts_by_donation_state(
+        ~HAS_API_INFOS, HAS_SCRAPED_INFOS, _HAS_CLASSIFICATION
+    )
+    classified_only = _video_counts_by_donation_state(
+        ~HAS_API_INFOS, ~HAS_SCRAPED_INFOS, _HAS_CLASSIFICATION
+    )
+
+    def count(counts: dict[int, int], states: tuple[int, ...]) -> int:
+        return sum(counts.get(state, 0) for state in states)
+
+    def with_api_infos(priority: VideoPriority, *states: int) -> PriorityCount:
+        # Research API infos are metadata, so nothing here is waiting.
+        total, classified = count(api, states), count(api_classified, states)
+        return {
+            "priority": priority.value,
+            "label": _PRIORITY_LABELS[priority],
+            "total": total,
+            "classified": classified,
+            "metadata_only": total - classified,
+            "waiting": 0,
+            "classified_without_metadata": 0,
+        }
+
+    def without_api_infos(priority: VideoPriority, *states: int) -> PriorityCount:
+        total = count(everything, states) - count(api, states)
+        with_metadata = count(scraped, states)
+        classified = count(scraped_classified, states)
+        classified_without_metadata = count(classified_only, states)
+        return {
+            "priority": priority.value,
+            "label": _PRIORITY_LABELS[priority],
+            "total": total,
+            "classified": classified,
+            "metadata_only": with_metadata - classified,
+            "waiting": total - with_metadata - classified_without_metadata,
+            "classified_without_metadata": classified_without_metadata,
+        }
+
+    return [
+        with_api_infos(
+            VideoPriority.DONATED_AND_RESEARCH_API,
+            _DONATED_OUTSIDE_WINDOW,
+            _DONATED_IN_WINDOW,
+        ),
+        without_api_infos(VideoPriority.DONATED_IN_WINDOW, _DONATED_IN_WINDOW),
+        with_api_infos(VideoPriority.RESEARCH_API_ONLY, _NOT_DONATED),
+        without_api_infos(VideoPriority.OTHER, _NOT_DONATED, _DONATED_OUTSIDE_WINDOW),
     ]
 
 
@@ -383,6 +512,7 @@ def get_classification_coverage(
 class DashboardSnapshot(TypedDict):
     computed_at: datetime
     origin_counts: list[OriginCount]
+    priority_counts: list[PriorityCount]
     # Whole history at day grain, so any requested range is a dict lookup.
     classification_by_date: dict[str, ClassificationCounts]
 
@@ -400,6 +530,7 @@ def refresh_dashboard_snapshot() -> DashboardSnapshot:
     snapshot: DashboardSnapshot = {
         "computed_at": timezone.now(),
         "origin_counts": get_video_counts_by_origin(),
+        "priority_counts": get_priority_counts(),
         "classification_by_date": _classification_counts_by_date(),
     }
     cache.set(_SNAPSHOT_CACHE_KEY, snapshot, _SNAPSHOT_CACHE_TIMEOUT)

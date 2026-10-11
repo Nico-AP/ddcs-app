@@ -19,6 +19,7 @@ from ddcs.metadata.dashboard.metrics import (
 from ddcs.metadata.dashboard.plots import (
     get_classification_coverage_plot,
     get_origin_counts_plot,
+    get_priority_counts_plot,
     get_sync_coverage_plot,
 )
 from ddcs.metadata.scraper.service import clear_cooldown
@@ -96,6 +97,14 @@ class MetadataDashboardView(DebugOrSuperuserMixin, TemplateView):
         origin_counts = snapshot["origin_counts"] if snapshot else []
         context["origin_counts"] = origin_counts
         context["origin_counts_plot"] = get_origin_counts_plot(origin_counts)
+
+        # A snapshot cached before this card existed has no such key.
+        priority_counts = snapshot.get("priority_counts", []) if snapshot else []
+        context["priority_counts"] = priority_counts
+        context["priority_counts_plot"] = get_priority_counts_plot(priority_counts)
+        context["has_classified_without_metadata"] = any(
+            row["classified_without_metadata"] for row in priority_counts
+        )
 
         monitored_keywords = get_monitored_keyword_count()
         monitored_users = get_monitored_user_count()

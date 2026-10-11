@@ -268,6 +268,28 @@ Priorities are only as complete as `DonationVideoInfos`. After deploying, run
 [Donation Information Models](#donation-information-models-ddcsmetadatadonationsmodels)); until then every video
 donated before the deployment counts as not donated.
 
+### Progress per priority (dashboard)
+
+The metadata dashboard (`/metadata/dashboard/`) has a card "Videos by
+priority": one stacked bar per priority, split into
+
+- videos with metadata and a classification,
+- videos with metadata but no classification yet,
+- videos waiting for both.
+
+"Metadata" is Research API infos or scraped infos, as in the response.
+Priorities 4 and 2 have Research API infos by definition, so nothing in them
+waits for metadata. A classification without any metadata is not expected; if
+one exists, it is shown as a fourth segment instead of being counted into
+one of the three.
+
+The counts are part of the dashboard snapshot (computed by the hourly
+`refresh_metadata_dashboard` task, or with "Refresh now"), not live. They are
+derived in `get_priority_counts`
+([`dashboard/metrics.py`](../ddcs/metadata/dashboard/metrics.py)) from a few
+aggregates rather than from the priority expression of the API; a test keeps
+the two in agreement.
+
 ### Fields
 
 | Field             | Content                                                                                           |
