@@ -42,7 +42,7 @@ The DDM `Participant` walks through these steps (see
    donations and we then call `post_process_donation(participant)`, which:
    - fetches and decrypts the donations via `get_user_data()`;
    - calls `register_donation_metadata()` (in
-     [`ddcs.metadata.services`](../ddcs/metadata/services.py)) so any new
+     [`ddcs.metadata.donations.service`](../ddcs/metadata/donations/service.py)) so any new
      videos/users discovered in the donation enter the registry;
    - calls `generate_report_statistics()` (in
      [`ddcs.reports.services`](../ddcs/reports/services.py)) so the participant's

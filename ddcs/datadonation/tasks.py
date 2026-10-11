@@ -4,7 +4,7 @@ from celery import shared_task
 from ddm.participation.models import Participant
 
 from ddcs.datadonation.services import get_user_data
-from ddcs.metadata.services import register_donation_metadata
+from ddcs.metadata.donations.service import register_donation_metadata
 from ddcs.reports.services import generate_user_report_statistics
 
 logger = logging.getLogger(__name__)

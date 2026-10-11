@@ -1,9 +1,10 @@
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import connection
+from django.db.models import Count, Q
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -14,6 +15,7 @@ from ddcs.metadata.dashboard.metrics import (
     get_dashboard_snapshot,
     get_monitored_keyword_count,
     get_monitored_user_count,
+    get_priority_counts,
     get_scraper_queue,
     get_suspicious_sync_days,
     get_sync_coverage,
@@ -21,6 +23,8 @@ from ddcs.metadata.dashboard.metrics import (
     get_video_counts_by_origin,
     refresh_dashboard_snapshot,
 )
+from ddcs.metadata.dashboard.plots import get_priority_counts_plot
+from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.models import (
     DataOrigins,
     Keyword,
@@ -30,8 +34,13 @@ from ddcs.metadata.models import (
     TikTokVideo,
     TikTokVideoClassification,
 )
+from ddcs.metadata.priority import (
+    HAS_API_INFOS,
+    HAS_SCRAPED_INFOS,
+    annotate_priority,
+)
 from ddcs.metadata.research_api.models import APIVideoInfos
-from ddcs.metadata.scraper.models import ScrapeTarget
+from ddcs.metadata.scraper.models import ScrapeTarget, VideoInfosScraped
 from ddcs.metadata.scraper.service import (
     get_cooldown,
     record_last_run,
@@ -105,6 +114,200 @@ class GetVideoCountsByOriginTests(TestCase):
 
         self.assertEqual(counts[DataOrigins.RESEARCH_API]["total"], 1)
         self.assertEqual(counts[DataOrigins.RESEARCH_API]["with_api_info"], 1)
+
+
+class GetPriorityCountsTests(TestCase):
+    """Priorities: 4 donated + Research API, 3 donated in the window without
+    it, 2 Research API only, 1 the rest."""
+
+    _IN_WINDOW = datetime(2026, 8, 5, 10, tzinfo=UTC)
+    _OUTSIDE = datetime(2026, 10, 5, 10, tzinfo=UTC)
+
+    def setUp(self):
+        self._next_id = 0
+
+    def _video(
+        self, donated: str = "", metadata: str = "", *, classified: bool = False
+    ) -> TikTokVideo:
+        """``donated``: "", "outside" or "window"; ``metadata``: any of the
+        letters a(pi) and s(craped)."""
+        self._next_id += 1
+        video = TikTokVideo.objects.create(id_tiktok=self._next_id)
+        if donated:
+            DonationVideoInfos.objects.create(
+                video=video,
+                last_interaction_at=self._OUTSIDE,
+                last_interaction_in_window_at=(
+                    self._IN_WINDOW if donated == "window" else None
+                ),
+            )
+        if "a" in metadata:
+            APIVideoInfos.objects.create(video=video)
+        if "s" in metadata:
+            VideoInfosScraped.objects.create(video=video)
+        if classified:
+            TikTokVideoClassification.objects.create(video=video)
+        return video
+
+    def _every_combination(self) -> None:
+        for donated in ("", "outside", "window"):
+            for metadata in ("", "a", "s", "as"):
+                for classified in (False, True):
+                    self._video(donated, metadata, classified=classified)
+
+    @staticmethod
+    def _by_priority() -> dict[int, dict]:
+        return {row["priority"]: row for row in get_priority_counts()}
+
+    def test_empty_database_lists_every_priority_with_zero(self):
+        counts = get_priority_counts()
+
+        self.assertEqual([row["priority"] for row in counts], [4, 3, 2, 1])
+        self.assertEqual({row["total"] for row in counts}, {0})
+
+    def test_states_per_priority(self):
+        # Priority 4: donated (in the window or not), Research API infos.
+        self._video("window", "a", classified=True)
+        self._video("outside", "a", classified=True)
+        self._video("outside", "as")
+        # Priority 3: donated in the window, no Research API infos.
+        self._video("window", "s", classified=True)
+        self._video("window", "s")
+        self._video("window", "s")
+        self._video("window")
+        # Priority 2: Research API infos, not donated.
+        self._video("", "a")
+        # Priority 1: the rest, e.g. donated outside the window.
+        self._video("outside", "s", classified=True)
+        self._video("outside")
+        self._video()
+        self._video()
+
+        counts = self._by_priority()
+
+        def states(priority: int) -> tuple[int, int, int, int]:
+            row = counts[priority]
+            return (
+                row["total"],
+                row["classified"],
+                row["metadata_only"],
+                row["waiting"],
+            )
+
+        self.assertEqual(states(4), (3, 2, 1, 0))
+        self.assertEqual(states(3), (4, 1, 2, 1))
+        self.assertEqual(states(2), (1, 0, 1, 0))
+        self.assertEqual(states(1), (4, 1, 0, 3))
+        self.assertEqual(counts[4]["label"], "Donated and Research API")
+
+    def test_agrees_with_the_priorities_of_the_api(self):
+        self._every_combination()
+
+        counts = self._by_priority()
+
+        videos = annotate_priority(TikTokVideo.objects.all())
+        expected_totals = dict(
+            videos.values_list("priority").annotate(n=Count("pk")).order_by()
+        )
+        self.assertEqual(
+            {priority: row["total"] for priority, row in counts.items()},
+            expected_totals,
+        )
+        # "Has metadata" as the API's has_metadata filter defines it.
+        with_metadata = videos.filter(Q(HAS_API_INFOS) | Q(HAS_SCRAPED_INFOS))
+        expected_with_metadata = dict(
+            with_metadata.values_list("priority").annotate(n=Count("pk")).order_by()
+        )
+        self.assertEqual(
+            {
+                priority: row["classified"] + row["metadata_only"]
+                for priority, row in counts.items()
+            },
+            expected_with_metadata,
+        )
+
+    def test_states_add_up_to_the_total(self):
+        self._every_combination()
+
+        for row in get_priority_counts():
+            with self.subTest(priority=row["priority"]):
+                self.assertEqual(
+                    row["classified"]
+                    + row["metadata_only"]
+                    + row["waiting"]
+                    + row["classified_without_metadata"],
+                    row["total"],
+                )
+        self.assertEqual(
+            sum(row["total"] for row in get_priority_counts()),
+            TikTokVideo.objects.count(),
+        )
+
+    def test_classification_without_metadata_is_kept_apart(self):
+        self._video("window", classified=True)
+        self._video(classified=True)
+        self._video("", "a", classified=True)
+
+        counts = self._by_priority()
+
+        self.assertEqual(counts[3]["classified_without_metadata"], 1)
+        self.assertEqual(counts[3]["classified"], 0)
+        self.assertEqual(counts[3]["waiting"], 0)
+        self.assertEqual(counts[1]["classified_without_metadata"], 1)
+        self.assertEqual(counts[2]["classified_without_metadata"], 0)
+
+    def test_video_with_several_infos_rows_is_counted_once(self):
+        video = self._video("window", "s", classified=True)
+        VideoInfosScraped.objects.create(video=video)
+        other = self._video("", "a")
+        APIVideoInfos.objects.create(video=other)
+
+        counts = self._by_priority()
+
+        self.assertEqual(counts[3]["total"], 1)
+        self.assertEqual(counts[3]["classified"], 1)
+        self.assertEqual(counts[2]["total"], 1)
+
+    def test_number_of_queries_does_not_depend_on_the_data(self):
+        with CaptureQueriesContext(connection) as empty:
+            get_priority_counts()
+        self._every_combination()
+
+        with CaptureQueriesContext(connection) as filled:
+            get_priority_counts()
+
+        self.assertEqual(len(filled), len(empty))
+        self.assertEqual(len(filled), 6)
+
+
+class PriorityCountsPlotTests(TestCase):
+    _ROW = {
+        "priority": 3,
+        "label": "Donated in study period",
+        "total": 6,
+        "classified": 1,
+        "metadata_only": 2,
+        "waiting": 3,
+        "classified_without_metadata": 0,
+    }
+
+    def test_no_data(self):
+        self.assertEqual(get_priority_counts_plot([]), {"html": None})
+
+    def test_draws_the_three_states(self):
+        html = get_priority_counts_plot([self._ROW])["html"]
+
+        self.assertIn("Metadata and classification", html)
+        self.assertIn("Metadata, no classification", html)
+        self.assertIn("Waiting for metadata and classification", html)
+        self.assertNotIn("Classification without metadata", html)
+
+    def test_draws_classification_without_metadata_only_if_there_is_any(self):
+        row = {**self._ROW, "classified_without_metadata": 1}
+
+        html = get_priority_counts_plot([row])["html"]
+
+        self.assertIn("Classification without metadata", html)
 
 
 class GetSyncCoverageTests(TestCase):
@@ -384,6 +587,10 @@ class DashboardSnapshotTests(TestCase):
 
         self.assertEqual(snapshot["origin_counts"][0]["with_api_info"], 2)
         self.assertEqual(
+            {row["priority"]: row["total"] for row in snapshot["priority_counts"]},
+            {4: 0, 3: 0, 2: 2, 1: 0},
+        )
+        self.assertEqual(
             snapshot["classification_by_date"],
             {
                 today.isoformat(): {"total": 1, "classified": 0},
@@ -454,6 +661,32 @@ class MetadataDashboardSnapshotViewTests(TestCase):
         )
         self.assertEqual(response.context["origin_counts"][0]["total"], 1)
         self.assertIsNotNone(response.context["classification_coverage_plot"]["html"])
+        self.assertIsNotNone(response.context["priority_counts_plot"]["html"])
+        self.assertContains(response, "Videos by priority")
+        self.assertContains(response, "2: Research API only")
+        self.assertNotContains(response, "Classification without metadata")
+
+    def test_snapshot_from_before_the_priority_card_still_renders(self):
+        snapshot = refresh_dashboard_snapshot()
+        del snapshot["priority_counts"]
+        cache.set("metadata:dashboard:snapshot", snapshot)
+
+        with patch(_REQUEST_REFRESH):
+            response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["priority_counts"], [])
+        self.assertContains(response, "It appears with the next refresh.")
+
+    def test_classification_without_metadata_gets_its_own_column(self):
+        video = TikTokVideo.objects.create(id_tiktok=1)
+        TikTokVideoClassification.objects.create(video=video)
+        refresh_dashboard_snapshot()
+
+        with patch(_REQUEST_REFRESH):
+            response = self.client.get(self.url)
+
+        self.assertContains(response, "Classification without metadata")
 
     def test_post_queues_refresh_and_redirects_to_same_range(self):
         url = f"{self.url}?start=2026-08-01&end=2026-08-31"
