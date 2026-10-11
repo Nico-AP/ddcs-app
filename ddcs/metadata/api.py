@@ -78,12 +78,14 @@ class PrioritisedTikTokVideoList(generics.ListAPIView):
     * `metadata_source` says where the metadata fields come from:
       `research_api`, `scraped`, or null if the video has no metadata yet
       (the metadata fields are then null or empty). Research API data takes
-      precedence; `region_code`, `is_stem_verified` and `video_label` are
-      null for scraped videos.
+      precedence; `is_stem_verified` and `video_label` are null for scraped
+      videos.
     * `last_interaction_at` is the most recent view, like or bookmark of the
       video in any donation (null if it is in none).
-    * Takes the filters of the video list, plus: priority (one or several,
-      comma-separated), metadata_source, has_metadata (bool). `updated_since`
+    * Takes the filters of the video list except region_codes and
+      has_api_infos, plus: priority (one or several, comma-separated),
+      metadata_source, has_metadata (bool). The create_date filters look at
+      Research API data only. `updated_since`
       reports every video whose priority, `last_interaction_at` or metadata
       changed since then.
     """
@@ -96,16 +98,14 @@ class PrioritisedTikTokVideoList(generics.ListAPIView):
     pagination_class = TikTokVideoCursorPagination
 
     def get_queryset(self) -> QuerySet[TikTokVideo]:
-        # What TikTokVideoFilter relies on. As aliases, so that the
-        # subqueries only run when a filter uses them, not for every row of
+        # What the create_date filters rely on. As an alias, so that the
+        # subquery only runs when one of them is used, not for every row of
         # every page.
         latest_info = APIVideoInfos.objects.filter(video=OuterRef("pk")).order_by(
             "-created_at"
         )
         queryset = TikTokVideo.objects.alias(
-            latest_api_info_id=Subquery(latest_info.values("pk")[:1]),
             latest_create_time=Subquery(latest_info.values("create_time")[:1]),
-            latest_region_code=Subquery(latest_info.values("region_code")[:1]),
         )
         return (
             annotate_priority(queryset)

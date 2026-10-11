@@ -212,6 +212,10 @@ class PrioritisedTikTokVideoSerializer(serializers.ModelSerializer):
         return created_at.isoformat() if created_at else None
 
     def get_region_code(self, obj: TikTokVideo) -> str | None:
+        infos = self._get_infos(obj)
+        if isinstance(infos, VideoInfosScraped):
+            # The same information under the name the page gives it.
+            return infos.location_created
         return self._get_value(obj, "region_code")
 
     def get_duration(self, obj: TikTokVideo) -> int | None:

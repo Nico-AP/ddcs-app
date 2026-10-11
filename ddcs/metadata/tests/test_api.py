@@ -17,6 +17,7 @@ from ddcs.metadata.donations.service import (
     record_donated_videos,
     scan_donated_videos,
 )
+from ddcs.metadata.filters import PrioritisedTikTokVideoFilter, TikTokVideoFilter
 from ddcs.metadata.models import (
     Keyword,
     TikTokHashtag,
@@ -524,6 +525,7 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
             duration=12,
             voice_to_text="hallo zusammen",
             video_mention_list=["bob"],
+            location_created="CH",
             caption_vtt="WEBVTT",
             raw={"big": "blob"},
         )
@@ -539,8 +541,9 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         self.assertEqual(result["duration"], 12)
         self.assertEqual(result["voice_to_text"], "hallo zusammen")
         self.assertEqual(result["video_mention_list"], ["bob"])
+        # Stored as location_created.
+        self.assertEqual(result["region_code"], "CH")
         # Research API only.
-        self.assertIsNone(result["region_code"])
         self.assertIsNone(result["is_stem_verified"])
         self.assertIsNone(result["video_label"])
         self.assertNotIn("raw", result)
@@ -573,7 +576,33 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         self._one_of_each()
 
         self.assertEqual(self._ids(priority="4", id_tiktok="41,21"), {41})
-        self.assertEqual(self._ids(priority="2", region_codes="CH"), {21, 22})
+        user = TikTokUser.objects.create(name="alice")
+        TikTokVideo.objects.filter(id_tiktok__in=[21, 31]).update(user=user)
+        self.assertEqual(self._ids(priority="2", usernames="alice"), {21})
+        today = timezone.localdate().isoformat()
+        APIVideoInfos.objects.filter(video__id_tiktok=22).update(
+            create_time=timezone.now()
+        )
+        self.assertEqual(self._ids(create_date=today), {22})
+
+    def test_region_code_of_the_research_api_wins_over_the_scraped_one(self):
+        video = self._video(1, api=True)
+        VideoInfosScraped.objects.create(video=video, location_created="DE")
+
+        self.assertEqual(self._get()[0]["region_code"], "CH")
+
+    def test_research_api_only_filters_are_not_offered(self):
+        self._one_of_each()
+        everything = self._ids()
+
+        # Unknown parameters are ignored, so nothing is filtered.
+        self.assertEqual(self._ids(region_codes="CH"), everything)
+        self.assertEqual(self._ids(has_api_infos=True), everything)
+        self.assertNotIn("region_codes", PrioritisedTikTokVideoFilter.base_filters)
+        self.assertNotIn("has_api_infos", PrioritisedTikTokVideoFilter.base_filters)
+        # The video list keeps them.
+        self.assertIn("region_codes", TikTokVideoFilter.base_filters)
+        self.assertIn("has_api_infos", TikTokVideoFilter.base_filters)
 
     # --- updated_since ---
 

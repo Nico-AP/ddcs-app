@@ -170,6 +170,8 @@ class VideoInfosScraped(ScrapedDataModel):
     caption_is_auto_generated = models.BooleanField(null=True, blank=True)
 
     # General information
+    # Same information as APIVideoInfos.region_code, kept under the name the
+    # page gives it; the prioritised video API serves it as "region_code".
     location_created = models.CharField(blank=True, max_length=255)
     text_language = models.CharField(blank=True, max_length=255)
     category_type = models.IntegerField(blank=True, null=True)

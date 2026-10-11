@@ -87,6 +87,7 @@ on the Research API models, so the two can be read interchangeably:
 | Model                    | Shared with the Research API model                                                             |
 |--------------------------|------------------------------------------------------------------------------------------------|
 | `VideoInfosScraped`      | `description`, `create_time`, `duration`, `video_mention_list`, `effect_list`, `voice_to_text` |
+|                          | `location_created` holds what the Research API calls `region_code`; it keeps its scraped name  |
 | `VideoStatisticsScraped` | `view_count`, `like_count`, `comment_count`, `share_count`, `favorites_count`                  |
 
 All writes go through `ddcs.metadata.scraper.service`. On success the service
@@ -264,9 +265,9 @@ donated before the deployment counts as not donated.
 | `user`, `music`, `hashtags`, `keywords` | From the registry, as in the video list                                     |
 
 The metadata fields come from the Research API infos if the video has any,
-otherwise from the most recent scrape. `region_code`, `is_stem_verified` and
-`video_label` exist only in Research API data and are `null` for scraped
-videos. `created_at` is when the served infos were stored here. Videos with
+otherwise from the most recent scrape. For a scraped video, `region_code` is
+the scraped `location_created`. `is_stem_verified` and `video_label` exist
+only in Research API data and are `null` for scraped videos. `created_at` is when the served infos were stored here. Videos with
 neither source are listed too, with empty metadata, because their media can
 still be scraped by ID.
 
@@ -295,9 +296,12 @@ as well. This differs from the video list, whose `updated_since` also looks
 for newer Research API infos directly; changes from before this endpoint was
 deployed are therefore only found there.
 
-The filters inherited from the video list (`create_date*`, `region_codes`,
-`has_api_infos`) look at Research API data only; they do not match scraped
-videos.
+Two filters of the video list are **not** offered here, because they only
+know Research API data: `region_codes` and `has_api_infos` (use
+`metadata_source=research_api` for the latter). A request that sends them
+anyway gets no error; the parameter is ignored. The `create_date*` filters
+are offered but still look at Research API data only, so they do not match
+scraped videos.
 
 ### Performance
 
@@ -309,8 +313,8 @@ Not measured on production data; what follows is how the query is built.
   late page as cheap as the first.
 - **`updated_since`** is a range condition on the indexed
   `TikTokVideo.updated_at`.
-- **The Research API subqueries behind `create_date*` and `region_codes`**
-  only run when one of those filters is used.
+- **The Research API subquery behind `create_date*`** only runs when one of
+  those filters is used.
 - **A `priority` filter is not index-driven.** The database walks the videos
   newest first and keeps those that match, so a page is slow where matches
   are rare, and the last page of a filter scans to the end of the table. If

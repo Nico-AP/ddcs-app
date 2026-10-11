@@ -310,7 +310,7 @@ models, so both sources can be read the same way.
 | `effect_list`                                                                     |             ✓              | Stored as scraped. **Not** compared with the Research API's format (no sample video with effects was available).      |
 | `voice_to_text`                                                                   |             ✓              | Text of the original-language caption, see [Captions](#captions)                                                      |
 | `caption_status`, `caption_vtt`, `caption_language`, `caption_is_auto_generated`  |  See [Captions](#captions)  |
-| `location_created`                                                                |                             | Where the video was made. Not the same thing as the API's `region_code`.                                              |
+| `location_created`                                                                |      as `region_code`       | Same information as the Research API's `region_code`, stored under the page's name. The prioritised video API serves it as `region_code`. |
 | `text_language`, `category_type`                                                  |                             |                                                                                                                       |
 | `is_ad`, `is_aigc`, `aigc_description`                                            |                             |                                                                                                                       |
 | `original_item`, `official_item`, `private_item`                                  |                             |                                                                                                                       |
@@ -318,8 +318,8 @@ models, so both sources can be read the same way.
 | `height`, `width`                                                                 |                             |                                                                                                                       |
 | `raw`                                                                             |                             | See below                                                                                                             |
 
-The Research API fields `region_code`, `is_stem_verified` and `video_label`
-have no scraped counterpart.
+The Research API fields `is_stem_verified` and `video_label` have no scraped
+counterpart.
 
 **`raw`** holds the complete video object from the page
 (`__DEFAULT_SCOPE__` → `webapp.video-detail` → `itemInfo` → `itemStruct`) with

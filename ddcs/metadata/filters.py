@@ -93,7 +93,17 @@ class TikTokVideoFilter(django_filters.FilterSet):
 
 
 class PrioritisedTikTokVideoFilter(TikTokVideoFilter):
-    """Filters of the prioritised video list; see the note on the parent."""
+    """Filters of the prioritised video list.
+
+    Relies on the queryset being annotated with ``latest_create_time`` (see
+    PrioritisedTikTokVideoList.get_queryset).
+    """
+
+    # Filters of the video list that only know Research API data and are
+    # not offered here; ``metadata_source`` takes the place of
+    # ``has_api_infos``.
+    region_codes = None
+    has_api_infos = None
 
     priority = django_filters.TypedMultipleChoiceFilter(
         choices=VideoPriority.choices,
