@@ -110,6 +110,7 @@ LOCAL_APPS = [
     "ddcs.datadonation.portability",
     "ddcs.metadata",
     "ddcs.metadata.research_api",
+    "ddcs.metadata.donations",
     "ddcs.metadata.scraper",
     "ddcs.reports",
 ]
@@ -445,6 +446,14 @@ TIKTOK_SCRAPER_MAX_ATTEMPTS: int = env.int("TIKTOK_SCRAPER_MAX_ATTEMPTS", defaul
 TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES: int = env.int(
     "TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES", default=60
 )
+
+
+# Metadata API
+# ------------------------------------------------------------------------------
+# Longest a single database statement of the video list endpoints may run
+# (milliseconds, PostgreSQL only) before it is cancelled and the request
+# answered with 503. 0 switches the limit off.
+METADATA_API_STATEMENT_TIMEOUT_MS = env.int("METADATA_API_STATEMENT_TIMEOUT_MS", 20000)
 
 
 # Zuse Classification API

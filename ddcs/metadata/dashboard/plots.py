@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from ddcs.metadata.dashboard.metrics import (
         ClassificationCoverageDay,
         OriginCount,
+        PriorityCount,
         SyncCoverageDay,
         SyncVideoCountDay,
     )
@@ -37,6 +38,9 @@ _TOTAL_COLOR = "#9f9f9f"
 _CLASSIFIED_COLOR = "#6366f1"
 _VIDEOS_COLOR = "#1f5fa8"
 _NO_VIDEOS_COLOR = "#d62728"
+_METADATA_ONLY_COLOR = "#c9a227"
+_WAITING_COLOR = "#9f9f9f"
+_UNEXPECTED_COLOR = "#d62728"
 
 _SHARED_LAYOUT: dict[str, Any] = {
     "dragmode": False,
@@ -78,6 +82,48 @@ def get_origin_counts_plot(origin_counts: list[OriginCount]) -> dict[str, Any]:
         barmode="stack",
         height=_ORIGIN_BAR_HEIGHT,
         yaxis={"title": "Videos", "automargin": True},
+    )
+    return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
+
+
+def get_priority_counts_plot(priority_counts: list[PriorityCount]) -> dict[str, Any]:
+    """Stacked bar chart: one bar per priority, split by processing state."""
+    if not priority_counts:
+        return {"html": None}
+
+    segments = [
+        ("classified", "Metadata and classification", _CLASSIFIED_COLOR),
+        ("metadata_only", "Metadata, no classification", _METADATA_ONLY_COLOR),
+        ("waiting", "Waiting for metadata and classification", _WAITING_COLOR),
+    ]
+    # Not expected to occur; only drawn if it does.
+    if any(row["classified_without_metadata"] for row in priority_counts):
+        segments.append(
+            (
+                "classified_without_metadata",
+                "Classification without metadata",
+                _UNEXPECTED_COLOR,
+            )
+        )
+
+    priorities = [f"{row['priority']}: {row['label']}" for row in priority_counts]
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                name=name,
+                x=priorities,
+                y=[row[key] for row in priority_counts],
+                marker={"color": color, "cornerradius": PLOT_CORNER_RADIUS},
+            )
+            for key, name, color in segments
+        ]
+    )
+    fig.update_layout(
+        **_SHARED_LAYOUT,
+        barmode="stack",
+        height=_ORIGIN_BAR_HEIGHT,
+        yaxis={"title": "Videos", "automargin": True},
+        xaxis={"type": "category"},
     )
     return {"html": create_plot_html(fig, config=PLOT_CONFIG)}
 

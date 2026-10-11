@@ -7,7 +7,7 @@ class ScrapeTarget(models.Model):
 
     Only videos worth scraping get a row here, so picking the next batch
     never has to look at the (very large) ``TikTokVideo`` table. Rows are
-    created through :func:`ddcs.metadata.scraper.service.enqueue_watched_videos`
+    created through :func:`ddcs.metadata.scraper.service.enqueue_donated_videos`
     and worked off by :class:`ddcs.metadata.scraper.service.ScraperService`.
     """
 
@@ -34,14 +34,16 @@ class ScrapeTarget(models.Model):
     occurrence_count = models.PositiveIntegerField(
         default=0,
         help_text=(
-            "Number of donations whose watch history contains the video "
-            "within the watch window."
+            "Number of donations that show the video as watched, liked or "
+            "bookmarked within the watch window."
         ),
     )
     last_watched_at = models.DateTimeField(
         null=True,
         blank=True,
-        help_text="Most recent view of the video within the watch window.",
+        help_text=(
+            "Most recent view, like or bookmark of the video within the watch window."
+        ),
     )
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
@@ -168,6 +170,8 @@ class VideoInfosScraped(ScrapedDataModel):
     caption_is_auto_generated = models.BooleanField(null=True, blank=True)
 
     # General information
+    # Same information as APIVideoInfos.region_code, kept under the name the
+    # page gives it; the prioritised video API serves it as "region_code".
     location_created = models.CharField(blank=True, max_length=255)
     text_language = models.CharField(blank=True, max_length=255)
     category_type = models.IntegerField(blank=True, null=True)

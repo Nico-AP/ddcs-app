@@ -4,6 +4,14 @@ import django_filters
 from django.db.models import Exists, OuterRef, Q, QuerySet
 
 from ddcs.metadata.models import TikTokVideo, TikTokVideoClassification
+from ddcs.metadata.priority import (
+    HAS_API_INFOS,
+    HAS_SCRAPED_INFOS,
+    METADATA_SOURCE_CONDITIONS,
+    PRIORITY_CONDITIONS,
+    MetadataSource,
+    VideoPriority,
+)
 from ddcs.metadata.research_api.models import APIVideoInfos
 
 
@@ -82,3 +90,61 @@ class TikTokVideoFilter(django_filters.FilterSet):
                 )
             )
         )
+
+
+class PrioritisedTikTokVideoFilter(TikTokVideoFilter):
+    """Filters of the prioritised video list.
+
+    Relies on the queryset being annotated with ``latest_create_time`` (see
+    PrioritisedTikTokVideoList.get_queryset).
+    """
+
+    # Filters of the video list that only know Research API data and are
+    # not offered here; ``metadata_source`` takes the place of
+    # ``has_api_infos``.
+    region_codes = None
+    has_api_infos = None
+
+    priority = django_filters.TypedMultipleChoiceFilter(
+        choices=VideoPriority.choices,
+        coerce=int,
+        widget=django_filters.widgets.CSVWidget,
+        method="filter_priority",
+        help_text="One or several priorities, comma-separated, e.g. 4,3",
+    )
+    metadata_source = django_filters.ChoiceFilter(
+        choices=MetadataSource.choices, method="filter_metadata_source"
+    )
+    has_metadata = django_filters.BooleanFilter(method="filter_has_metadata")
+
+    def filter_priority(
+        self, queryset: QuerySet[TikTokVideo], name: str, value: list[int]
+    ) -> QuerySet[TikTokVideo]:
+        if not value:
+            return queryset
+        condition = Q()
+        for priority in set(value):
+            condition |= PRIORITY_CONDITIONS[VideoPriority(priority)]
+        return queryset.filter(condition)
+
+    def filter_metadata_source(
+        self, queryset: QuerySet[TikTokVideo], name: str, value: str
+    ) -> QuerySet[TikTokVideo]:
+        return queryset.filter(METADATA_SOURCE_CONDITIONS[MetadataSource(value)])
+
+    def filter_has_metadata(
+        self, queryset: QuerySet[TikTokVideo], name: str, value: bool
+    ) -> QuerySet[TikTokVideo]:
+        if value:
+            return queryset.filter(Q(HAS_API_INFOS) | Q(HAS_SCRAPED_INFOS))
+        return queryset.filter(~HAS_API_INFOS, ~HAS_SCRAPED_INFOS)
+
+    def filter_updated_since(
+        self, queryset: QuerySet[TikTokVideo], name: str, value: datetime
+    ) -> QuerySet[TikTokVideo]:
+        # Everything that changes what is served here also moves the video's
+        # (indexed) ``updated_at``: new Research API infos
+        # (ResearchAPIService._sync_video), a scrape (ScraperService._store)
+        # and a donation (donations.service.record_donated_videos). One
+        # condition on it is enough, and the only form an index can serve.
+        return queryset.filter(updated_at__gt=value)

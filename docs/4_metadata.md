@@ -12,7 +12,8 @@ We use two sources to enrich metadata:
 
 To honor that information may come from different sources and make it retraceable,
 we use a database design that distinguishes between *Base/Registry Models*,
-models capturing *Research API information* and models capturing *scraped information*.
+models capturing *Research API information*, models capturing *scraped information*
+and models capturing *donation information*.
 
 ### Base/Registry Models (`ddcs.metadata.models`)
 
@@ -76,8 +77,8 @@ Companion models for fields obtained by scraping the public TikTok website:
 - `ScrapeTarget` → `TikTokVideo` (one-to-one): the scraping queue
 
 The scraper enriches **videos that have no Research API infos** and that donors
-watched during the study period (2026-07-01 to 2026-09-20), starting with the
-videos most donors saw. It also collects each video's original-language
+watched, liked or bookmarked during the study period (2026-07-01 to
+2026-09-20), starting with the videos most donors interacted with. It also collects each video's original-language
 caption. It is off unless `TIKTOK_SCRAPER_ENABLED` is set.
 
 Fields that both sources provide have the same name, type and value format as
@@ -86,6 +87,7 @@ on the Research API models, so the two can be read interchangeably:
 | Model                    | Shared with the Research API model                                                             |
 |--------------------------|------------------------------------------------------------------------------------------------|
 | `VideoInfosScraped`      | `description`, `create_time`, `duration`, `video_mention_list`, `effect_list`, `voice_to_text` |
+|                          | `location_created` holds what the Research API calls `region_code`; it keeps its scraped name  |
 | `VideoStatisticsScraped` | `view_count`, `like_count`, `comment_count`, `share_count`, `favorites_count`                  |
 
 All writes go through `ddcs.metadata.scraper.service`. On success the service
@@ -101,6 +103,104 @@ Scrapers running elsewhere can work on the same queue through the API: they
 claim videos that are missing metadata and submit what they scraped, which is
 stored through the same service. See
 [8_scraper.md → External scrapers](8_scraper.md#external-scrapers).
+
+
+### Donation Information Models (`ddcs.metadata.donations.models`)
+
+Donations are stored encrypted, so the database cannot be asked which videos
+donors interacted with. The companion model for what donations tell about a
+video keeps that fact:
+
+- `DonationVideoInfos` → `TikTokVideo` (one-to-one): one row per video that at
+  least one donation shows as **watched, liked or bookmarked** (shares and
+  comments do not count).
+
+| Field                           | Meaning                                                                                                     |
+|---------------------------------|-------------------------------------------------------------------------------------------------------------|
+| `watched_count`                 | Number of donations whose watch history contains the video. A donor who watched it twenty times counts once. |
+| `liked_count`                   | Number of donations whose liked videos contain it                                                           |
+| `bookmarked_count`              | Number of donations whose bookmarked videos contain it                                                      |
+| `last_interaction_at`           | Most recent view, like or bookmark across all donations; empty if none of them has a readable date          |
+| `last_interaction_in_window_at` | The same within the study period (2026-07-01 to 2026-09-20, UTC); empty if there is none                    |
+
+Unlike `added_by`, a row exists for every such video, whichever source
+registered the video first. Unlike `ScrapeTarget`, it also covers videos the
+Research API delivered, videos that were liked or bookmarked but not watched,
+and interactions outside the study period. The counts here are therefore not
+the same number as `ScrapeTarget.occurrence_count`, which counts donors with
+any interaction within the study period.
+
+**Where the data comes from.** Three DDM blueprints, each with its backup
+variants (the first one that was extracted is used, in this order):
+
+| Interaction | Blueprints                                                                   |
+|-------------|------------------------------------------------------------------------------|
+| watched     | `watch_history`, `watch_history_txt`, `watch_history_old`, `watch_history_old_api` |
+| liked       | `liked_videos`, `liked_videos_txt`, `liked_videos_old`, `liked_videos_old_api`     |
+| bookmarked  | `video_bookmarks`, `video_bookmarks_txt`, `video_bookmarks_old`, `video_bookmarks_old_api` |
+
+Every record has a `link` (the video ID is taken from it) and a `date`. A
+record whose date cannot be read still counts as an interaction.
+
+**How it is written.** All writes go through
+[`ddcs.metadata.donations.service`](../ddcs/metadata/donations/service.py)
+(`scan_donated_videos` reads one donation, `record_donated_videos` stores
+it):
+
+- **New donations**: `register_donation_metadata` records the donation,
+  whether or not the scraper is enabled.
+- **Existing donations**: the `record_donated_videos` command goes through
+  all stored donations, one at a time:
+
+  ```bash
+  python manage.py record_donated_videos [--dry-run]
+  ```
+
+  The same pass rebuilds the scrape queue from the same donations. Options,
+  the summary it prints and how to read it are described in
+  [8_scraper.md → Queueing](8_scraper.md#1-queueing).
+
+**Counts are added, so the command resets them first.** Recording a donation
+raises the counts by one; recording the same donation twice counts it twice.
+That happens when the processing of a donation is retried, or when a donation
+arrives while the command is running and is then also read by it. The command
+therefore sets all counts to zero before it starts, counts from scratch, and
+can be repeated at any time to bring the counts back in line. If it is
+interrupted, the counts are partial: run it again.
+
+While the command runs, rows and interaction times are kept (times only ever
+move to a later one), so the priorities derived from them stay as they are.
+
+**Rows no donation backs any more are deleted at the end.** After the recount,
+a row whose three counts are still zero belongs to a video no remaining
+donation contains: its donors' data was deleted, or they are test
+participants. Those rows are removed, the video stops counting as donated
+(its priority drops), and its `TikTokVideo.updated_at` is moved so that the
+change is reported. This only happens after a run that read at least one
+donation and could read all of them; otherwise a zero count does not mean "no
+donor", the step is skipped and the summary says so. A dry run or an
+interrupted run deletes nothing. The video's scrape target, if any, is kept
+(at the end of the queue), and so is anything already scraped.
+
+Interaction times of rows that remain are not recomputed: if the donor of the
+most recent interaction is gone but others remain, the stored time stays. The
+watch window is the project constant in
+[`scraper/config.py`](../ddcs/metadata/scraper/config.py); the command cannot
+be run with another one, because "in window" times, once written, are never
+cleared.
+
+Whenever a row is created or an interaction time moves, the video's
+`TikTokVideo.updated_at` is moved too (see [`updated_since`](#filters)). A
+change of counts alone does not move it, so a recount does not report every
+video as changed.
+
+**Test participants.** The command leaves out the participants listed in
+`EXCLUDED_PARTICIPANT_IDS`
+([`donations/config.py`](../ddcs/metadata/donations/config.py)), matched on
+`Participant.external_id`. They are known test cases. Incoming donations are
+not checked against the list: new donations always arrive under other IDs.
+As the command also rebuilds the scrape queue, the test participants are left
+out of the queue's counts as well.
 
 
 ### Data origins
@@ -130,6 +230,160 @@ computation lives in
 `bulk_create`, `loaddata`, and direct ORM construction will leave the field
 `NULL`. Any new ingestion path (donation pipeline, scraper, importer) must
 compute and pass `inferred_create_time` explicitly.
+
+
+## Prioritised video API
+
+```
+GET /metadata/api/v1/tiktok/videos/prioritised/
+```
+
+Lists every `TikTokVideo` with a priority and its metadata, for the external
+system that classifies the videos and scrapes their media. It is built like
+the video list (`/metadata/api/v1/tiktok/videos/`): token authentication,
+cursor pagination (`page_size` up to 500, newest registry entry first) and the
+same filters. The video list itself is unchanged and still serves Research API
+data only. Both are listed in the API docs (`/api/docs/`).
+
+### Priorities
+
+Higher means more important.
+
+| Priority | Videos                                                                                         |
+|----------|------------------------------------------------------------------------------------------------|
+| 4        | Watched, liked or bookmarked by a donor (at any time) **and** delivered by the Research API    |
+| 3        | Watched, liked or bookmarked by a donor within the study period (2026-07-01 to 2026-09-20), no Research API infos |
+| 2        | Delivered by the Research API, in no donation                                                  |
+| 1        | Everything else, e.g. donated videos with interactions only outside the study period           |
+
+The priority is **not stored**. It is derived for each request from
+`DonationVideoInfos` and from whether the video has `APIVideoInfos`
+([`ddcs/metadata/priority.py`](../ddcs/metadata/priority.py)), so it is always
+current: a priority-3 video becomes priority 4 once the Research API delivers
+it, a priority-2 video once a donor who watched, liked or bookmarked it
+donates.
+
+Priorities are only as complete as `DonationVideoInfos`. After deploying, run
+`python manage.py record_donated_videos` once (see
+[Donation Information Models](#donation-information-models-ddcsmetadatadonationsmodels)); until then every video
+donated before the deployment counts as not donated.
+
+### Progress per priority (dashboard)
+
+The metadata dashboard (`/metadata/dashboard/`) has a card "Videos by
+priority": one stacked bar per priority, split into
+
+- videos with metadata and a classification,
+- videos with metadata but no classification yet,
+- videos waiting for both.
+
+"Metadata" is Research API infos or scraped infos, as in the response.
+Priorities 4 and 2 have Research API infos by definition, so nothing in them
+waits for metadata. A classification without any metadata is not expected; if
+one exists, it is shown as a fourth segment instead of being counted into
+one of the three.
+
+The counts are part of the dashboard snapshot (computed by the hourly
+`refresh_metadata_dashboard` task, or with "Refresh now"), not live. They are
+derived in `get_priority_counts`
+([`dashboard/metrics.py`](../ddcs/metadata/dashboard/metrics.py)) from a few
+aggregates rather than from the priority expression of the API; a test keeps
+the two in agreement.
+
+### Fields
+
+| Field             | Content                                                                                           |
+|-------------------|---------------------------------------------------------------------------------------------------|
+| `id_tiktok`       | The video ID                                                                                      |
+| `priority`        | 4 to 1, see above                                                                                 |
+| `metadata_source` | `research_api`, `scraped`, or `null` if the video has no metadata yet                             |
+| `last_interaction_at` | Most recent view, like or bookmark of the video in any donation (UTC); `null` if it is in none or the date is unknown |
+| metadata          | The fields of the video list: `description`, `create_time`, `created_at`, `region_code`, `duration`, `voice_to_text`, `is_stem_verified`, `video_mention_list`, `effect_list`, `video_label` |
+| `user`, `music`, `hashtags`, `keywords` | From the registry, as in the video list                                     |
+
+The metadata fields come from the Research API infos if the video has any,
+otherwise from the most recent scrape. For a scraped video, `region_code` is
+the scraped `location_created`. `is_stem_verified` and `video_label` exist
+only in Research API data and are `null` for scraped videos. `created_at` is when the served infos were stored here. Videos with
+neither source are listed too, with empty metadata, because their media can
+still be scraped by ID.
+
+### Filters
+
+All filters of the video list, plus:
+
+| Filter            | Effect                                                                    |
+|-------------------|---------------------------------------------------------------------------|
+| `priority`        | One or several priorities, comma-separated (`?priority=4,3`)              |
+| `metadata_source` | `research_api` or `scraped`                                               |
+| `has_metadata`    | `true`: videos with metadata from either source; `false`: those without   |
+
+`updated_since` reports every video whose priority, `last_interaction_at` or
+metadata may have changed since then. It is a single condition on
+`TikTokVideo.updated_at`, which every such change moves:
+
+| Change                                   | Where `updated_at` is moved                 |
+|------------------------------------------|---------------------------------------------|
+| A donation shows the video for the first time, or with a later interaction | `donations.service.record_donated_videos` |
+| The Research API delivers the video      | `ResearchAPIService._sync_video`            |
+| The video is scraped                     | `ScraperService._store`                     |
+
+Any new code that changes what this endpoint serves has to move `updated_at`
+as well. This differs from the video list, whose `updated_since` also looks
+for newer Research API infos directly; changes from before this endpoint was
+deployed are therefore only found there.
+
+Two filters of the video list are **not** offered here, because they only
+know Research API data: `region_codes` and `has_api_infos` (use
+`metadata_source=research_api` for the latter). A request that sends them
+anyway gets no error; the parameter is ignored. The `create_date*` filters
+are offered but still look at Research API data only, so they do not match
+scraped videos.
+
+### Performance
+
+Not measured on production data; what follows is how the query is built.
+
+- **One page costs five queries**, whatever the page size: the videos (with
+  donation infos, user and music joined), then hashtags, keywords, Research
+  API infos and scraped infos for those videos. Cursor pagination makes a
+  late page as cheap as the first.
+- **`updated_since`** is a range condition on the indexed
+  `TikTokVideo.updated_at`.
+- **The Research API subquery behind `create_date*`** only runs when one of
+  those filters is used.
+- **A `priority` filter is not index-driven.** The database walks the videos
+  newest first and keeps those that match, so a page is slow where matches
+  are rare, and the last page of a filter scans to the end of the table. If
+  that shows in practice, the remedy is to store the priority in an indexed
+  column, at the cost of maintaining it wherever Research API infos or
+  donation infos are written.
+
+- **Statements are cancelled after a time limit.** Both video list endpoints
+  limit each database statement of a request to
+  `METADATA_API_STATEMENT_TIMEOUT_MS` (default 20000, `0` switches it off;
+  PostgreSQL only). A request whose statement is cancelled is answered with
+  `503` and a hint to narrow it down or fetch unfiltered. Without the limit
+  such a statement keeps running in the database after the web server gave
+  up, and retries pile up. Not yet observed against a real cancel: check
+  once on staging with a very low value.
+
+Before the external system starts paging through all videos, run
+`EXPLAIN (ANALYZE, BUFFERS)` on the page query for `?priority=4`,
+`?priority=2` and `?updated_since=<yesterday>`.
+
+### Things to know
+
+- **Classifications are only pulled back for Research API videos.**
+  `sync_tiktok_video_classifications` selects videos by the day their
+  Research API infos arrived. Classifications the external system produces
+  for scraped videos are not fetched until that task is extended.
+- **`last_interaction_at` is a full timestamp.** For a video only one donor
+  watched, liked or bookmarked, it is the time that donor did so. The claim
+  endpoint for external scrapers already exposes the same kind of value
+  (`last_watched_at`).
+- **The counts are not served.** `watched_count`, `liked_count` and
+  `bookmarked_count` are stored but not part of the response.
 
 
 ## Access Records through the Admin
