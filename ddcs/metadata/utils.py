@@ -1,7 +1,10 @@
 import logging
+from collections.abc import Iterable
 from datetime import UTC, datetime
 
 from django.db import connection
+
+from ddcs.metadata.models import DataOrigins, TikTokVideo
 
 logger = logging.getLogger(__name__)
 
@@ -40,3 +43,25 @@ def infer_publication_date_from_id(tiktok_id: int) -> datetime:
     binary_ts = binary_id[:32]
     ts = int(binary_ts, 2)
     return datetime.fromtimestamp(ts, tz=UTC)
+
+
+def video_pks(id_tiktoks: Iterable[int]) -> dict[int, int]:
+    """TikTok ID -> primary key of the videos, creating rows that are missing."""
+
+    def lookup(ids: Iterable[int]) -> dict[int, int]:
+        return dict(
+            TikTokVideo.objects.filter(id_tiktok__in=ids).values_list("id_tiktok", "pk")
+        )
+
+    pk_by_id = lookup(id_tiktoks)
+    missing = [id_tiktok for id_tiktok in id_tiktoks if id_tiktok not in pk_by_id]
+    if missing:
+        TikTokVideo.objects.bulk_create(
+            [
+                TikTokVideo(id_tiktok=id_tiktok, added_by=DataOrigins.DONATION)
+                for id_tiktok in missing
+            ],
+            ignore_conflicts=True,
+        )
+        pk_by_id.update(lookup(missing))
+    return pk_by_id

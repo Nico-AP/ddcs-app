@@ -1,13 +1,11 @@
 import json
 import os
-from datetime import UTC, date, datetime, timedelta
-from io import StringIO
+from datetime import UTC, datetime, timedelta
 from unittest import skipUnless
 from unittest.mock import Mock, patch
 
 from celery.exceptions import SoftTimeLimitExceeded
 from django.core.cache import cache
-from django.core.management import CommandError, call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -36,13 +34,11 @@ from ddcs.metadata.scraper.scraper import TikTokScraper
 from ddcs.metadata.scraper.service import (
     ScraperService,
     cooldown_until,
-    enqueue_watched_videos,
+    enqueue_donated_videos,
     get_cooldown,
     get_last_run,
     register_abort,
-    reset_watch_ranking,
-    scan_watch_history,
-    watched_videos_in_window,
+    reset_queue_ranking,
 )
 from ddcs.metadata.scraper.tasks import scrape_pending_videos
 
@@ -126,7 +122,7 @@ _WATCHED_AT = datetime(2026, 8, 1, 12, tzinfo=UTC)
 
 def enqueue_videos(id_tiktoks: list[int]) -> int:
     """Queue videos as watched once by one donor; returns targets created."""
-    return enqueue_watched_videos(dict.fromkeys(id_tiktoks, (1, _WATCHED_AT))).created
+    return enqueue_donated_videos(dict.fromkeys(id_tiktoks, (1, _WATCHED_AT))).created
 
 
 def _ranking(id_tiktok: int) -> tuple[int, datetime | None]:
@@ -159,67 +155,6 @@ def _view(video_id: object, watched_at: object) -> dict:
     return {"video_id": video_id, "date": watched_at, "link": "https://example"}
 
 
-class ScanWatchHistoryTests(TestCase):
-    def test_window_includes_both_days_in_utc(self):
-        history = [
-            _view(1, datetime(2026, 6, 30, 23, 59, 59, tzinfo=UTC)),  # day before
-            _view(2, datetime(2026, 7, 1, 0, 0, 0, tzinfo=UTC)),  # first moment
-            _view(3, datetime(2026, 9, 20, 23, 59, 59, tzinfo=UTC)),  # last moment
-            _view(4, datetime(2026, 9, 21, 0, 0, 0, tzinfo=UTC)),  # day after
-        ]
-
-        scan = scan_watch_history(history)
-
-        self.assertEqual(set(scan.last_watched), {2, 3})
-        self.assertEqual(scan.views_in_window, 2)
-        self.assertEqual(scan.skipped_records, 0)
-
-    def test_repeat_views_collapse_to_the_latest(self):
-        early = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        late = datetime(2026, 8, 5, 10, tzinfo=UTC)
-
-        scan = scan_watch_history([_view(1, late), _view(1, early), _view(1, late)])
-
-        self.assertEqual(scan.last_watched, {1: late})
-        self.assertEqual(scan.views_in_window, 3)
-
-    def test_views_outside_the_window_do_not_set_the_last_view(self):
-        inside = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        after = datetime(2026, 10, 1, 10, tzinfo=UTC)
-
-        scan = scan_watch_history([_view(1, inside), _view(1, after)])
-
-        self.assertEqual(scan.last_watched, {1: inside})
-
-    def test_records_without_usable_date_or_video_id_are_skipped(self):
-        inside = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        history = [
-            _view(1, "05.07.2026 10:00"),  # date that could not be parsed
-            _view(None, inside),  # link without an ID
-            {"link": "https://example"},  # neither
-            _view(2, inside),
-        ]
-
-        scan = scan_watch_history(history)
-
-        self.assertEqual(scan.last_watched, {2: inside})
-        self.assertEqual(scan.skipped_records, 3)
-
-    def test_naive_dates_are_taken_as_utc(self):
-        scan = scan_watch_history([_view(1, datetime(2026, 7, 1, 0, 0, 0))])  # noqa: DTZ001
-
-        self.assertEqual(scan.last_watched, {1: datetime(2026, 7, 1, tzinfo=UTC)})
-
-    def test_custom_window_and_empty_history(self):
-        view = _view(1, datetime(2026, 1, 15, tzinfo=UTC))
-
-        self.assertEqual(scan_watch_history([view]).last_watched, {})
-        scan = scan_watch_history([view], start=date(2026, 1, 1), end=date(2026, 1, 31))
-        self.assertEqual(set(scan.last_watched), {1})
-        self.assertEqual(scan_watch_history(None).last_watched, {})
-        self.assertEqual(watched_videos_in_window(None), {})
-
-
 class EnqueueWatchedVideosTests(TestCase):
     def setUp(self):
         self.early = datetime(2026, 7, 5, 10, tzinfo=UTC)
@@ -228,7 +163,7 @@ class EnqueueWatchedVideosTests(TestCase):
     def test_creates_targets_and_missing_videos(self):
         _video(1)
 
-        result = enqueue_watched_videos({1: (3, self.late), 999: (1, self.early)})
+        result = enqueue_donated_videos({1: (3, self.late), 999: (1, self.early)})
 
         self.assertEqual(
             (result.created, result.updated, result.covered_by_api), (2, 0, 0)
@@ -245,24 +180,24 @@ class EnqueueWatchedVideosTests(TestCase):
         APIVideoInfos.objects.create(video=_video(1))
         _video(2)
 
-        result = enqueue_watched_videos({1: (5, self.late), 2: (1, self.late)})
+        result = enqueue_donated_videos({1: (5, self.late), 2: (1, self.late)})
 
         self.assertEqual((result.created, result.covered_by_api), (1, 1))
         self.assertEqual(ScrapeTarget.objects.get().video.id_tiktok, 2)
 
     def test_adding_sums_counts_and_keeps_the_later_view(self):
-        enqueue_watched_videos({1: (2, self.late), 2: (1, self.early)})
+        enqueue_donated_videos({1: (2, self.late), 2: (1, self.early)})
 
-        result = enqueue_watched_videos({1: (1, self.early), 2: (1, self.late)})
+        result = enqueue_donated_videos({1: (1, self.early), 2: (1, self.late)})
 
         self.assertEqual((result.created, result.updated), (0, 2))
         self.assertEqual(_ranking(1), (3, self.late))
         self.assertEqual(_ranking(2), (2, self.late))
 
     def test_adding_leaves_other_targets_alone(self):
-        enqueue_watched_videos({1: (5, self.late)})
+        enqueue_donated_videos({1: (5, self.late)})
 
-        enqueue_watched_videos({2: (1, self.early)})
+        enqueue_donated_videos({2: (1, self.early)})
 
         self.assertEqual(_ranking(1), (5, self.late))
 
@@ -270,7 +205,7 @@ class EnqueueWatchedVideosTests(TestCase):
         _target(_video(1), status=Status.SUCCESS, attempts=1)
         _target(_video(2), status=Status.UNAVAILABLE, attempts=1)
 
-        enqueue_watched_videos({1: (2, self.late), 2: (2, self.late)})
+        enqueue_donated_videos({1: (2, self.late), 2: (2, self.late)})
 
         self.assertEqual(
             set(ScrapeTarget.objects.values_list("status", "attempts")),
@@ -278,13 +213,13 @@ class EnqueueWatchedVideosTests(TestCase):
         )
         self.assertEqual(_ranking(1), (2, self.late))
 
-    def test_reset_watch_ranking_clears_counts_and_dates_only(self):
-        enqueue_watched_videos({1: (5, self.late), 2: (1, self.early)})
+    def test_reset_queue_ranking_clears_counts_and_dates_only(self):
+        enqueue_donated_videos({1: (5, self.late), 2: (1, self.early)})
         _target(_video(3), status=Status.SUCCESS, attempts=2, occurrence_count=4)
         _target(_video(4))  # nothing to reset
 
         with patch("ddcs.metadata.scraper.service._RESET_CHUNK_SIZE", 2):
-            reset = reset_watch_ranking()
+            reset = reset_queue_ranking()
 
         self.assertEqual(reset, 3)
         self.assertEqual(
@@ -1147,173 +1082,6 @@ class ScrapePendingVideosTaskTests(TestCase):
 
         recover.assert_called_once_with()
         self.lock.release.assert_called_once_with()
-
-
-_COMMAND = "ddcs.metadata.management.commands.enqueue_watched_videos"
-
-
-class EnqueueWatchedVideosCommandTests(TestCase):
-    def setUp(self):
-        self.early = datetime(2026, 7, 5, 10, tzinfo=UTC)
-        self.late = datetime(2026, 8, 5, 10, tzinfo=UTC)
-        self.outside = datetime(2026, 10, 5, 10, tzinfo=UTC)
-        # Watch history per participant; an Exception stands for a donation
-        # that cannot be decrypted.
-        self.histories: dict[str, list | Exception] = {
-            "anna": [
-                _view(1, self.early),
-                _view(1, self.early),
-                _view(2, self.outside),
-            ],
-            "ben": [_view(1, self.late), _view(3, self.early), _view(None, self.early)],
-        }
-
-    def _call(self, *args: str) -> str:
-        participants = [Mock(pk=name) for name in self.histories]
-
-        def watch_history(participant: Mock) -> list:
-            history = self.histories[participant.pk]
-            if isinstance(history, Exception):
-                raise history
-            return history
-
-        out = StringIO()
-        with (
-            patch(f"{_COMMAND}.participants_with_watch_history") as with_history,
-            patch(f"{_COMMAND}.get_watch_history", side_effect=watch_history),
-        ):
-            with_history.return_value.iterator.return_value = iter(participants)
-            call_command("enqueue_watched_videos", *args, stdout=out)
-        return out.getvalue()
-
-    def test_counts_donors_and_keeps_the_latest_view(self):
-        out = self._call()
-
-        # Video 1: two donors (Anna's repeat view counts once), last seen by Ben.
-        self.assertEqual(_ranking(1), (2, self.late))
-        self.assertEqual(_ranking(3), (1, self.early))
-        # Video 2 was only watched outside the window.
-        self.assertFalse(ScrapeTarget.objects.filter(video__id_tiktok=2).exists())
-        self.assertIn("Donations read: 2", out)
-        self.assertIn("Views in the window: 4", out)
-        self.assertIn("Records skipped (no date or no video ID): 1", out)
-        # Anna watched video 1; Ben watched videos 1 and 3.
-        self.assertIn("Videos watched in the window, summed over donations: 3", out)
-        self.assertIn("Counts reset on existing targets: 0", out)
-        self.assertIn("Targets created: 2", out)
-        self.assertIn("Counts raised on existing targets: 1", out)
-
-    def test_each_donation_is_written_before_the_next_is_read(self):
-        seen_before_ben = []
-
-        def watch_history(participant: Mock) -> list:
-            if participant.pk == "ben":
-                seen_before_ben.append(ScrapeTarget.objects.count())
-            return self.histories[participant.pk]
-
-        with (
-            patch(f"{_COMMAND}.participants_with_watch_history") as with_history,
-            patch(f"{_COMMAND}.get_watch_history", side_effect=watch_history),
-        ):
-            with_history.return_value.iterator.return_value = iter(
-                [Mock(pk="anna"), Mock(pk="ben")]
-            )
-            call_command("enqueue_watched_videos", stdout=StringIO())
-
-        # Anna's video was already queued when Ben's history was read.
-        self.assertEqual(seen_before_ben, [1])
-
-    def test_rerun_counts_from_scratch(self):
-        self._call()
-
-        out = self._call()
-
-        self.assertEqual(_ranking(1), (2, self.late))
-        self.assertEqual(_ranking(3), (1, self.early))
-        self.assertIn("Counts reset on existing targets: 2", out)
-        self.assertIn("Targets created: 0", out)
-
-    def test_rerun_corrects_counts_added_by_incoming_donations(self):
-        self._call()
-        # E.g. a retried donation counted twice.
-        enqueue_watched_videos({1: (1, self.late)})
-        self.assertEqual(_ranking(1)[0], 3)
-
-        self._call()
-
-        self.assertEqual(_ranking(1), (2, self.late))
-
-    def test_keep_counts_adds_on_top(self):
-        self._call()
-
-        out = self._call("--keep-counts")
-
-        self.assertEqual(_ranking(1), (4, self.late))
-        self.assertEqual(_ranking(3), (2, self.early))
-        self.assertNotIn("Counts reset", out)
-
-    def test_targets_no_view_backs_any_more_drop_to_zero(self):
-        self._call()
-        del self.histories["ben"]
-
-        self._call()
-
-        self.assertEqual(_ranking(1), (1, self.early))
-        self.assertEqual(_ranking(3), (0, None))
-
-    def test_rerun_does_not_requeue_scraped_videos(self):
-        self._call()
-        ScrapeTarget.objects.filter(video__id_tiktok=1).update(
-            status=Status.SUCCESS, attempts=1
-        )
-
-        self._call()
-
-        target = ScrapeTarget.objects.get(video__id_tiktok=1)
-        self.assertEqual((target.status, target.attempts), (Status.SUCCESS, 1))
-        self.assertEqual(target.occurrence_count, 2)
-
-    def test_videos_covered_by_the_research_api_are_reported_not_queued(self):
-        APIVideoInfos.objects.create(video=_video(1))
-
-        out = self._call()
-
-        # Both Anna and Ben watched video 1: skipped once per donation.
-        self.assertIn("Skipped, Research API has the video (per donation): 2", out)
-        self.assertFalse(ScrapeTarget.objects.filter(video__id_tiktok=1).exists())
-
-    def test_unreadable_donation_is_skipped_and_reported(self):
-        self.histories["carl"] = ValueError("cannot decrypt")
-
-        with self.assertLogs(_COMMAND, level="ERROR"):
-            out = self._call()
-
-        self.assertIn("Donations read: 2", out)
-        self.assertIn("Donations that could not be read: 1", out)
-        self.assertEqual(_ranking(1), (2, self.late))
-
-    def test_custom_window(self):
-        self._call("--start", "2026-10-01", "--end", "2026-10-31")
-
-        self.assertEqual(
-            set(ScrapeTarget.objects.values_list("video__id_tiktok", flat=True)), {2}
-        )
-
-    def test_start_after_end_is_rejected(self):
-        with self.assertRaises(CommandError):
-            self._call("--start", "2026-09-01", "--end", "2026-08-01")
-
-    def test_dry_run_changes_nothing_not_even_existing_counts(self):
-        enqueue_watched_videos({7: (5, self.late)})
-
-        out = self._call("--dry-run")
-
-        self.assertIn("Videos watched in the window, summed over donations: 3", out)
-        self.assertIn("Dry run: nothing was changed.", out)
-        self.assertNotIn("Targets created", out)
-        self.assertEqual(_ranking(7), (5, self.late))
-        self.assertEqual(ScrapeTarget.objects.count(), 1)
-        self.assertEqual(TikTokVideo.objects.count(), 1)
 
 
 @skipUnless(

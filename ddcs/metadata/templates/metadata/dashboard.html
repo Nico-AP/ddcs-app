@@ -46,9 +46,9 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
       <span class="dashboard-caveat">
         {% if snapshot_computed_at %}
-          Video counts and classification coverage as of {{ snapshot_computed_at|date:"Y-m-d H:i" }} (refreshed hourly). Sync coverage is live.
+          Video counts, priorities and classification coverage as of {{ snapshot_computed_at|date:"Y-m-d H:i" }} (refreshed hourly). Sync coverage is live.
         {% else %}
-          Video counts and classification coverage are being computed. Reload in a few minutes.
+          Video counts, priorities and classification coverage are being computed. Reload in a few minutes.
         {% endif %}
       </span>
       <form method="post">
@@ -83,6 +83,46 @@
               <td class="text-end">{{ row.total }}</td>
               <td class="text-end">{{ row.with_api_info }}</td>
               <td class="text-end">{{ row.without_api_info }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="dashboard-card p-3">
+      <h2 class="h5">Videos by priority</h2>
+      <p class="dashboard-caveat">
+        All videos by their priority in the prioritised video API (4 = highest), split by how far along they are.
+        "Donated" means watched, liked or bookmarked by a donor; "metadata" is Research API details or scraped details.
+        Priorities 4 and 2 have Research API details by definition, so none of their videos are waiting for metadata.
+      </p>
+      {% if priority_counts_plot.html %}
+        {{ priority_counts_plot.html|safe }}
+      {% elif not snapshot_computed_at %}
+        <p>Being computed.</p>
+      {% else %}
+        <p>No data yet. It appears with the next refresh.</p>
+      {% endif %}
+      <table class="table table-sm mt-3">
+        <thead>
+          <tr>
+            <th>Priority</th>
+            <th class="text-end">Total</th>
+            <th class="text-end">Metadata and classification</th>
+            <th class="text-end">Metadata, no classification</th>
+            <th class="text-end">Waiting for both</th>
+            {% if has_classified_without_metadata %}<th class="text-end">Classification without metadata</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in priority_counts %}
+            <tr>
+              <td>{{ row.priority }}: {{ row.label }}</td>
+              <td class="text-end">{{ row.total }}</td>
+              <td class="text-end">{{ row.classified }}</td>
+              <td class="text-end">{{ row.metadata_only }}</td>
+              <td class="text-end">{{ row.waiting }}</td>
+              {% if has_classified_without_metadata %}<td class="text-end">{{ row.classified_without_metadata }}</td>{% endif %}
             </tr>
           {% endfor %}
         </tbody>
