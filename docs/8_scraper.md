@@ -153,7 +153,7 @@ Videos that have no `TikTokVideo` row yet get one (`added_by = DONATION`).
 
 ### 2. Order: widely seen recent videos, then most recent
 
-The queue is worked off in two steps:
+The queue is worked off in three steps:
 
 1. **Priority group, most donors first.** Targets with an
    `occurrence_count` of at least 15 and a `last_watched_at` on or after
@@ -164,6 +164,13 @@ The queue is worked off in two steps:
    still be online. Targets with a last interaction before 2026-08-01
    therefore follow after the newer ones, and targets without a date come
    last.
+3. **Re-checks of unavailable videos**, only once nothing from steps 1 and 2
+   is due. TikTok's "unavailable" answer is not always permanent (a private
+   video can be made public again), so each such video is checked up to
+   `TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS` times (default 3) in total. The
+   re-checks go in passes, fewest checks first: every unavailable video is
+   checked a second time before any is checked a third time. There is no
+   minimum wait between two checks of the same video.
 
 The thresholds are defined in
 [`scraper/config.py`](../ddcs/metadata/scraper/config.py)
@@ -218,13 +225,13 @@ the pacing change on a small sample; it is not a production throughput figure.
 
 ### 5. Outcome per target
 
-| `ScrapeTarget.status` | Meaning                                                                             | Retried?                                                   |
-|-----------------------|-------------------------------------------------------------------------------------|------------------------------------------------------------|
-| `pending`             | Waiting. Also what a target stays when TikTok blocked the request.                  | yes                                                        |
-| `success`             | Infos and statistics stored, `TikTokVideo.scraped_at` set.                          | no                                                         |
-| `unavailable`         | TikTok reports the video as gone or private (`tiktok_status_code`).                 | no                                                         |
-| `covered_by_api`      | The Research API delivered the video before it was scraped.                         | no                                                         |
-| `failed`              | Anything else: network error, unexpected page structure, data that can't be stored. | after 6 hours, at most `TIKTOK_SCRAPER_MAX_ATTEMPTS` times |
+| `ScrapeTarget.status` | Meaning                                                                             | Retried?                                                                                                                                       |
+|-----------------------|-------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `pending`             | Waiting. Also what a target stays when TikTok blocked the request.                  | yes                                                                                                                                            |
+| `success`             | Infos and statistics stored, `TikTokVideo.scraped_at` set.                          | no                                                                                                                                             |
+| `unavailable`         | TikTok reports the video as gone or private (`tiktok_status_code`).                 | once the queue is done, `TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS` checks in total ([order](#2-order-widely-seen-recent-videos-then-most-recent)) |
+| `covered_by_api`      | The Research API delivered the video before it was scraped.                         | no                                                                                                                                             |
+| `failed`              | Anything else: network error, unexpected page structure, data that can't be stored. | after 6 hours, at most `TIKTOK_SCRAPER_MAX_ATTEMPTS` times                                                                                     |
 
 ### 6. When TikTok blocks
 
@@ -540,12 +547,12 @@ At most 50 entries per request, one per video:
 | `tiktok_status_code`      | `unavailable` | The `statusCode` TikTok returned in place of the video                                                                                 |
 | `error_type`, `error_msg` | `failed`      | What went wrong, in the scraper's words                                                                                                |
 
-| `outcome`     | When                                                         | Effect on the target                                                                    |
-|---------------|--------------------------------------------------------------|-----------------------------------------------------------------------------------------|
-| `success`     | The page was loaded and contained the video                  | Data stored as described under [What is stored](#what-is-stored); `success`              |
-| `unavailable` | TikTok reports the video as gone or private                  | `unavailable`, not retried                                                              |
-| `failed`      | Something specific to this video went wrong                  | `failed`, attempt counted; retried after 6 hours, at most `TIKTOK_SCRAPER_MAX_ATTEMPTS` |
-| `released`    | The video was not scraped, e.g. because TikTok blocks        | Back in the queue at once, no attempt counted                                           |
+| `outcome`     | When                                                  | Effect on the target                                                                                                        |
+|---------------|-------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| `success`     | The page was loaded and contained the video           | Data stored as described under [What is stored](#what-is-stored); `success`                                                 |
+| `unavailable` | TikTok reports the video as gone or private           | `unavailable`, check counted; checked again once the queue is done, `TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS` checks in total |
+| `failed`      | Something specific to this video went wrong           | `failed`, attempt counted; retried after 6 hours, at most `TIKTOK_SCRAPER_MAX_ATTEMPTS`                                     |
+| `released`    | The video was not scraped, e.g. because TikTok blocks | Back in the queue at once, no attempt counted                                                                               |
 
 **A blocked scraper must release, not fail.** The built-in scraper leaves
 targets untouched when TikTok stops serving it
@@ -620,6 +627,7 @@ All settings are read from the environment (see `.env.example`).
 | `TIKTOK_SCRAPER_CAPTION_DELAY`          | `0.0`          | Seconds to wait before each caption download                                                                                                                      |
 | `TIKTOK_SCRAPER_BATCH_SIZE`             | `3000`         | Maximum number of videos per run                                                                                                                                  |
 | `TIKTOK_SCRAPER_MAX_ATTEMPTS`           | `3`            | Attempts before a failing video is given up on                                                                                                                    |
+| `TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS` | `3`            | Checks in total of a video TikTok reports as unavailable                                                                                                          |
 | `TIKTOK_SCRAPER_FETCH_CAPTIONS`         | `True`         | Also download the original-language caption                                                                                                                       |
 | `TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES` | `60`           | Minutes an [external scraper](#external-scrapers) keeps the videos it claimed                                                                                     |
 | `CELERY_TIKTOK_SCRAPER_QUEUE`           | default queue  | Celery queue for the scraping task. While targets are pending the scraper occupies one worker continuously, so a separate queue with its own worker is advisable. |

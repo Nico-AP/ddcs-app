@@ -423,6 +423,7 @@ class ScrapeTargetAdmin(admin.ModelAdmin):
         "occurrence_count",
         "last_watched_at",
         "attempts",
+        "unavailable_checks",
         "last_attempted_at",
         "last_error_type",
         "tiktok_status_code",
