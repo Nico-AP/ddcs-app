@@ -157,7 +157,8 @@ class ClaimTests(ExternalScraperAPITestCase):
 
     def test_only_due_targets_are_handed_out(self):
         _target(_video(1), status=Status.SUCCESS, attempts=1)
-        _target(_video(2), status=Status.UNAVAILABLE, attempts=1)
+        # Checks used up.
+        _target(_video(2), status=Status.UNAVAILABLE, attempts=3, unavailable_checks=3)
         # Failed a moment ago: not due before the backoff has passed.
         _target(
             _video(3),
@@ -275,7 +276,7 @@ class ResultsTests(ExternalScraperAPITestCase):
         self.assertEqual(infos.caption_status, CaptionStatus.NONE_AVAILABLE)
         self.assertEqual(infos.voice_to_text, "")
 
-    def test_unavailable_is_final(self):
+    def test_unavailable_counts_a_check(self):
         self._claimed()
 
         results = self._submit(
@@ -285,9 +286,48 @@ class ResultsTests(ExternalScraperAPITestCase):
         self.assertEqual(results[0]["status"], "recorded")
         target = self._reload()
         self.assertEqual(target.status, Status.UNAVAILABLE)
+        self.assertEqual(target.unavailable_checks, 1)
         self.assertEqual(target.tiktok_status_code, 10204)
         self.assertEqual(target.last_error_type, "TikTokItemUnavailableError")
         self.assertIsNone(target.claimed_until)
+
+    def test_resubmitting_unavailable_without_a_new_claim_changes_nothing(self):
+        self._claimed()
+        item = {"id_tiktok": _ID, "outcome": "unavailable", "tiktok_status_code": 1}
+        self._submit(item)
+
+        results = self._submit(item)
+
+        self.assertEqual(results[0]["status"], "already_done")
+        self.assertEqual(self._reload().unavailable_checks, 1)
+
+    def test_unavailable_target_is_claimed_again_for_a_recheck(self):
+        self._claimed()
+        item = {"id_tiktok": _ID, "outcome": "unavailable", "tiktok_status_code": 1}
+        self._submit(item)
+        self._claimed()
+        self._submit(item)
+        self._claimed()
+
+        results = self._submit(
+            {"id_tiktok": _ID, "outcome": "success", "data": _PAYLOAD}
+        )
+
+        self.assertEqual(results[0]["status"], "stored")
+        target = self._reload()
+        self.assertEqual(
+            (target.status, target.unavailable_checks), (Status.SUCCESS, 2)
+        )
+
+    def test_unavailable_target_with_checks_used_up_is_not_claimed(self):
+        for _ in range(3):
+            self._claimed()
+            self._submit(
+                {"id_tiktok": _ID, "outcome": "unavailable", "tiktok_status_code": 1}
+            )
+
+        self.assertEqual(self._claim(), [])
+        self.assertEqual(self._reload().unavailable_checks, 3)
 
     def test_failed_counts_an_attempt_and_waits_for_backoff(self):
         self._claimed()
