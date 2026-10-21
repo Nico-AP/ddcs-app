@@ -524,9 +524,9 @@ class ScraperServiceCaptionTests(TestCase):
 
 
 class ScraperServiceQueueTests(TestCase):
-    def test_unavailable_is_terminal_and_keeps_status_code(self):
+    def test_unavailable_counts_a_check_and_keeps_status_code(self):
         enqueue_videos([_video(1).id_tiktok])
-        service, scraper = _service(
+        service, _ = _service(
             _error(TikTokItemUnavailableError(10204, "item doesn't exist"))
         )
 
@@ -535,12 +535,92 @@ class ScraperServiceQueueTests(TestCase):
         target = ScrapeTarget.objects.get()
         self.assertEqual(stats["unavailable"], 1)
         self.assertEqual(target.status, Status.UNAVAILABLE)
+        self.assertEqual((target.attempts, target.unavailable_checks), (1, 1))
         self.assertEqual(target.tiktok_status_code, 10204)
         self.assertEqual(target.last_error_type, "TikTokItemUnavailableError")
 
+    def test_unavailable_is_checked_three_times_in_total(self):
+        enqueue_videos([_video(1).id_tiktok])
+        unavailable = _error(TikTokItemUnavailableError(10204, "gone"))
+        service, scraper = _service(unavailable)
+
+        for _ in range(3):
+            service.scrape_batch(limit=10)
+
+        self.assertEqual(scraper.scrape_video_list.call_count, 3)
+        target = ScrapeTarget.objects.get()
+        self.assertEqual(
+            (target.status, target.unavailable_checks), (Status.UNAVAILABLE, 3)
+        )
+
+        # Checks used up: unavailable for good.
         scraper.scrape_video_list.reset_mock()
         service.scrape_batch(limit=10)
         scraper.scrape_video_list.assert_called_once_with([])
+
+    def test_unavailable_is_rechecked_only_after_the_rest_of_the_queue(self):
+        _target(
+            _video(1),
+            occurrence_count=_MIN + 20,
+            last_watched_at=_WATCHED_AT,
+            status=Status.UNAVAILABLE,
+            attempts=1,
+            unavailable_checks=1,
+            last_attempted_at=timezone.now(),
+        )
+        enqueue_videos([_video(2).id_tiktok, _video(3).id_tiktok])
+        service, scraper = _service(*[_success()] * 3)
+
+        service.scrape_batch(limit=2)
+        service.scrape_batch(limit=2)
+
+        self.assertEqual(
+            [c.args[0] for c in scraper.scrape_video_list.call_args_list],
+            [["2", "3"], ["1"]],
+        )
+
+    def test_unavailable_rechecks_go_in_passes(self):
+        now = timezone.now()
+        for id_tiktok, checks, minutes_ago in [(1, 2, 30), (2, 1, 10), (3, 1, 20)]:
+            _target(
+                _video(id_tiktok),
+                last_watched_at=_WATCHED_AT,
+                status=Status.UNAVAILABLE,
+                attempts=checks,
+                unavailable_checks=checks,
+                last_attempted_at=now - timedelta(minutes=minutes_ago),
+            )
+        # Checks used up: never again.
+        _target(
+            _video(4),
+            status=Status.UNAVAILABLE,
+            attempts=3,
+            unavailable_checks=3,
+            last_attempted_at=now - timedelta(days=1),
+        )
+        service, scraper = _service(*[_success()] * 4)
+
+        service.scrape_batch(limit=10)
+
+        scraper.scrape_video_list.assert_called_once_with(["3", "2", "1"])
+
+    def test_rechecked_video_that_is_back_is_stored(self):
+        _target(
+            _video(int(_PAYLOAD["id"])),
+            status=Status.UNAVAILABLE,
+            attempts=1,
+            unavailable_checks=1,
+            last_attempted_at=timezone.now(),
+        )
+        service, _ = _service(_success())
+
+        stats = service.scrape_batch(limit=10)
+
+        self.assertEqual(stats["scraped"], 1)
+        target = ScrapeTarget.objects.get()
+        self.assertEqual(
+            (target.status, target.unavailable_checks), (Status.SUCCESS, 1)
+        )
 
     def test_other_errors_mark_failed_and_wait_for_backoff(self):
         enqueue_videos([_video(1).id_tiktok])

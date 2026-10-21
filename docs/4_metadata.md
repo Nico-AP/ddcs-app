@@ -394,14 +394,23 @@ shows the matching Research API rows as **read-only `TabularInline`s**:
 
 | Parent          | Inlines                               |
 |-----------------|---------------------------------------|
-| `TikTokVideo`   | `APIVideoInfos`, `APIVideoStatistics` |
+| `TikTokVideo`   | `APIVideoInfos`, `APIVideoStatistics`, `VideoInfosScraped`, `VideoStatisticsScraped`, `DonationVideoInfos` |
 | `TikTokUser`    | `APIUserInfos`, `APIUserStatistics`   |
 | `TikTokMusic`   | `APIMusicInfos`                       |
 | `TikTokHashtag` | `APIHashtagInfos`                     |
 
-The Research API and Scraper models are intentionally **not** registered as standalone
+The Research API models are intentionally **not** registered as standalone
 admin entries — they are service-owned and editing historical snapshots through
 the admin is not intended.
+
+Three service-owned models do have a standalone list, **read-only**, because
+looking through them is useful when operating the system:
+
+| Admin entry          | Model                | Notes                                                                 |
+|----------------------|----------------------|-----------------------------------------------------------------------|
+| Scrape targets       | `ScrapeTarget`       | The scraping queue, see [8_scraper.md](8_scraper.md)                  |
+| Scraped Video Infos  | `VideoInfosScraped`  | What a scrape stored, including the raw payload                       |
+| Donation Video Infos | `DonationVideoInfos` | Donor counts and last interactions per video. No delete either: removing a row would change the video's priority without it being reported. Search takes a full TikTok ID (exact match), as the table has millions of rows. |
 
 
 ## Populating the registry

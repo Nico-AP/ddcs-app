@@ -441,6 +441,11 @@ TIKTOK_SCRAPER_FETCH_CAPTIONS: bool = env.bool(
 )
 # How often a video is tried before its target stays "failed".
 TIKTOK_SCRAPER_MAX_ATTEMPTS: int = env.int("TIKTOK_SCRAPER_MAX_ATTEMPTS", default=3)
+# How often a video TikTok reports as unavailable is checked in total before
+# its target stays "unavailable".
+TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS: int = env.int(
+    "TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS", default=3
+)
 # How long an external scraper keeps the targets it claimed through the API
 # before they return to the queue.
 TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES: int = env.int(

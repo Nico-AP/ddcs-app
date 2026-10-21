@@ -9,6 +9,7 @@ from import_export.admin import ExportMixin
 from import_export.forms import ExportForm
 from import_export.resources import ModelResource
 
+from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.models import (
     DataOrigins,
     Keyword,
@@ -171,6 +172,17 @@ class VideoStatisticsScrapedInline(ReadOnlyInline):
     model = VideoStatisticsScraped
 
 
+class DonationVideoInfosInline(ReadOnlyInline):
+    model = DonationVideoInfos
+    fields = (
+        "watched_count",
+        "liked_count",
+        "bookmarked_count",
+        "last_interaction_at",
+        "last_interaction_in_window_at",
+    )
+
+
 @admin.register(TikTokVideo)
 class TikTokVideoAdmin(ExportMixin, admin.ModelAdmin):
     list_display = (
@@ -189,6 +201,7 @@ class TikTokVideoAdmin(ExportMixin, admin.ModelAdmin):
         APIVideoStatisticsInline,
         VideoInfosScrapedInline,
         VideoStatisticsScrapedInline,
+        DonationVideoInfosInline,
     )
     resource_classes = [TikTokVideoResource]
     export_form_class = TikTokVideoExportForm
@@ -410,6 +423,7 @@ class ScrapeTargetAdmin(admin.ModelAdmin):
         "occurrence_count",
         "last_watched_at",
         "attempts",
+        "unavailable_checks",
         "last_attempted_at",
         "last_error_type",
         "tiktok_status_code",
@@ -514,4 +528,60 @@ class VideoInfosScrapedAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
+        return False
+
+
+class InteractionInWindowFilter(admin.SimpleListFilter):
+    """Whether a donor watched, liked or bookmarked the video in the study period."""
+
+    title = "interaction in study period"
+    parameter_name = "in_window"
+
+    def lookups(self, request: HttpRequest, model_admin) -> list[tuple[str, str]]:  # noqa: ANN001
+        return [("yes", "Yes"), ("no", "No")]
+
+    def queryset(self, request: HttpRequest, queryset: QuerySet) -> QuerySet:
+        if self.value() == "yes":
+            return queryset.filter(last_interaction_in_window_at__isnull=False)
+        if self.value() == "no":
+            return queryset.filter(last_interaction_in_window_at__isnull=True)
+        return queryset
+
+
+@admin.register(DonationVideoInfos)
+class DonationVideoInfosAdmin(admin.ModelAdmin):
+    """Read-only view of what the donations tell about a video.
+
+    Rows are written by ``ddcs.metadata.donations.service``. They cannot be
+    deleted here either: that would lower the video's priority without the
+    change being reported (see ``purge_unbacked_donation_infos``).
+
+    The table has a row per donated video, i.e. millions: the list is
+    ordered by primary key, and the search is an exact match on the TikTok
+    ID, so that neither sorts nor scans the whole table.
+    """
+
+    list_display = (
+        "video",
+        "watched_count",
+        "liked_count",
+        "bookmarked_count",
+        "last_interaction_at",
+        "last_interaction_in_window_at",
+        "updated_at",
+    )
+    list_filter = (InteractionInWindowFilter,)
+    search_fields = ("=video__id_tiktok",)
+    search_help_text = "Full TikTok video ID (exact match)."
+    list_select_related = ("video",)
+    ordering = ("-pk",)
+    show_full_result_count = False
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
+        return False
+
+    def has_delete_permission(self, request: HttpRequest, obj=None) -> bool:  # noqa: ANN001
         return False
