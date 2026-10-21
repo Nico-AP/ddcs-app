@@ -14,7 +14,9 @@ class ScrapeTarget(models.Model):
     class Status(models.TextChoices):
         PENDING = "pending"
         SUCCESS = "success"
-        # TikTok reports the video as gone/private; retrying won't help.
+        # TikTok reports the video as gone/private. Checked again once the
+        # rest of the queue is done, until
+        # ``TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS`` is reached.
         UNAVAILABLE = "unavailable"
         # The Research API delivered the video in the meantime.
         COVERED_BY_API = "covered_by_api"
@@ -49,6 +51,10 @@ class ScrapeTarget(models.Model):
         max_length=16, choices=Status.choices, default=Status.PENDING
     )
     attempts = models.PositiveIntegerField(default=0)
+    unavailable_checks = models.PositiveIntegerField(
+        default=0,
+        help_text="How often TikTok reported the video as unavailable.",
+    )
     last_attempted_at = models.DateTimeField(null=True, blank=True)
 
     last_error_type = models.CharField(max_length=255, blank=True)
@@ -99,6 +105,13 @@ class ScrapeTarget(models.Model):
                 fields=["-last_watched_at", "id"],
                 name="scrapetarget_failed_idx",
                 condition=models.Q(status="failed", last_watched_at__isnull=False),
+            ),
+            # Re-checks of unavailable targets, in passes: fewest checks
+            # first (see ``service._claim_due_targets``).
+            models.Index(
+                fields=["unavailable_checks", "last_attempted_at", "id"],
+                name="scrapetarget_unavailable_idx",
+                condition=models.Q(status="unavailable"),
             ),
         ]
         permissions = [

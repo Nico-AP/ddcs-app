@@ -78,7 +78,8 @@ class ScrapeResultsView(ExternalScraperAPIView):
       "Can claim scrape targets and submit scraped results".
     * One entry per video, with an `outcome`:
       `success` (with the raw `data`, optionally a `caption`),
-      `unavailable` (TikTok reports the video as gone or private),
+      `unavailable` (TikTok reports the video as gone or private; checked
+      again once the rest of the queue is done, a limited number of times),
       `failed` (anything else; the video is retried later) or
       `released` (not scraped, e.g. because TikTok blocked the scraper: the
       video returns to the queue without counting as an attempt).

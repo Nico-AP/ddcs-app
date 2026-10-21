@@ -284,6 +284,7 @@ def _claim_due_targets(  # noqa: PLR0913
     limit: int,
     *,
     max_attempts: int,
+    unavailable_max_checks: int,
     lease: timedelta,
     retry_backoff: timedelta = FAILED_RETRY_BACKOFF,
     user: AbstractBaseUser | None = None,
@@ -293,21 +294,25 @@ def _claim_due_targets(  # noqa: PLR0913
 
     Queue order: first the videos at least ``PRIORITY_MIN_OCCURRENCES``
     donors watched since ``PRIORITY_WATCHED_SINCE`` (most donors first),
-    then all others by most recent view. Targets somebody else holds a
-    running lease on are passed over.
+    then all others by most recent view. Only once none of those is due,
+    videos TikTok reported as unavailable are checked again, in passes:
+    fewest checks first, so that every one is checked a second time before
+    any is checked a third time. Targets somebody else holds a running
+    lease on are passed over.
 
     Returns the leased targets, the number of targets that were dropped
     because the Research API has their video now, and the time the lease
     runs out.
     """
     now = timezone.now()
+    lease_free = Q(claimed_until__isnull=True) | Q(claimed_until__lt=now)
     # Pending targets and failed ones due for a retry are read separately:
     # each read then follows one of the queue indexes
     # (``ScrapeTarget.Meta.indexes``) and stops after ``limit`` rows. Asked
     # for in one query, the whole queue is sorted on every claim.
     due = [
         ScrapeTarget.objects.filter(status_filter)
-        .filter(Q(claimed_until__isnull=True) | Q(claimed_until__lt=now))
+        .filter(lease_free)
         .select_related("video")
         # Two scrapers asking at the same moment get different targets
         # instead of waiting for each other.
@@ -368,6 +373,20 @@ def _claim_due_targets(  # noqa: PLR0913
             limit - len(targets),
             key=lambda t: t.pk,
         )
+    # Nothing else due: check unavailable videos again.
+    if len(targets) < limit:
+        targets += list(
+            ScrapeTarget.objects.filter(
+                status=ScrapeTarget.Status.UNAVAILABLE,
+                unavailable_checks__lt=unavailable_max_checks,
+            )
+            .filter(lease_free)
+            .select_related("video")
+            .select_for_update(skip_locked=True, of=("self",))
+            .order_by("unavailable_checks", "last_attempted_at", "id")[
+                : limit - len(targets)
+            ]
+        )
 
     # The Research API may have delivered some of them since they were
     # queued; those no longer need scraping.
@@ -412,6 +431,7 @@ def claim_targets(
     targets, _, claimed_until = _claim_due_targets(
         limit,
         max_attempts=settings.TIKTOK_SCRAPER_MAX_ATTEMPTS,
+        unavailable_max_checks=settings.TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS,
         lease=timedelta(minutes=settings.TIKTOK_SCRAPER_EXTERNAL_LEASE_MINUTES),
         user=user,
         label=label,
@@ -448,9 +468,23 @@ class ExternalScrapeError(Exception):
 
 _FINAL_STATUSES = (
     ScrapeTarget.Status.SUCCESS,
-    ScrapeTarget.Status.UNAVAILABLE,
     ScrapeTarget.Status.COVERED_BY_API,
 )
+
+
+def _is_done(target: ScrapeTarget) -> bool:
+    """Whether a target takes no further results."""
+    if target.status in _FINAL_STATUSES:
+        return True
+    if target.status == ScrapeTarget.Status.UNAVAILABLE:
+        # Takes a result only for a re-check: claimed again since the last
+        # check (which ended the lease), with checks left.
+        return (
+            target.claimed_until is None
+            or target.unavailable_checks
+            >= settings.TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS
+        )
+    return False
 
 
 @transaction.atomic
@@ -478,7 +512,7 @@ def record_external_result(
     )
     if target is None:
         return status.NOT_CLAIMED, "No target for this video is claimed by you."
-    if target.status in _FINAL_STATUSES:
+    if _is_done(target):
         return status.ALREADY_DONE, f"Target is already '{target.status}'."
 
     outcome = result["outcome"]
@@ -568,6 +602,7 @@ class ScraperService:
         scraper: TikTokScraper | None = None,
         max_attempts: int | None = None,
         fetch_captions: bool | None = None,
+        unavailable_max_checks: int | None = None,
     ) -> None:
         self.scraper = scraper or TikTokScraper(
             rate_delay=settings.TIKTOK_SCRAPER_RATE_DELAY,
@@ -575,6 +610,9 @@ class ScraperService:
             rate_jitter=settings.TIKTOK_SCRAPER_RATE_JITTER,
         )
         self.max_attempts = max_attempts or settings.TIKTOK_SCRAPER_MAX_ATTEMPTS
+        self.unavailable_max_checks = (
+            unavailable_max_checks or settings.TIKTOK_SCRAPER_UNAVAILABLE_MAX_CHECKS
+        )
         self.fetch_captions = (
             settings.TIKTOK_SCRAPER_FETCH_CAPTIONS
             if fetch_captions is None
@@ -696,6 +734,7 @@ class ScraperService:
         targets, covered_by_api, _ = _claim_due_targets(
             limit,
             max_attempts=self.max_attempts,
+            unavailable_max_checks=self.unavailable_max_checks,
             retry_backoff=self.FAILED_RETRY_BACKOFF,
             lease=INTERNAL_LEASE,
             label=INTERNAL_SCRAPER_LABEL,
@@ -814,6 +853,8 @@ class ScraperService:
     ) -> None:
         target.status = status
         target.attempts += 1
+        if status == ScrapeTarget.Status.UNAVAILABLE:
+            target.unavailable_checks += 1
         target.last_attempted_at = timezone.now()
         # ``error_type`` names an error that happened elsewhere (an external
         # scraper), where there is no exception class to take it from.
