@@ -1,9 +1,10 @@
 """Priorities of videos for the prioritised video API.
 
 A priority is derived from facts that are stored elsewhere, at query time:
-whether a donor watched, liked or bookmarked the video (``DonationVideoInfos``) and
-whether the Research API delivered it (``APIVideoInfos``). It is not stored,
-because either fact can change after the other was recorded.
+whether a donor watched, liked or bookmarked the video (``DonationVideoInfos``),
+whether it is listed in Datapods (``in_datapods``) and whether the
+Research API delivered it (``APIVideoInfos``). It is not stored, because
+these facts can change after one another were recorded.
 """
 
 from django.db import models
@@ -15,13 +16,13 @@ from ddcs.metadata.scraper.models import VideoInfosScraped
 
 
 class VideoPriority(models.IntegerChoices):
-    # Watched, liked or bookmarked by a donor at any time, and delivered by
-    # the Research API.
+    # Watched, liked or bookmarked by a donor at any time (or imported from
+    # Datapods), and delivered by the Research API.
     DONATED_AND_RESEARCH_API = 4
-    # Watched, liked or bookmarked by a donor within the watch window; no
-    # Research API infos.
+    # Watched, liked or bookmarked by a donor within the watch window (or
+    # imported from Datapods); no Research API infos.
     DONATED_IN_WINDOW = 3
-    # Delivered by the Research API; in no donation.
+    # Delivered by the Research API; in no donation, not from Datapods.
     RESEARCH_API_ONLY = 2
     OTHER = 1
 
@@ -40,11 +41,15 @@ METADATA_SOURCE_CONDITIONS = {
     MetadataSource.SCRAPED: Q(~HAS_API_INFOS) & Q(HAS_SCRAPED_INFOS),
 }
 
-_DONATED = Q(donation_infos__isnull=False)
-_NOT_DONATED = Q(donation_infos__isnull=True)
-_INTERACTION_IN_WINDOW = Q(donation_infos__last_interaction_in_window_at__isnull=False)
-_NO_INTERACTION_IN_WINDOW = Q(
-    donation_infos__last_interaction_in_window_at__isnull=True
+# Videos listed in Datapods rank like videos donated in the window.
+_FROM_DATAPODS = Q(in_datapods=True)
+_DONATED = Q(donation_infos__isnull=False) | _FROM_DATAPODS
+_NOT_DONATED = Q(donation_infos__isnull=True) & ~_FROM_DATAPODS
+_INTERACTION_IN_WINDOW = (
+    Q(donation_infos__last_interaction_in_window_at__isnull=False) | _FROM_DATAPODS
+)
+_NO_INTERACTION_IN_WINDOW = (
+    Q(donation_infos__last_interaction_in_window_at__isnull=True) & ~_FROM_DATAPODS
 )
 
 # Mutually exclusive, and together they cover every video. Spelled out per

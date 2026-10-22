@@ -390,8 +390,9 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         seen: datetime | None = None,
         seen_in_window: datetime | None = None,
         donated: bool = False,
+        in_datapods: bool = False,
     ) -> TikTokVideo:
-        video = TikTokVideo.objects.create(id_tiktok=id_tiktok)
+        video = TikTokVideo.objects.create(id_tiktok=id_tiktok, in_datapods=in_datapods)
         if api:
             APIVideoInfos.objects.create(
                 video=video, description=f"api {id_tiktok}", region_code="CH"
@@ -413,8 +414,13 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         self._video(41, api=True, seen_in_window=self.in_window)
         self._video(42, api=True, seen=self.outside)  # any donation counts
         self._video(43, api=True, donated=True)  # watched, date unknown
+        self._video(44, api=True, in_datapods=True)
         self._video(31, seen_in_window=self.in_window)
         self._video(32, scraped=True, seen_in_window=self.in_window)
+        # Datapods videos rank like donated in the window, whatever the
+        # donations say.
+        self._video(33, in_datapods=True)
+        self._video(34, scraped=True, seen=self.outside, in_datapods=True)
         self._video(21, api=True)
         self._video(22, api=True, scraped=True)
         self._video(11)
@@ -445,17 +451,37 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
 
         self.assertEqual(
             priorities,
-            {41: 4, 42: 4, 43: 4, 31: 3, 32: 3, 21: 2, 22: 2, 11: 1, 12: 1, 13: 1},
+            {
+                **dict.fromkeys((41, 42, 43, 44), 4),
+                **dict.fromkeys((31, 32, 33, 34), 3),
+                **dict.fromkeys((21, 22), 2),
+                **dict.fromkeys((11, 12, 13), 1),
+            },
         )
+
+    def test_in_datapods_marks_every_datapods_video(self):
+        self._one_of_each()
+
+        results = {v["id_tiktok"]: v for v in self._get()}
+
+        in_datapods = {
+            id_tiktok for id_tiktok, v in results.items() if v["in_datapods"]
+        }
+        self.assertEqual(in_datapods, {44, 33, 34})
+        # Only in Datapods: no donation interaction to report. 34 is in a
+        # donation too.
+        self.assertIsNone(results[33]["last_interaction_at"])
+        self.assertIsNone(results[44]["last_interaction_at"])
+        self.assertIsNotNone(results[34]["last_interaction_at"])
 
     def test_filter_by_priority_matches_the_reported_priority(self):
         self._one_of_each()
 
-        self.assertEqual(self._ids(priority="4"), {41, 42, 43})
-        self.assertEqual(self._ids(priority="3"), {31, 32})
+        self.assertEqual(self._ids(priority="4"), {41, 42, 43, 44})
+        self.assertEqual(self._ids(priority="3"), {31, 32, 33, 34})
         self.assertEqual(self._ids(priority="2"), {21, 22})
         self.assertEqual(self._ids(priority="1"), {11, 12, 13})
-        self.assertEqual(self._ids(priority="4,3"), {41, 42, 43, 31, 32})
+        self.assertEqual(self._ids(priority="4,3"), {41, 42, 43, 44, 31, 32, 33, 34})
 
     def test_unknown_priority_is_rejected(self):
         response = self.client.get(self.url, {"priority": "5"})
@@ -569,11 +595,13 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         self._one_of_each()
 
         self.assertEqual(
-            self._ids(metadata_source="research_api"), {41, 42, 43, 21, 22}
+            self._ids(metadata_source="research_api"), {41, 42, 43, 44, 21, 22}
         )
-        self.assertEqual(self._ids(metadata_source="scraped"), {32, 13})
-        self.assertEqual(self._ids(has_metadata=True), {41, 42, 43, 21, 22, 32, 13})
-        self.assertEqual(self._ids(has_metadata=False), {31, 11, 12})
+        self.assertEqual(self._ids(metadata_source="scraped"), {32, 34, 13})
+        self.assertEqual(
+            self._ids(has_metadata=True), {41, 42, 43, 44, 21, 22, 32, 34, 13}
+        )
+        self.assertEqual(self._ids(has_metadata=False), {31, 33, 11, 12})
 
     def test_filters_combine_with_those_of_the_video_list(self):
         self._one_of_each()
