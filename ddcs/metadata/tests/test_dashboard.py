@@ -117,8 +117,8 @@ class GetVideoCountsByOriginTests(TestCase):
 
 
 class GetPriorityCountsTests(TestCase):
-    """Priorities: 4 donated + Research API, 3 donated in the window without
-    it, 2 Research API only, 1 the rest."""
+    """Priorities: 4 donated (or Datapods) + Research API, 3 donated in the
+    window (or Datapods) without it, 2 Research API only, 1 the rest."""
 
     _IN_WINDOW = datetime(2026, 8, 5, 10, tzinfo=UTC)
     _OUTSIDE = datetime(2026, 10, 5, 10, tzinfo=UTC)
@@ -127,12 +127,19 @@ class GetPriorityCountsTests(TestCase):
         self._next_id = 0
 
     def _video(
-        self, donated: str = "", metadata: str = "", *, classified: bool = False
+        self,
+        donated: str = "",
+        metadata: str = "",
+        *,
+        classified: bool = False,
+        in_datapods: bool = False,
     ) -> TikTokVideo:
         """``donated``: "", "outside" or "window"; ``metadata``: any of the
         letters a(pi) and s(craped)."""
         self._next_id += 1
-        video = TikTokVideo.objects.create(id_tiktok=self._next_id)
+        video = TikTokVideo.objects.create(
+            id_tiktok=self._next_id, in_datapods=in_datapods
+        )
         if donated:
             DonationVideoInfos.objects.create(
                 video=video,
@@ -150,19 +157,36 @@ class GetPriorityCountsTests(TestCase):
         return video
 
     def _every_combination(self) -> None:
-        for donated in ("", "outside", "window"):
-            for metadata in ("", "a", "s", "as"):
-                for classified in (False, True):
-                    self._video(donated, metadata, classified=classified)
+        for in_datapods in (False, True):
+            for donated in ("", "outside", "window"):
+                for metadata in ("", "a", "s", "as"):
+                    for classified in (False, True):
+                        self._video(
+                            donated,
+                            metadata,
+                            classified=classified,
+                            in_datapods=in_datapods,
+                        )
 
     @staticmethod
     def _by_priority() -> dict[int, dict]:
-        return {row["priority"]: row for row in get_priority_counts()}
+        """The counts summed per priority (priority 3 has two rows)."""
+        counts: dict[int, dict] = {}
+        for row in get_priority_counts():
+            summed = counts.setdefault(row["priority"], {})
+            for key, value in row.items():
+                if key not in ("priority", "label"):
+                    summed[key] = summed.get(key, 0) + value
+        return counts
+
+    @staticmethod
+    def _by_label() -> dict[str, dict]:
+        return {row["label"]: row for row in get_priority_counts()}
 
     def test_empty_database_lists_every_priority_with_zero(self):
         counts = get_priority_counts()
 
-        self.assertEqual([row["priority"] for row in counts], [4, 3, 2, 1])
+        self.assertEqual([row["priority"] for row in counts], [4, 3, 3, 2, 1])
         self.assertEqual({row["total"] for row in counts}, {0})
 
     def test_states_per_priority(self):
@@ -175,6 +199,9 @@ class GetPriorityCountsTests(TestCase):
         self._video("window", "s")
         self._video("window", "s")
         self._video("window")
+        # Datapods videos rank like donated in the window: 4 and 3.
+        self._video("", "a", in_datapods=True)
+        self._video("outside", "s", in_datapods=True)
         # Priority 2: Research API infos, not donated.
         self._video("", "a")
         # Priority 1: the rest, e.g. donated outside the window.
@@ -194,11 +221,40 @@ class GetPriorityCountsTests(TestCase):
                 row["waiting"],
             )
 
-        self.assertEqual(states(4), (3, 2, 1, 0))
-        self.assertEqual(states(3), (4, 1, 2, 1))
+        self.assertEqual(states(4), (4, 2, 2, 0))
+        self.assertEqual(states(3), (5, 1, 3, 1))
         self.assertEqual(states(2), (1, 0, 1, 0))
         self.assertEqual(states(1), (4, 1, 0, 3))
-        self.assertEqual(counts[4]["label"], "Donated and Research API")
+
+    def test_datapods_videos_have_a_priority_3_row_of_their_own(self):
+        # Donated in the window: the donated row.
+        self._video("window", "s", classified=True)
+        # Datapods, whatever the donations say: the Datapods row.
+        self._video(in_datapods=True)
+        self._video("outside", "s", in_datapods=True)
+        self._video("window", in_datapods=True)
+        # With Research API infos: priority 4, not split.
+        self._video("", "a", in_datapods=True)
+
+        rows = self._by_label()
+
+        self.assertEqual(
+            [(row["priority"], row["label"]) for row in get_priority_counts()],
+            [
+                (4, "Donated or Datapods, and Research API"),
+                (3, "Donated in study period"),
+                (3, "Datapod in period"),
+                (2, "Research API only"),
+                (1, "Everything else"),
+            ],
+        )
+        donated, datapods = rows["Donated in study period"], rows["Datapod in period"]
+        self.assertEqual((donated["total"], donated["classified"]), (1, 1))
+        self.assertEqual(
+            (datapods["total"], datapods["metadata_only"], datapods["waiting"]),
+            (3, 1, 2),
+        )
+        self.assertEqual(rows["Donated or Datapods, and Research API"]["total"], 1)
 
     def test_agrees_with_the_priorities_of_the_api(self):
         self._every_combination()

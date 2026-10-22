@@ -126,11 +126,12 @@ class PrioritisedTikTokVideoList(StatementTimeoutMixin, generics.ListAPIView):
 
     * Requires token authentication.
     * `priority` (higher = more important):
-      4 = watched, liked or bookmarked by a donor (at any time) and delivered
-      by the Research API;
-      3 = watched, liked or bookmarked by a donor within the study period, no
-      Research API data;
-      2 = delivered by the Research API, in no donation;
+      4 = watched, liked or bookmarked by a donor (at any time) or listed in
+      Datapods, and delivered by the Research API;
+      3 = watched, liked or bookmarked by a donor within the study period or
+      listed in Datapods, no Research API data;
+      2 = delivered by the Research API, in no donation and not listed in
+      Datapods;
       1 = everything else.
     * `metadata_source` says where the metadata fields come from:
       `research_api`, `scraped`, or null if the video has no metadata yet
@@ -139,6 +140,8 @@ class PrioritisedTikTokVideoList(StatementTimeoutMixin, generics.ListAPIView):
       videos.
     * `last_interaction_at` is the most recent view, like or bookmark of the
       video in any donation (null if it is in none).
+    * `in_datapods` is true for videos listed in Datapods, whether or not a
+      donation shows them too (`last_interaction_at` tells).
     * Takes the filters of the video list except region_codes and
       has_api_infos, plus: priority (one or several, comma-separated),
       metadata_source, has_metadata (bool). The create_date filters look at

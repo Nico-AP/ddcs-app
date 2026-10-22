@@ -45,8 +45,13 @@ def infer_publication_date_from_id(tiktok_id: int) -> datetime:
     return datetime.fromtimestamp(ts, tz=UTC)
 
 
-def video_pks(id_tiktoks: Iterable[int]) -> dict[int, int]:
-    """TikTok ID -> primary key of the videos, creating rows that are missing."""
+def video_pks(
+    id_tiktoks: Iterable[int], added_by: DataOrigins = DataOrigins.DONATION
+) -> dict[int, int]:
+    """TikTok ID -> primary key of the videos, creating rows that are missing.
+
+    Rows created get ``added_by``; existing rows keep theirs.
+    """
 
     def lookup(ids: Iterable[int]) -> dict[int, int]:
         return dict(
@@ -58,7 +63,7 @@ def video_pks(id_tiktoks: Iterable[int]) -> dict[int, int]:
     if missing:
         TikTokVideo.objects.bulk_create(
             [
-                TikTokVideo(id_tiktok=id_tiktok, added_by=DataOrigins.DONATION)
+                TikTokVideo(id_tiktok=id_tiktok, added_by=added_by)
                 for id_tiktok in missing
             ],
             ignore_conflicts=True,

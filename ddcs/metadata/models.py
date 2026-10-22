@@ -6,6 +6,7 @@ class DataOrigins(models.TextChoices):
     SCRAPER = "SCRAPER", "Scraper"
     DONATION = "DONATION", "Donation"
     IMPORT = "IMPORT", "Import"
+    DATAPODS = "DATAPODS", "Datapods"
 
 
 class BaseMetadataModel(models.Model):
@@ -39,6 +40,14 @@ class APIMonitoredMixin(models.Model):
 
 class TikTokVideo(BaseMetadataModel):
     id_tiktok = models.BigIntegerField(unique=True, db_index=True)
+
+    # Kept apart from ``added_by``: a listed video may have been registered
+    # by another source first. Ranks the video like a donated one; see
+    # ``ddcs.metadata.priority``.
+    in_datapods = models.BooleanField(
+        default=False,
+        help_text="Listed in the Datapods video set (see import_video_links).",
+    )
 
     inferred_create_time = models.DateTimeField(
         null=True,
