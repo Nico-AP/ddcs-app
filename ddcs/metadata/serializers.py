@@ -134,6 +134,7 @@ class PrioritisedTikTokVideoSerializer(serializers.ModelSerializer):
         default=None,
         default_timezone=UTC,
     )
+    in_datapods = serializers.BooleanField(read_only=True)
 
     user = serializers.CharField(source="user.name", read_only=True, default=None)
     description = serializers.SerializerMethodField()
@@ -164,6 +165,7 @@ class PrioritisedTikTokVideoSerializer(serializers.ModelSerializer):
             "priority",
             "metadata_source",
             "last_interaction_at",
+            "in_datapods",
             "user",
             "description",
             "create_time",

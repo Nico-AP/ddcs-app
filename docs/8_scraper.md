@@ -68,7 +68,7 @@ already have Research API infos are never queued.
 | `occurrence_count` | Number of **donations** that show the video as watched, liked or bookmarked within the window. A donor who watched and liked it counts once.     |
 | `last_watched_at`  | The most recent view, like or bookmark of the video within the window, across all donations. (Named after views for historical reasons.)        |
 
-**How targets get there.** Two paths, both through
+**How targets get there.** Three paths, all through
 `ddcs.metadata.scraper.service.enqueue_donated_videos`:
 
 - **The retrospective command** goes through all stored donations:
@@ -149,7 +149,35 @@ is counted twice if its processing is retried after a later step failed, or
 if it arrives while the command is running and is then also read by it.
 Running the command again brings the counts back in line.
 
-Videos that have no `TikTokVideo` row yet get one (`added_by = DONATION`).
+- **Imported links.** Lists of videos from outside the donations (e.g. a
+  partner dataset) are queued from a CSV file:
+
+  ```
+  python manage.py import_video_links videos.csv --origin DATAPODS [--column link] [--dry-run]
+  ```
+
+  The file needs a header row; `--column` (default `link`) names the column
+  with the video links (`https://www.tiktok.com/@user/video/<id>`, photo links
+  and bare IDs work too; short links such as `vm.tiktok.com/...` cannot be
+  resolved and are counted as unparseable). Other columns are ignored. The
+  file is streamed in chunks (`--chunk-size`, default 5000), each committed on
+  its own, so millions of rows are fine.
+
+  Imported targets have no count and no watch date, so they are scraped
+  **after all donated videos**; `record_donated_videos` leaves them there.
+  Existing targets keep their status and ranking. The import can be
+  repeated without effect, so an interrupted run is simply started again.
+  Start with `--dry-run` to check how many rows cannot be parsed.
+
+  With `--origin DATAPODS`, every video in the file is also marked
+  `in_datapods`, new or already in the database. That ranks it like a donated
+  video in the prioritised video API (priority 3 or 4, see
+  [4_metadata.md](4_metadata.md#priorities)); the scrape queue order is not
+  affected.
+
+Videos that have no `TikTokVideo` row yet get one (`added_by = DONATION`, or
+the `--origin` of an import). Videos already in the database keep their
+`added_by`.
 
 ### 2. Order: widely seen recent videos, then most recent
 

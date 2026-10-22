@@ -22,7 +22,7 @@ from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.models import DataOrigins, TikTokUser, TikTokVideo
 from ddcs.metadata.scraper.config import WATCH_WINDOW_END, WATCH_WINDOW_START
 from ddcs.metadata.scraper.service import enqueue_donated_videos
-from ddcs.metadata.utils import video_pks
+from ddcs.metadata.utils import new_video, video_pks
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -134,7 +134,7 @@ def register_donation_metadata(data: TikTokUserData) -> None:
     # Watch history
     if data.watch_history:
         videos_to_add = [
-            TikTokVideo(id_tiktok=record["video_id"], added_by=DataOrigins.DONATION)
+            new_video(record["video_id"], DataOrigins.DONATION)
             for record in data.watch_history
         ]
         TikTokVideo.objects.bulk_create(videos_to_add, ignore_conflicts=True)
@@ -142,7 +142,7 @@ def register_donation_metadata(data: TikTokUserData) -> None:
     # Liked videos
     if data.liked_videos:
         videos_to_add = [
-            TikTokVideo(id_tiktok=record["video_id"], added_by=DataOrigins.DONATION)
+            new_video(record["video_id"], DataOrigins.DONATION)
             for record in data.liked_videos
         ]
         TikTokVideo.objects.bulk_create(videos_to_add, ignore_conflicts=True)
