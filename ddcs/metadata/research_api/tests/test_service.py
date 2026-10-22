@@ -38,6 +38,7 @@ from ddcs.metadata.research_api.tasks import (
     daily_sync_users,
     reap_stale_query_trackers,
 )
+from ddcs.metadata.utils import infer_publication_date_from_id
 
 
 def make_api_payload(**overrides) -> dict:
@@ -196,6 +197,40 @@ class ResearchAPIServiceSyncTests(TestCase):
         video = TikTokVideo.objects.get(id_tiktok=payload["id"])
         self.assertEqual(video.api_infos.count(), 1)
         self.assertEqual(self.service.sync_stats["videos_created"], 1)
+
+    def test_sync_video_fills_in_inferred_create_time_of_existing_video(self):
+        user = TikTokUser.objects.create(
+            name="alice", added_by=DataOrigins.RESEARCH_API
+        )
+        payload = make_api_payload()
+        TikTokVideo.objects.create(
+            id_tiktok=payload["id"], added_by=DataOrigins.DONATION
+        )
+
+        video = self.service._sync_video(payload, user=user, music=None)
+
+        video.refresh_from_db()
+        self.assertEqual(
+            video.inferred_create_time, infer_publication_date_from_id(payload["id"])
+        )
+        self.assertEqual(video.added_by, DataOrigins.DONATION)
+
+    def test_sync_video_keeps_an_existing_inferred_create_time(self):
+        user = TikTokUser.objects.create(
+            name="alice", added_by=DataOrigins.RESEARCH_API
+        )
+        payload = make_api_payload()
+        stored = datetime(2020, 1, 1, tzinfo=UTC)
+        TikTokVideo.objects.create(
+            id_tiktok=payload["id"],
+            added_by=DataOrigins.DONATION,
+            inferred_create_time=stored,
+        )
+
+        video = self.service._sync_video(payload, user=user, music=None)
+
+        video.refresh_from_db()
+        self.assertEqual(video.inferred_create_time, stored)
 
     def test_sync_video_statistics_appends_each_call(self):
         user = TikTokUser.objects.create(

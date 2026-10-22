@@ -45,6 +45,19 @@ def infer_publication_date_from_id(tiktok_id: int) -> datetime:
     return datetime.fromtimestamp(ts, tz=UTC)
 
 
+def new_video(id_tiktok: int, added_by: DataOrigins) -> TikTokVideo:
+    """An unsaved ``TikTokVideo`` with what can be known from its ID alone.
+
+    Use it wherever rows are created in bulk, so that ``inferred_create_time``
+    is never left empty.
+    """
+    return TikTokVideo(
+        id_tiktok=id_tiktok,
+        added_by=added_by,
+        inferred_create_time=infer_publication_date_from_id(id_tiktok),
+    )
+
+
 def video_pks(
     id_tiktoks: Iterable[int], added_by: DataOrigins = DataOrigins.DONATION
 ) -> dict[int, int]:
@@ -62,10 +75,7 @@ def video_pks(
     missing = [id_tiktok for id_tiktok in id_tiktoks if id_tiktok not in pk_by_id]
     if missing:
         TikTokVideo.objects.bulk_create(
-            [
-                TikTokVideo(id_tiktok=id_tiktok, added_by=added_by)
-                for id_tiktok in missing
-            ],
+            [new_video(id_tiktok, added_by) for id_tiktok in missing],
             ignore_conflicts=True,
         )
         pk_by_id.update(lookup(missing))

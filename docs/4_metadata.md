@@ -225,11 +225,30 @@ published (Steel et al., https://doi.org/10.48550/arXiv.2504.13279). The
 computation lives in
 [`ddcs.metadata.utils.infer_publication_date_from_id`](../ddcs/metadata/utils.py).
 
-**Important:** this field is populated **in the service layer** (see
-`ResearchAPIService._sync_video`), not in `TikTokVideo.save()`. As a result,
-`bulk_create`, `loaddata`, and direct ORM construction will leave the field
-`NULL`. Any new ingestion path (donation pipeline, scraper, importer) must
-compute and pass `inferred_create_time` explicitly.
+**Important:** this field is populated **in the service layer**, not in
+`TikTokVideo.save()`. As a result, `loaddata` and direct ORM construction
+leave the field `NULL`. Every ingestion path sets it:
+
+- donations and `import_video_links` create rows through
+  [`ddcs.metadata.utils.new_video`](../ddcs/metadata/utils.py) (also used by
+  `video_pks`), which computes it;
+- `ResearchAPIService._sync_video` sets it on the rows it creates, and fills
+  it in on existing rows that lack it;
+- `ScraperService._store` fills it in when a video is scraped.
+
+A new ingestion path that creates rows in bulk should use `new_video` as
+well.
+
+Rows created before this was in place are filled in with
+
+```
+python manage.py backfill_inferred_create_time [--chunk-size 5000] [--dry-run]
+```
+
+It touches only rows without a value, in chunks committed one at a time, so it
+can be stopped and run again. It does **not** move `updated_at`: the field is
+not served by the prioritised video API, so `updated_since` would otherwise
+report every backfilled video as changed.
 
 
 ## Prioritised video API

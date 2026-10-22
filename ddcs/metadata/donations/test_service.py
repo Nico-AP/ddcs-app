@@ -21,6 +21,7 @@ from ddcs.metadata.models import DataOrigins, TikTokVideo
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.models import ScrapeTarget
 from ddcs.metadata.scraper.service import enqueue_donated_videos
+from ddcs.metadata.utils import infer_publication_date_from_id
 
 
 def _view(video_id: object, watched_at: object) -> dict:
@@ -389,6 +390,16 @@ class RegisterDonationMetadataDonationInfosTests(TestCase):
             video_bookmarks=[{"video_id": 4, "date": OUTSIDE}],
             shared_videos=[{"video_id": 5, "date": EARLY}],
         )
+
+    @override_settings(TIKTOK_SCRAPER_ENABLED=False)
+    def test_created_videos_get_the_inferred_create_time(self):
+        register_donation_metadata(self.data)
+
+        for id_tiktok, inferred in TikTokVideo.objects.values_list(
+            "id_tiktok", "inferred_create_time"
+        ):
+            with self.subTest(id_tiktok=id_tiktok):
+                self.assertEqual(inferred, infer_publication_date_from_id(id_tiktok))
 
     @override_settings(TIKTOK_SCRAPER_ENABLED=False)
     def test_records_watched_liked_and_bookmarked_videos(self):

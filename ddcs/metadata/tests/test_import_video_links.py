@@ -12,7 +12,7 @@ from ddcs.metadata.models import DataOrigins, TikTokVideo
 from ddcs.metadata.priority import VideoPriority, annotate_priority
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.models import ScrapeTarget
-from ddcs.metadata.utils import video_pks
+from ddcs.metadata.utils import infer_publication_date_from_id, new_video, video_pks
 
 Status = ScrapeTarget.Status
 
@@ -44,6 +44,19 @@ class VideoIdTests(TestCase):
                 self.assertIsNone(_video_id(value))
 
 
+class NewVideoTests(TestCase):
+    def test_sets_the_inferred_create_time(self):
+        id_tiktok = 7100000000000000001
+
+        video = new_video(id_tiktok, DataOrigins.DATAPODS)
+
+        self.assertIsNone(video.pk)
+        self.assertEqual(video.added_by, DataOrigins.DATAPODS)
+        self.assertEqual(
+            video.inferred_create_time, infer_publication_date_from_id(id_tiktok)
+        )
+
+
 class VideoPksTests(TestCase):
     def test_created_rows_get_the_given_origin(self):
         TikTokVideo.objects.create(id_tiktok=1, added_by=DataOrigins.DONATION)
@@ -53,6 +66,10 @@ class VideoPksTests(TestCase):
         self.assertEqual(
             dict(TikTokVideo.objects.values_list("id_tiktok", "added_by")),
             {1: DataOrigins.DONATION, 2: DataOrigins.DATAPODS},
+        )
+        self.assertEqual(
+            TikTokVideo.objects.get(id_tiktok=2).inferred_create_time,
+            infer_publication_date_from_id(2),
         )
 
 

@@ -53,8 +53,8 @@ class TikTokVideo(BaseMetadataModel):
         null=True,
         blank=True,
         help_text="Create time as inferred from the TikTok ID.",
-    )  # Note: Is currently populated by API Service;
-    # need to remember to compute this if objects are ever created in other places.
+    )  # Not computed in save(): create rows through ``utils.new_video``. Older
+    # rows are filled in by the ``backfill_inferred_create_time`` command.
 
     user = models.ForeignKey(
         "TikTokUser",
