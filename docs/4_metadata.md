@@ -225,11 +225,30 @@ published (Steel et al., https://doi.org/10.48550/arXiv.2504.13279). The
 computation lives in
 [`ddcs.metadata.utils.infer_publication_date_from_id`](../ddcs/metadata/utils.py).
 
-**Important:** this field is populated **in the service layer** (see
-`ResearchAPIService._sync_video`), not in `TikTokVideo.save()`. As a result,
-`bulk_create`, `loaddata`, and direct ORM construction will leave the field
-`NULL`. Any new ingestion path (donation pipeline, scraper, importer) must
-compute and pass `inferred_create_time` explicitly.
+**Important:** this field is populated **in the service layer**, not in
+`TikTokVideo.save()`. As a result, `loaddata` and direct ORM construction
+leave the field `NULL`. Every ingestion path sets it:
+
+- donations and `import_video_links` create rows through
+  [`ddcs.metadata.utils.new_video`](../ddcs/metadata/utils.py) (also used by
+  `video_pks`), which computes it;
+- `ResearchAPIService._sync_video` sets it on the rows it creates, and fills
+  it in on existing rows that lack it;
+- `ScraperService._store` fills it in when a video is scraped.
+
+A new ingestion path that creates rows in bulk should use `new_video` as
+well.
+
+Rows created before this was in place are filled in with
+
+```
+python manage.py backfill_inferred_create_time [--chunk-size 5000] [--dry-run]
+```
+
+It touches only rows without a value, in chunks committed one at a time, so it
+can be stopped and run again. It does **not** move `updated_at`: the field is
+not served by the prioritised video API, so `updated_since` would otherwise
+report every backfilled video as changed.
 
 
 ## Prioritised video API
@@ -249,15 +268,23 @@ data only. Both are listed in the API docs (`/api/docs/`).
 
 Higher means more important.
 
-| Priority | Videos                                                                                         |
-|----------|------------------------------------------------------------------------------------------------|
-| 4        | Watched, liked or bookmarked by a donor (at any time) **and** delivered by the Research API    |
-| 3        | Watched, liked or bookmarked by a donor within the study period (2026-07-01 to 2026-09-20), no Research API infos |
-| 2        | Delivered by the Research API, in no donation                                                  |
-| 1        | Everything else, e.g. donated videos with interactions only outside the study period           |
+| Priority | Videos                                                                                                                                      |
+|----------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| 4        | Watched, liked or bookmarked by a donor (at any time) or imported from Datapods, **and** delivered by the Research API                      |
+| 3        | Watched, liked or bookmarked by a donor within the study period (2026-07-01 to 2026-09-20) or imported from Datapods, no Research API infos |
+| 2        | Delivered by the Research API, in no donation, not from Datapods                                                                            |
+| 1        | Everything else, e.g. donated videos with interactions only outside the study period                                                        |
+
+"Imported from Datapods" means `TikTokVideo.in_datapods` is set. The import
+(`import_video_links --origin DATAPODS`, see [8_scraper.md](8_scraper.md))
+sets it on every video in the file, including videos that were already in the
+database; their `added_by` stays as it was. Such a video counts as donated
+within the study period whatever `DonationVideoInfos` says. Marking an existing
+video moves its `updated_at`, so the change of priority shows up in
+`updated_since`.
 
 The priority is **not stored**. It is derived for each request from
-`DonationVideoInfos` and from whether the video has `APIVideoInfos`
+`DonationVideoInfos`, `in_datapods` and whether the video has `APIVideoInfos`
 ([`ddcs/metadata/priority.py`](../ddcs/metadata/priority.py)), so it is always
 current: a priority-3 video becomes priority 4 once the Research API delivers
 it, a priority-2 video once a donor who watched, liked or bookmarked it
@@ -276,6 +303,11 @@ priority": one stacked bar per priority, split into
 - videos with metadata and a classification,
 - videos with metadata but no classification yet,
 - videos waiting for both.
+
+Priority 3 has two bars: videos donated within the study period ("Donated in
+study period") and videos imported from the Datapods ("Datapod in period"). A
+Datapods video goes in the second whatever the donations say, so no video is
+counted twice. Priority 4 is not split.
 
 "Metadata" is Research API infos or scraped infos, as in the response.
 Priorities 4 and 2 have Research API infos by definition, so nothing in them
@@ -298,6 +330,7 @@ the two in agreement.
 | `priority`        | 4 to 1, see above                                                                                 |
 | `metadata_source` | `research_api`, `scraped`, or `null` if the video has no metadata yet                             |
 | `last_interaction_at` | Most recent view, like or bookmark of the video in any donation (UTC); `null` if it is in none or the date is unknown |
+| `in_datapods`     | `true` if the video is listed in Datapods, whether or not a donation shows it too                 |
 | metadata          | The fields of the video list: `description`, `create_time`, `created_at`, `region_code`, `duration`, `voice_to_text`, `is_stem_verified`, `video_mention_list`, `effect_list`, `video_label` |
 | `user`, `music`, `hashtags`, `keywords` | From the registry, as in the video list                                     |
 
@@ -318,8 +351,8 @@ All filters of the video list, plus:
 | `metadata_source` | `research_api` or `scraped`                                               |
 | `has_metadata`    | `true`: videos with metadata from either source; `false`: those without   |
 
-`updated_since` reports every video whose priority, `last_interaction_at` or
-metadata may have changed since then. It is a single condition on
+`updated_since` reports every video whose priority, `last_interaction_at`,
+`in_datapods` or metadata may have changed since then. It is a single condition on
 `TikTokVideo.updated_at`, which every such change moves:
 
 | Change                                   | Where `updated_at` is moved                 |
@@ -327,6 +360,7 @@ metadata may have changed since then. It is a single condition on
 | A donation shows the video for the first time, or with a later interaction | `donations.service.record_donated_videos` |
 | The Research API delivers the video      | `ResearchAPIService._sync_video`            |
 | The video is scraped                     | `ScraperService._store`                     |
+| An import marks an existing video as listed in Datapods | `import_video_links` (`_import`) |
 
 Any new code that changes what this endpoint serves has to move `updated_at`
 as well. This differs from the video list, whose `updated_since` also looks

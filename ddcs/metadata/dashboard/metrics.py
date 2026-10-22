@@ -121,16 +121,13 @@ class PriorityCount(TypedDict):
     classified_without_metadata: int
 
 
-_PRIORITY_LABELS = {
-    VideoPriority.DONATED_AND_RESEARCH_API: "Donated and Research API",
-    VideoPriority.DONATED_IN_WINDOW: "Donated in study period",
-    VideoPriority.RESEARCH_API_ONLY: "Research API only",
-    VideoPriority.OTHER: "Everything else",
-}
-
 # What the donations say about a video, read off its (joined) donation infos.
-_NOT_DONATED, _DONATED_OUTSIDE_WINDOW, _DONATED_IN_WINDOW = 0, 1, 2
+# Videos listed in Datapods have a state of their own, whatever the
+# donations say: they rank like videos donated in the window (see
+# ``ddcs.metadata.priority``), but are counted apart.
+_NOT_DONATED, _DONATED_OUTSIDE_WINDOW, _DONATED_IN_WINDOW, _FROM_DATAPODS = 0, 1, 2, 3
 _DONATION_STATE = Case(
+    When(in_datapods=True, then=_FROM_DATAPODS),
     When(donation_infos__isnull=True, then=_NOT_DONATED),
     When(
         donation_infos__last_interaction_in_window_at__isnull=True,
@@ -160,6 +157,8 @@ def get_priority_counts() -> list[PriorityCount]:
     """Videos per priority of the prioritised video API, split by how far
     along they are: classified, only metadata so far, or still waiting.
 
+    Priority 3 comes as two rows, videos donated in the window and videos
+    imported from Datapods, so a priority can appear more than once.
     "Metadata" is Research API infos or scraped infos, as on that API.
 
     Built from a handful of plain aggregates instead of one grouped by
@@ -184,12 +183,14 @@ def get_priority_counts() -> list[PriorityCount]:
     def count(counts: dict[int, int], states: tuple[int, ...]) -> int:
         return sum(counts.get(state, 0) for state in states)
 
-    def with_api_infos(priority: VideoPriority, *states: int) -> PriorityCount:
+    def with_api_infos(
+        priority: VideoPriority, label: str, *states: int
+    ) -> PriorityCount:
         # Research API infos are metadata, so nothing here is waiting.
         total, classified = count(api, states), count(api_classified, states)
         return {
             "priority": priority.value,
-            "label": _PRIORITY_LABELS[priority],
+            "label": label,
             "total": total,
             "classified": classified,
             "metadata_only": total - classified,
@@ -197,14 +198,16 @@ def get_priority_counts() -> list[PriorityCount]:
             "classified_without_metadata": 0,
         }
 
-    def without_api_infos(priority: VideoPriority, *states: int) -> PriorityCount:
+    def without_api_infos(
+        priority: VideoPriority, label: str, *states: int
+    ) -> PriorityCount:
         total = count(everything, states) - count(api, states)
         with_metadata = count(scraped, states)
         classified = count(scraped_classified, states)
         classified_without_metadata = count(classified_only, states)
         return {
             "priority": priority.value,
-            "label": _PRIORITY_LABELS[priority],
+            "label": label,
             "total": total,
             "classified": classified,
             "metadata_only": with_metadata - classified,
@@ -212,15 +215,32 @@ def get_priority_counts() -> list[PriorityCount]:
             "classified_without_metadata": classified_without_metadata,
         }
 
+    # Priority 3 is shown as two rows: donated videos and Datapods videos.
     return [
         with_api_infos(
             VideoPriority.DONATED_AND_RESEARCH_API,
+            "Donated or Datapods, and Research API",
             _DONATED_OUTSIDE_WINDOW,
             _DONATED_IN_WINDOW,
+            _FROM_DATAPODS,
         ),
-        without_api_infos(VideoPriority.DONATED_IN_WINDOW, _DONATED_IN_WINDOW),
-        with_api_infos(VideoPriority.RESEARCH_API_ONLY, _NOT_DONATED),
-        without_api_infos(VideoPriority.OTHER, _NOT_DONATED, _DONATED_OUTSIDE_WINDOW),
+        without_api_infos(
+            VideoPriority.DONATED_IN_WINDOW,
+            "Donated in study period",
+            _DONATED_IN_WINDOW,
+        ),
+        without_api_infos(
+            VideoPriority.DONATED_IN_WINDOW, "Datapod in period", _FROM_DATAPODS
+        ),
+        with_api_infos(
+            VideoPriority.RESEARCH_API_ONLY, "Research API only", _NOT_DONATED
+        ),
+        without_api_infos(
+            VideoPriority.OTHER,
+            "Everything else",
+            _NOT_DONATED,
+            _DONATED_OUTSIDE_WINDOW,
+        ),
     ]
 
 

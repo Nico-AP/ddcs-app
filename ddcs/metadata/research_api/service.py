@@ -305,13 +305,20 @@ class ResearchAPIService:
         if created:
             self.sync_stats["videos_created"] += 1
 
+        update_fields = []
+        if video.inferred_create_time is None:
+            # Registered by another source before rows got it on creation.
+            video.inferred_create_time = infer_publication_date_from_id(video.id_tiktok)
+            update_fields.append("inferred_create_time")
         if not video.api_infos.exists():
             video_infos = self._clean_video(video_data)
             APIVideoInfos.objects.create(video=video, **video_infos)
             if not created:
                 # A video another source registered: mark it as changed, the
                 # prioritised video API reports changes by ``updated_at``.
-                video.save(update_fields=["updated_at"])
+                update_fields.append("updated_at")
+        if update_fields:
+            video.save(update_fields=update_fields)
         return video
 
     def _sync_video_statistics(self, data: dict[str, Any], video: TikTokVideo) -> None:
