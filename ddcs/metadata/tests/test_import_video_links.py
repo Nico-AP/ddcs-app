@@ -4,7 +4,9 @@ from io import StringIO
 from pathlib import Path
 
 from django.core.management import CommandError, call_command
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 
 from ddcs.metadata.donations.models import DonationVideoInfos
 from ddcs.metadata.management.commands.import_video_links import _video_id
@@ -160,8 +162,14 @@ class ImportVideoLinksTests(TestCase):
         self._write(*(f"{i}," for i in range(1, 8)))
 
         self._run("--chunk-size", "3")
-        output = self._run("--chunk-size", "3")
+        with CaptureQueriesContext(connection) as queries:
+            output = self._run("--chunk-size", "3")
 
+        # Nothing changes, so no scrape target is written again.
+        table = ScrapeTarget._meta.db_table
+        self.assertFalse(
+            [q for q in queries if q["sql"].startswith(f'UPDATE "{table}"')]
+        )
         self.assertIn("Videos created: 0", output)
         self.assertIn("Scrape targets created: 0", output)
         self.assertIn("Already queued: 7", output)

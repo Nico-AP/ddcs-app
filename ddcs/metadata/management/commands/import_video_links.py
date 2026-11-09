@@ -181,7 +181,7 @@ class Command(BaseCommand):
         result = enqueue_donated_videos(dict.fromkeys(ids, (0, None)))
         stats["videos_created"] += len(ids) - known
         stats["targets_created"] += result.created
-        stats["already_queued"] += result.updated
+        stats["already_queued"] += result.updated + result.unchanged
         stats["covered_by_api"] += result.covered_by_api
 
     def _summary(

@@ -75,10 +75,13 @@ def _without_api_infos(video_pks: Iterable[int]) -> dict[int, int]:
 
 class EnqueueResult(NamedTuple):
     created: int
-    # Existing targets whose count was raised.
+    # Existing targets whose count was raised (or date moved).
     updated: int
     # Not queued because the Research API already delivered the video.
     covered_by_api: int
+    # Existing targets left as they were, because nothing changed (e.g. an
+    # import adding 0 without a date). Not written, and not in ``updated``.
+    unchanged: int = 0
 
 
 def enqueue_donated_videos(
@@ -100,9 +103,11 @@ def enqueue_donated_videos(
 
     Videos without a ``TikTokVideo`` row get one; videos that already have
     Research API infos are skipped. A target's status is never touched, so
-    nothing that was scraped is queued again.
+    nothing that was scraped is queued again. Targets whose count and date
+    stay the same are not written at all, which keeps repeated imports
+    (count 0, no date) cheap.
     """
-    created = updated = covered_by_api = 0
+    created = updated = covered_by_api = unchanged = 0
 
     for chunk in batched(videos, _ENQUEUE_CHUNK_SIZE):
         pk_by_id = video_pks(chunk)
@@ -126,11 +131,15 @@ def enqueue_donated_videos(
                     )
                 )
                 continue
-            target.occurrence_count += count
-            target.last_watched_at = max(
+            later = max(
                 filter(None, (target.last_watched_at, last_watched_at)),
                 default=None,
             )
+            if count == 0 and later == target.last_watched_at:
+                unchanged += 1
+                continue
+            target.occurrence_count += count
+            target.last_watched_at = later
             changed.append(target)
 
         ScrapeTarget.objects.bulk_create(new, ignore_conflicts=True)
@@ -140,7 +149,7 @@ def enqueue_donated_videos(
         created += len(new)
         updated += len(changed)
 
-    return EnqueueResult(created, updated, covered_by_api)
+    return EnqueueResult(created, updated, covered_by_api, unchanged)
 
 
 def reset_queue_ranking() -> int:
