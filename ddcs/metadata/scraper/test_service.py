@@ -6,7 +6,9 @@ from unittest.mock import Mock, patch
 
 from celery.exceptions import SoftTimeLimitExceeded
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from ddcs.metadata.models import (
@@ -193,6 +195,28 @@ class EnqueueWatchedVideosTests(TestCase):
         self.assertEqual((result.created, result.updated), (0, 2))
         self.assertEqual(_ranking(1), (3, self.late))
         self.assertEqual(_ranking(2), (2, self.late))
+
+    def test_adding_nothing_leaves_targets_unwritten(self):
+        enqueue_donated_videos({1: (2, self.late), 2: (1, self.early)})
+        table = ScrapeTarget._meta.db_table
+
+        with CaptureQueriesContext(connection) as queries:
+            result = enqueue_donated_videos({1: (0, None), 2: (0, self.early)})
+
+        self.assertEqual((result.created, result.updated, result.unchanged), (0, 0, 2))
+        self.assertFalse(
+            [q for q in queries if q["sql"].startswith(f'UPDATE "{table}"')]
+        )
+        self.assertEqual(_ranking(1), (2, self.late))
+        self.assertEqual(_ranking(2), (1, self.early))
+
+    def test_a_later_date_alone_is_written(self):
+        enqueue_donated_videos({1: (1, self.early)})
+
+        result = enqueue_donated_videos({1: (0, self.late)})
+
+        self.assertEqual((result.updated, result.unchanged), (1, 0))
+        self.assertEqual(_ranking(1), (1, self.late))
 
     def test_adding_leaves_other_targets_alone(self):
         enqueue_donated_videos({1: (5, self.late)})
