@@ -126,6 +126,8 @@ class PrioritisedTikTokVideoList(StatementTimeoutMixin, generics.ListAPIView):
 
     * Requires token authentication.
     * `priority` (higher = more important):
+      or any number from 1 on set by hand, which wins over the derived
+      one (`manual_priority` is then set, null otherwise);
       4 = watched, liked or bookmarked by a donor (at any time) or listed in
       Datapods, and delivered by the Research API;
       3 = watched, liked or bookmarked by a donor within the study period or

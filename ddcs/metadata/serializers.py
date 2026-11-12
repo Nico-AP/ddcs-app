@@ -127,6 +127,8 @@ class PrioritisedTikTokVideoSerializer(serializers.ModelSerializer):
     """
 
     priority = serializers.IntegerField(read_only=True)
+    # Set when ``priority`` was given by hand rather than derived.
+    manual_priority = serializers.IntegerField(read_only=True)
     metadata_source = serializers.SerializerMethodField()
     last_interaction_at = serializers.DateTimeField(
         source="donation_infos.last_interaction_at",
@@ -163,6 +165,7 @@ class PrioritisedTikTokVideoSerializer(serializers.ModelSerializer):
         fields = [
             "id_tiktok",
             "priority",
+            "manual_priority",
             "metadata_source",
             "last_interaction_at",
             "in_datapods",
