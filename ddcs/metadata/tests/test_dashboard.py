@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from itertools import product
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -133,12 +134,15 @@ class GetPriorityCountsTests(TestCase):
         *,
         classified: bool = False,
         in_datapods: bool = False,
+        manual_priority: int | None = None,
     ) -> TikTokVideo:
         """``donated``: "", "outside" or "window"; ``metadata``: any of the
         letters a(pi) and s(craped)."""
         self._next_id += 1
         video = TikTokVideo.objects.create(
-            id_tiktok=self._next_id, in_datapods=in_datapods
+            id_tiktok=self._next_id,
+            in_datapods=in_datapods,
+            manual_priority=manual_priority,
         )
         if donated:
             DonationVideoInfos.objects.create(
@@ -157,16 +161,20 @@ class GetPriorityCountsTests(TestCase):
         return video
 
     def _every_combination(self) -> None:
-        for in_datapods in (False, True):
-            for donated in ("", "outside", "window"):
-                for metadata in ("", "a", "s", "as"):
-                    for classified in (False, True):
-                        self._video(
-                            donated,
-                            metadata,
-                            classified=classified,
-                            in_datapods=in_datapods,
-                        )
+        for manual_priority, in_datapods, donated, metadata, classified in product(
+            (None, 1, 4, 5, 6),
+            (False, True),
+            ("", "outside", "window"),
+            ("", "a", "s", "as"),
+            (False, True),
+        ):
+            self._video(
+                donated,
+                metadata,
+                classified=classified,
+                in_datapods=in_datapods,
+                manual_priority=manual_priority,
+            )
 
     @staticmethod
     def _by_priority() -> dict[int, dict]:
@@ -255,6 +263,61 @@ class GetPriorityCountsTests(TestCase):
             (3, 1, 2),
         )
         self.assertEqual(rows["Donated or Datapods, and Research API"]["total"], 1)
+
+    def test_manual_priorities_come_first_one_row_each(self):
+        self._video("window", "a", classified=True, manual_priority=5)
+        self._video("", "s", manual_priority=5)
+        self._video(manual_priority=5)
+        self._video("", "a", in_datapods=True, manual_priority=7)
+        self._video("window", "a")
+
+        counts = get_priority_counts()
+
+        self.assertEqual(
+            [(row["priority"], row["label"]) for row in counts[:3]],
+            [
+                (7, "Manual"),
+                (5, "Manual"),
+                (4, "Donated or Datapods, and Research API"),
+            ],
+        )
+        manual_5 = counts[1]
+        self.assertEqual(
+            (
+                manual_5["total"],
+                manual_5["classified"],
+                manual_5["metadata_only"],
+                manual_5["waiting"],
+            ),
+            (3, 1, 1, 1),
+        )
+        self.assertEqual(counts[0]["total"], 1)
+        # The manual videos are in none of the derived rows.
+        self.assertEqual(counts[2]["total"], 1)
+        self.assertEqual(sum(row["total"] for row in counts[3:]), 0)
+
+    def test_manual_row_sits_by_its_priority_ahead_of_the_derived_ones(self):
+        # Would be priority 4; pinned to 1 and 4 by hand.
+        self._video("window", "a", manual_priority=1)
+        self._video("window", "a", manual_priority=4)
+
+        counts = get_priority_counts()
+
+        self.assertEqual(
+            [(row["priority"], row["label"]) for row in counts],
+            [
+                (4, "Manual"),
+                (4, "Donated or Datapods, and Research API"),
+                (3, "Donated in study period"),
+                (3, "Datapod in period"),
+                (2, "Research API only"),
+                (1, "Manual"),
+                (1, "Everything else"),
+            ],
+        )
+        self.assertEqual(counts[0]["total"], 1)
+        self.assertEqual(counts[1]["total"], 0)
+        self.assertEqual(counts[5]["total"], 1)
 
     def test_agrees_with_the_priorities_of_the_api(self):
         self._every_combination()

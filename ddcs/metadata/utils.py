@@ -1,6 +1,8 @@
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from itertools import pairwise
+from urllib.parse import urlparse
 
 from django.db import connection
 
@@ -80,3 +82,23 @@ def video_pks(
         )
         pk_by_id.update(lookup(missing))
     return pk_by_id
+
+
+# Path segments a video ID follows in a TikTok link.
+_ID_SEGMENTS = frozenset({"video", "photo"})
+
+
+def video_id_from_link(value: str) -> int | None:
+    """The TikTok ID in a video link (or a bare ID), ``None`` if there is none.
+
+    Short links (``vm.tiktok.com/...``) can't be resolved without a request
+    to TikTok and give ``None``.
+    """
+    value = value.strip()
+    if value.isdigit():
+        return int(value)
+    segments = urlparse(value).path.strip("/").split("/")
+    for previous, segment in pairwise(segments):
+        if previous in _ID_SEGMENTS and segment.isdigit():
+            return int(segment)
+    return None

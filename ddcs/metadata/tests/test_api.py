@@ -391,8 +391,13 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         seen_in_window: datetime | None = None,
         donated: bool = False,
         in_datapods: bool = False,
+        manual_priority: int | None = None,
     ) -> TikTokVideo:
-        video = TikTokVideo.objects.create(id_tiktok=id_tiktok, in_datapods=in_datapods)
+        video = TikTokVideo.objects.create(
+            id_tiktok=id_tiktok,
+            in_datapods=in_datapods,
+            manual_priority=manual_priority,
+        )
         if api:
             APIVideoInfos.objects.create(
                 video=video, description=f"api {id_tiktok}", region_code="CH"
@@ -483,10 +488,81 @@ class PrioritisedTikTokVideoListTestCase(APITestCase):
         self.assertEqual(self._ids(priority="1"), {11, 12, 13})
         self.assertEqual(self._ids(priority="4,3"), {41, 42, 43, 44, 31, 32, 33, 34})
 
-    def test_unknown_priority_is_rejected(self):
-        response = self.client.get(self.url, {"priority": "5"})
+    def test_priority_that_is_not_a_whole_number_is_rejected(self):
+        for value in ("abc", "0", "4.5"):
+            with self.subTest(value=value):
+                response = self.client.get(self.url, {"priority": value})
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_priority_nobody_has_matches_nothing(self):
+        self._one_of_each()
+
+        self.assertEqual(self._ids(priority="9"), set())
+
+    # --- Manual priority ---
+
+    def _manual_videos(self) -> None:
+        # Would be 4, 3, 2 and 1 without the manual priority.
+        self._video(51, api=True, seen_in_window=self.in_window, manual_priority=5)
+        self._video(52, in_datapods=True, manual_priority=5)
+        self._video(53, api=True, manual_priority=5)
+        self._video(71, manual_priority=7)
+
+    def test_manual_priority_wins_over_the_derived_one(self):
+        self._one_of_each()
+        self._manual_videos()
+
+        priorities = {v["id_tiktok"]: v["priority"] for v in self._get()}
+
+        self.assertEqual(
+            {i: priorities[i] for i in (51, 52, 53, 71)},
+            {51: 5, 52: 5, 53: 5, 71: 7},
+        )
+
+    def test_filter_by_manual_priority(self):
+        self._one_of_each()
+        self._manual_videos()
+
+        self.assertEqual(self._ids(priority="5"), {51, 52, 53})
+        self.assertEqual(self._ids(priority="7"), {71})
+        # A manual video is no longer in the priority it would derive.
+        self.assertEqual(self._ids(priority="4"), {41, 42, 43, 44})
+        self.assertEqual(self._ids(priority="1"), {11, 12, 13})
+        self.assertEqual(self._ids(priority="7,4"), {71, 41, 42, 43, 44})
+
+    def test_manual_priority_can_pin_a_video_to_a_derived_priority(self):
+        self._one_of_each()
+        # Would be 4 and 1: demoted and promoted into derived priorities.
+        self._video(61, api=True, seen_in_window=self.in_window, manual_priority=1)
+        self._video(62, manual_priority=4)
+
+        priorities = {v["id_tiktok"]: v["priority"] for v in self._get()}
+
+        self.assertEqual((priorities[61], priorities[62]), (1, 4))
+        # The filter finds them under the manual priority, alongside the
+        # derived ones, and not under the derived one.
+        self.assertEqual(self._ids(priority="1"), {11, 12, 13, 61})
+        self.assertEqual(self._ids(priority="4"), {41, 42, 43, 44, 62})
+        self.assertEqual(self._ids(priority="3"), {31, 32, 33, 34})
+
+    def test_manual_priority_holds_when_the_derived_one_would_change(self):
+        video = self._video(1, seen_in_window=self.in_window, manual_priority=1)
+
+        APIVideoInfos.objects.create(video=video)
+
+        self.assertEqual(self._get()[0]["priority"], 1)
+
+    def test_manual_priority_is_reported(self):
+        self._video(1, manual_priority=4)
+        self._video(2, api=True, seen_in_window=self.in_window)
+
+        results = {v["id_tiktok"]: v for v in self._get()}
+
+        self.assertEqual(
+            {i: (v["priority"], v["manual_priority"]) for i, v in results.items()},
+            {1: (4, 4), 2: (4, None)},
+        )
 
     def test_priority_rises_when_the_research_api_delivers_a_donated_video(self):
         video = self._video(1, seen_in_window=self.in_window)

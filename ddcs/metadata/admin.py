@@ -191,9 +191,10 @@ class TikTokVideoAdmin(ExportMixin, admin.ModelAdmin):
         "inferred_create_time",
         "added_by",
         "in_datapods",
+        "manual_priority",
         "created_at",
     )
-    list_filter = ("added_by", "in_datapods")
+    list_filter = ("added_by", "in_datapods", "manual_priority")
     search_fields = ("id_tiktok", "user__name")
     autocomplete_fields = ("user", "music", "hashtags")
     readonly_fields = ("created_at", "updated_at", "inferred_create_time")
