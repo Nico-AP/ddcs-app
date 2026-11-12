@@ -89,6 +89,14 @@ class TikTokVideo(BaseMetadataModel):
         verbose_name_plural = "TikTok Videos"
         indexes = [
             models.Index(fields=["-updated_at"], name="tiktokvideo_updated_at_idx"),
+            # Serves ``?priority=N`` for a manual priority in page order
+            # (``-pk``, see ``TikTokVideoCursorPagination``). Partial: only
+            # the few videos with a manual priority are in it.
+            models.Index(
+                fields=["manual_priority", "-id"],
+                condition=models.Q(manual_priority__isnull=False),
+                name="tiktokvideo_manual_prio_idx",
+            ),
         ]
 
     def __str__(self) -> str:
