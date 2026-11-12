@@ -270,6 +270,7 @@ Higher means more important.
 
 | Priority | Videos                                                                                                                                      |
 |----------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| any      | Set by hand (`set_manual_priority`, see below): wins over the rows below, up or down                                                        |
 | 4        | Watched, liked or bookmarked by a donor (at any time) or imported from Datapods, **and** delivered by the Research API                      |
 | 3        | Watched, liked or bookmarked by a donor within the study period (2026-07-01 to 2026-09-20) or imported from Datapods, no Research API infos |
 | 2        | Delivered by the Research API, in no donation, not from Datapods                                                                            |
@@ -283,7 +284,32 @@ within the study period whatever `DonationVideoInfos` says. Marking an existing
 video moves its `updated_at`, so the change of priority shows up in
 `updated_since`.
 
-The priority is **not stored**. It is derived for each request from
+**Manual priorities.** A video can be given a priority by hand, stored in
+`TikTokVideo.manual_priority`. It replaces the derived priority, whatever the
+donations, Datapods or the Research API say, also later. Any number from 1
+on can be used: 5 or higher ranks a video above every derived priority (6 for
+an even more urgent set), 1 to 4 pins it to one of them, e.g. 1 to push a
+video to the back for good. As a manual 4 looks like a derived 4, the
+response has `manual_priority` alongside: set when the priority was given by
+hand, `null` otherwise. They are set from a
+CSV file in the format of `import_video_links` (a `link` column with links
+or bare IDs):
+
+```bash
+python manage.py set_manual_priority ids.csv --priority 5 [--dry-run]
+python manage.py set_manual_priority ids.csv --remove
+```
+
+`--priority N` gives every listed video priority `N`, also videos that had
+another manual priority. Videos missing from the database are created (with
+`added_by` from `--origin`, default `IMPORT`) and queued for scraping like an
+`import_video_links` import; the scrape queue order is not changed.
+`--remove` takes the manual priority away, so the video falls back to its
+derived priority. Both move `updated_at` of every video whose priority
+changes, and a second run changes nothing. The field can also be edited in
+the TikTok Video admin.
+
+Apart from manual priorities, the priority is **not stored**. It is derived for each request from
 `DonationVideoInfos`, `in_datapods` and whether the video has `APIVideoInfos`
 ([`ddcs/metadata/priority.py`](../ddcs/metadata/priority.py)), so it is always
 current: a priority-3 video becomes priority 4 once the Research API delivers
@@ -304,7 +330,9 @@ priority": one stacked bar per priority, split into
 - videos with metadata but no classification yet,
 - videos waiting for both.
 
-Priority 3 has two bars: videos donated within the study period ("Donated in
+Each manual priority in use has a bar of its own ("Manual"), placed by its
+number and ahead of the derived bars of the same priority; there are none
+while no video has one. Priority 3 has two bars: videos donated within the study period ("Donated in
 study period") and videos imported from the Datapods ("Datapod in period"). A
 Datapods video goes in the second whatever the donations say, so no video is
 counted twice. Priority 4 is not split.
@@ -327,7 +355,8 @@ the two in agreement.
 | Field             | Content                                                                                           |
 |-------------------|---------------------------------------------------------------------------------------------------|
 | `id_tiktok`       | The video ID                                                                                      |
-| `priority`        | 4 to 1, see above                                                                                 |
+| `priority`        | 4 to 1 as derived, or the manual priority if one is set; see above                                |
+| `manual_priority` | The priority set by hand, or `null` if `priority` is derived                                      |
 | `metadata_source` | `research_api`, `scraped`, or `null` if the video has no metadata yet                             |
 | `last_interaction_at` | Most recent view, like or bookmark of the video in any donation (UTC); `null` if it is in none or the date is unknown |
 | `in_datapods`     | `true` if the video is listed in Datapods, whether or not a donation shows it too                 |
@@ -347,7 +376,7 @@ All filters of the video list, plus:
 
 | Filter            | Effect                                                                    |
 |-------------------|---------------------------------------------------------------------------|
-| `priority`        | One or several priorities, comma-separated (`?priority=4,3`)              |
+| `priority`        | One or several priorities, comma-separated (`?priority=5,4`); matches manual and derived alike |
 | `metadata_source` | `research_api` or `scraped`                                               |
 | `has_metadata`    | `true`: videos with metadata from either source; `false`: those without   |
 
@@ -361,6 +390,7 @@ All filters of the video list, plus:
 | The Research API delivers the video      | `ResearchAPIService._sync_video`            |
 | The video is scraped                     | `ScraperService._store`                     |
 | An import marks an existing video as listed in Datapods | `import_video_links` (`_import`) |
+| A manual priority is set, changed or removed | `set_manual_priority`; admin saves via `auto_now` |
 
 Any new code that changes what this endpoint serves has to move `updated_at`
 as well. This differs from the video list, whose `updated_since` also looks

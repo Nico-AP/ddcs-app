@@ -34,41 +34,26 @@ Semantics
 from __future__ import annotations
 
 import csv
-from itertools import batched, pairwise
+from itertools import batched
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlparse
 
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from ddcs.metadata.models import DataOrigins, TikTokVideo
 from ddcs.metadata.scraper.service import enqueue_donated_videos
-from ddcs.metadata.utils import video_pks
+from ddcs.metadata.utils import video_id_from_link, video_pks
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from django.core.management import CommandParser
 
-# Path segments a video ID follows in a TikTok link.
-_ID_SEGMENTS = frozenset({"video", "photo"})
 # How many unparseable values are shown as examples.
 _EXAMPLES = 20
 # Progress is printed after this many chunks.
 _PROGRESS_EVERY = 20
-
-
-def _video_id(value: str) -> int | None:
-    """The TikTok ID in a video link (or a bare ID), ``None`` if there is none."""
-    value = value.strip()
-    if value.isdigit():
-        return int(value)
-    segments = urlparse(value).path.strip("/").split("/")
-    for previous, segment in pairwise(segments):
-        if previous in _ID_SEGMENTS and segment.isdigit():
-            return int(segment)
-    return None
 
 
 class Command(BaseCommand):
@@ -140,7 +125,7 @@ class Command(BaseCommand):
             ):
                 ids = set()
                 for value in rows:
-                    id_tiktok = _video_id(value)
+                    id_tiktok = video_id_from_link(value)
                     if id_tiktok is None:
                         stats["unparseable"] += 1
                         if len(examples) < _EXAMPLES:

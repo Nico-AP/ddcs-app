@@ -9,12 +9,16 @@ from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
 
 from ddcs.metadata.donations.models import DonationVideoInfos
-from ddcs.metadata.management.commands.import_video_links import _video_id
 from ddcs.metadata.models import DataOrigins, TikTokVideo
 from ddcs.metadata.priority import VideoPriority, annotate_priority
 from ddcs.metadata.research_api.models import APIVideoInfos
 from ddcs.metadata.scraper.models import ScrapeTarget
-from ddcs.metadata.utils import infer_publication_date_from_id, new_video, video_pks
+from ddcs.metadata.utils import (
+    infer_publication_date_from_id,
+    new_video,
+    video_id_from_link,
+    video_pks,
+)
 
 Status = ScrapeTarget.Status
 
@@ -32,7 +36,7 @@ class VideoIdTests(TestCase):
         }
         for value, expected in cases.items():
             with self.subTest(value=value):
-                self.assertEqual(_video_id(value), expected)
+                self.assertEqual(video_id_from_link(value), expected)
 
     def test_rejects_values_without_a_video_id(self):
         for value in (
@@ -43,7 +47,7 @@ class VideoIdTests(TestCase):
             "not a link",
         ):
             with self.subTest(value=value):
-                self.assertIsNone(_video_id(value))
+                self.assertIsNone(video_id_from_link(value))
 
 
 class NewVideoTests(TestCase):
