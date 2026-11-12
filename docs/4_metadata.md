@@ -422,6 +422,13 @@ Not measured on production data; what follows is how the query is built.
   that shows in practice, the remedy is to store the priority in an indexed
   column, at the cost of maintaining it wherever Research API infos or
   donation infos are written.
+- **Manual priorities are the exception.** A filter on a priority only
+  manual videos can have (5 and up) reads the partial index
+  `tiktokvideo_manual_prio_idx` (`manual_priority`, `-id`, only rows with a
+  manual priority), already in page order, so it is fast however few videos
+  match. For 1 to 4 the manual part is cheap too, but the derived part still
+  scans as above. The index was added in migration `0014`, built
+  concurrently on PostgreSQL so writes are not blocked meanwhile.
 
 - **Statements are cancelled after a time limit.** Both video list endpoints
   limit each database statement of a request to
