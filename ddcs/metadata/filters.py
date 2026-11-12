@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import django_filters
+from django import forms
 from django.db.models import Exists, OuterRef, Q, QuerySet
 
 from ddcs.metadata.models import TikTokVideo, TikTokVideoClassification
@@ -8,15 +9,20 @@ from ddcs.metadata.priority import (
     HAS_API_INFOS,
     HAS_SCRAPED_INFOS,
     METADATA_SOURCE_CONDITIONS,
-    PRIORITY_CONDITIONS,
     MetadataSource,
-    VideoPriority,
+    priority_condition,
 )
 from ddcs.metadata.research_api.models import APIVideoInfos
 
 
 class NumberInFilter(django_filters.BaseInFilter, django_filters.NumberFilter):
     """Accepts comma-separated integers, e.g. ?id_tiktok=1,2,3"""
+
+
+class PositiveIntegerInFilter(django_filters.BaseInFilter, django_filters.Filter):
+    """Accepts comma-separated whole numbers, e.g. ?priority=5,4"""
+
+    field_class = forms.IntegerField
 
 
 class CharInFilter(django_filters.BaseInFilter, django_filters.CharFilter):
@@ -105,12 +111,11 @@ class PrioritisedTikTokVideoFilter(TikTokVideoFilter):
     region_codes = None
     has_api_infos = None
 
-    priority = django_filters.TypedMultipleChoiceFilter(
-        choices=VideoPriority.choices,
-        coerce=int,
-        widget=django_filters.widgets.CSVWidget,
+    # Not a choice filter: manual priorities can be any number from 5 on.
+    priority = PositiveIntegerInFilter(
         method="filter_priority",
-        help_text="One or several priorities, comma-separated, e.g. 4,3",
+        min_value=1,
+        help_text="One or several priorities, comma-separated, e.g. 5,4",
     )
     metadata_source = django_filters.ChoiceFilter(
         choices=MetadataSource.choices, method="filter_metadata_source"
@@ -124,7 +129,7 @@ class PrioritisedTikTokVideoFilter(TikTokVideoFilter):
             return queryset
         condition = Q()
         for priority in set(value):
-            condition |= PRIORITY_CONDITIONS[VideoPriority(priority)]
+            condition |= priority_condition(priority)
         return queryset.filter(condition)
 
     def filter_metadata_source(

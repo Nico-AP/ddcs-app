@@ -1,3 +1,4 @@
+from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -47,6 +48,16 @@ class TikTokVideo(BaseMetadataModel):
     in_datapods = models.BooleanField(
         default=False,
         help_text="Listed in the Datapods video set (see import_video_links).",
+    )
+    # Overrides the derived priority; see ``ddcs.metadata.priority``.
+    manual_priority = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(1)],
+        help_text=(
+            "Set by hand, 1 or higher; overrides the derived priority "
+            "(see set_manual_priority)."
+        ),
     )
 
     inferred_create_time = models.DateTimeField(
